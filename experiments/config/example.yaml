@@ -1,0 +1,16 @@
+platform: "cloudlab"
+storage:
+  num: 1 
+  type: "c220g1"
+client:
+  num: 1
+  type: "c220g1"
+sequencer:
+  num: 3
+  type: "c220g1"
+machine_image: [testing_image -- Create on Monday]
+system: "scalog"
+workload: ../workloads/ycsb/test
+stats: /tmp/test.yml
+location: ~
+
