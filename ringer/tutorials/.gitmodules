@@ -1,0 +1,3 @@
+[submodule "ringworld_test/testing/dist-systems-group"]
+	path = ringworld_test/testing/dist-systems-group
+	url = https://github.com/nacrooks/dist-systems-group
