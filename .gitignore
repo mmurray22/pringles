@@ -1,0 +1,38 @@
+### Switch simulation
+ringer/tutorials/exercises/*
+# Python byte code
+ringer/tutorials/*.pyc
+ringer/tutorials/*.pyo
+
+# Compiled JSON
+ringer/tutorials/*.json
+!ringer/tutorials/*p4app.json
+!ringer/tutorials/topology.json
+!ringer/tutorials/*-runtime.json
+
+ringer/tutorials/*.pcap
+
+# Extracted solutions
+ringer/tutorials/solution*/
+!ringer/tutorials/solution/
+
+# Build folders
+ringer/tutorials/build*/
+
+# Logs folders
+ringer/tutorials/logs/
+
+
+### Experiments
+experiments/personal.yaml
+experiments/testing/*
+experiments/workloads/ycsb-0.17.0/*
+experiments/scripts/*
+
+# Files we do want to keep
+!experiments/scripts/coordinator.py
+!experiments/scripts/spawn_machines.py
+!experiments/scripts/README.md
+!experiments/scripts/profile.py
+
+
