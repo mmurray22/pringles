@@ -1,0 +1,185 @@
+\documentclass[10pt,sigconf,nonacm=true]{acmart}
+\usepackage{paralist}
+% \usepackage{wrapfig}
+\usepackage{xspace}
+\usepackage{comment}
+\usepackage{epsfig}
+% \usepackage[hyphens]{url}
+\PassOptionsToPackage{hyphens}{url}
+\usepackage{color}
+\def\UrlBreaks{\do\/\do-}
+% \usepackage{times}
+% \usepackage[small,compact]{titlesec}
+% \usepackage{array}
+\usepackage{ragged2e}
+\usepackage{ifthen}
+% \usepackage{pifont}
+\usepackage{amsmath}
+% \usepackage{tabularx}
+% \usepackage{caption}
+%\usepackage{subcaption}
+\usepackage{subfig}
+\usepackage{tikz}
+% \usepackage{caption}
+\usepackage{multicol}
+\usepackage{xcolor}
+%\usepackage[moderate,title=normal,leadingfraction=1,charwidthfraction=1]{savetrees}
+% \usepackage[moderate,title,sections]{savetrees}
+% \usepackage{flushend}
+% \usepackage{fullpage}
+% \usepackage{geometry}
+% \usepackage{makecell}
+\usepackage{multirow}
+% \usepackage{changepage}
+% \usepackage{array,booktabs}
+% \usepackage[stretch=0,shrink=50]{microtype}
+% \usepackage{subcaption}
+% \usepackage{caption}
+% \usepackage{booktabs}
+% \usepackage{placeins}
+% \usepackage{float}
+%\usepackage{flushend} 	% It balance references in the last page, but it has a bug
+						% to display a last reference.
+						% documentclass[keeplastbox] option solves the problem.
+%\usepackage[sort]{natbib} % sort option relplaces cite package
+% \usepackage[
+% bookmarks,bookmarksopen,
+% pdfstartview={FitH},
+% colorlinks,linkcolor={black},citecolor={black},
+% urlcolor={black}
+% ]{hyperref}
+%\usepackage[draft]{hyperref}
+
+% \newcolumntype{d}[1]{D{.}{.}{#1}}
+% \usepackage{etoolbox}
+
+% \makeatletter
+% \patchcmd{\ttlh@hang}{\parindent\z@}{\parindent\z@\leavevmode}{}{}
+% \patchcmd{\ttlh@hang}{\noindent}{}{}{}
+% \makeatother
+
+% Squeeze space
+%\renewcommand{\baselinestretch}{1.01}  % needs to be above 1 to pass OSDI checks
+% \renewcommand{\captionfont}{\small}
+% \addtolength{\belowcaptionskip}{-7pt}
+% \addtolength{\abovecaptionskip}{-15pt}
+% \addtolength{\intextsep}{-10pt}
+% \addtolength{\wrapoverhang}{-12pt}
+% \addtolength{\columnsep}{-12pt}
+% \addtolength{\floatsep}{-8pt}
+% \addtolength{\textfloatsep}{-2ex}
+% latex, chill on the widows & orphans (150 is default value)
+% \widowpenalty=130
+% \clubpenalty=130
+
+%\newcommand*{\st@margin@width}{1.5cm}
+% \setlength{\parindent}{1em}
+% \setlength{\belowcaptionskip}{-6pt}
+% \setlength{\textfloatsep}{4.0pt}
+
+% \setlength{\evensidemargin}{1in}
+% \setlength{\oddsidemargin}{1in}
+% \setlength{\textwidth}{6.5in}
+% \setlength{\marginparsep}{5pt}
+% \setlength{\marginparwidth}{0.75in}
+% \setlength{\columnsep}{.25in}
+
+% \setlength\tabcolsep{4pt}
+% \renewcommand{\captionfont}{\small \bf}
+% \setlength{\textfloatsep}{1ex}
+% \setlength{\floatsep}{1ex}
+% \setlength{\dbltextfloatsep}{1ex}
+% \setlength{\dblfloatsep}{1ex}
+
+% \geometry{letterpaper,textwidth=7in,textheight=9in}
+
+% \setlength{\columnsep}{0.33in}
+
+% \renewcommand{\paragraph}[1]{\vspace{0.2ex}\noindent{\bf #1} }
+
+\input{submission}
+\usepackage[normalem]{ulem}
+
+% Commands for pending text additions/deletions
+% \newcommand{\textadd}[1]{\textcolor{heraldGreen}{+#1}}
+% \newcommand{\textrem}[1]{\textcolor{red}{\small -#1}}
+
+% \usepackage{booktabs}
+
+% \newcommand{\todo}[1]{[[[{\bf{TODO: #1}}]]]}
+% \newcommand{\old}[1]{}
+
+\usepackage{enumitem}
+
+
+\begin{document}
+
+
+% \clubpenalty=10000
+% \widowpenalty = 10000
+
+
+% \renewcommand\footnotetextcopyrightpermission[1]{}
+% \pagestyle{plain}
+
+% \ifpdf
+% \setlength{\pdfpagewidth}{8.5in}
+% \setlength{\pdfpageheight}{11in}
+% \else
+% \fi
+
+% \setlength{\belowcaptionskip}{-10pt}
+% \setlength{\textfloatsep}{12.0pt}
+
+% \title{\Large \bf \sys: Efficient Tiered Memory Management is in the
+%   Operating System}
+% \title{\Large \bf \sys: Efficient Tiered Main Memory Management}
+% \title{\Large \bf \sys: Software Tiered Main Memory Management for
+%   Big Data Applications}
+% \title{\large \sys: Software Tiered Main Memory Management for Big
+%   Data Applications\vspace{-1.5cm}}
+\title{\papertitle}
+% \author{Paper \#216, \pageref{LastPage} pages}
+% \author{Paper \#xxx}
+% \author{Anonymous submission \#90}
+
+\author{\normalsize Anonymous submission \#xxx}
+
+\date{}
+
+\begin{abstract}
+	This is my lonely abstract!
+	%\input{abstract}
+\end{abstract}
+
+
+% \settopmatter{printacmref=false, printfolios=true}
+\maketitle
+% \thispagestyle{empty}
+
+\input{macros}
+\thispagestyle{empty}
+\pagestyle{empty}
+Hello!
+%\input{intro}
+%\input{intro2}
+%\input{background}
+%\input{design}
+%\input{impl}
+%\input{eval}
+%\input{related}
+%\input{conclusion}
+
+{
+%\footnotesize
+%\setlength{\bibsep}{1pt}
+\bibliographystyle{ACM-Reference-Format}
+\interlinepenalty=10000
+% \renewcommand{\baselinestretch}{1.0}
+\bibliography{bibliography}
+}
+
+% \input{cuts}
+
+\end{document}
+

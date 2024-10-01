@@ -1,0 +1,18 @@
+syntax="proto3";
+
+package ringclient;
+
+message AppendEntry {
+int64 client_id=1;
+int64 nonce=2;
+LogEntry log_entry=3;
+int64 global_idx=4;
+string shard_id=5;
+int64 view=6;
+int64 iteration=7;
+string status=8;
+}
+
+message LogEntry {
+string entry=1;
+}

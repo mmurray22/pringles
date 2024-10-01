@@ -5,6 +5,11 @@ template<class Entry>
 class LogClient {
 public:
 	/*** Basic Log API functions ***/
+	
+	/*
+	 * Instantiates ring log client
+	 */
+	LogClient(std::string config_file);
 
 	/*
 	 * Append entries to the log
