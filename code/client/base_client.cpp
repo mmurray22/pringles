@@ -1,42 +1,45 @@
 //#include "utils.h"
 #include "base_client.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <iostream>
+#include "yaml-cpp/yaml.h"
 
 /*** Main function ***/
 void BaseClient::initClient(std::string config_file) {
 	// Get config object
-	Config configObj = readConfigFile(config_file);
-
+	bool success = readConfigFile(config_file);
 	// Initialize client variables
 	ip_addr = configObj.ip_addr;
 	port = configObj.port;
-	client_type = fromStringToClientType(configObj.client_type);
+	ClientType client_type = fromStringToClientType(configObj.client_type);
 	isRegistered = false;
 }
 
-BaseClient createClient(ClientType type, std::string config_file) {
-	BaseClient client = NULL;
+BaseClient createClient(ClientType type) {
+	BaseClient client;
 	switch (type) {
-		case ClientType.RING:
-			client = new LogClient(config_file);
+		case ClientType::RING:
+			//client = new LogClient();
 			break;
-		case ClientType.DUMMY:
-			client = new SimpleClient(); //TODO: create SimpleClient
+		case ClientType::DUMMY:
+			//client = new SimpleClient(); //TODO: create SimpleClient
 			break;
-		case ClientType.SCALOG:
+		case ClientType::SCALOG:
 			break;
-		case ClientType.CORFU:
+		case ClientType::CORFU:
 			break;
 		default:
 			// code block
-	}
+	};
+	return client;
 }
 
 /*
  * Sets up sockets and underlying network infrastructure so the client
  * can send packets to remote machines
  */
-void registerClient() {
+void BaseClient::registerClient() {
 	int new_socket = socket(AF_INET, SOCK_STREAM, 0);
 	if (new_socket == -1) {
 		std::cerr << "Error creating socket" << std::endl;
@@ -50,28 +53,26 @@ void registerClient() {
 
 /*** Helper function ***/
 ClientType BaseClient::fromStringToClientType(std::string type) {
-	ClientType type = ClientType.NONE;
+	ClientType cliType = ClientType::NONE;
 	if (type == "dummy") {
-		type = ClientType.DUMMY;
+		cliType = ClientType::DUMMY;
 	} else if (type == "ring") {
-		type = ClientType.RING;
+		cliType = ClientType::RING;
 	} else if (type == "scalog") {
-		type = ClientType.SCALOG;
+		cliType = ClientType::SCALOG;
 	} else if (type == "corfu") {
-		type = ClientType.CORFU;
+		cliType = ClientType::CORFU;
 	}
-	return type;
+	return cliType;
 }
 
-Config readConfigFile(std::string config_file) { // combine with main initialiazation function
-						 // Make Config object a pointer
-	Config configObj;
+bool BaseClient::readConfigFile(std::string config_file) { // combine with main initialiazation function
 	// Read in config file
-	// TODO: Get yaml-cpp
 	YAML::Node config = YAML::LoadFile(config_file);
 	// Fill in config object
-	configObj.ip_addr = config["ip_addr"].as<std::string>();
-	configObj.port = config["port"].as<uint64_t>();
-	configObj.client_type = config["type"].as<std::string>();
+	configObj->ip_addr = config["ip_addr"].as<std::string>();
+	configObj->port = config["port"].as<uint64_t>();
+    std::client_str = config["type"].as<std::string>();
+	configObj->client_type = fromStringToClientType(client_str);
 	return configObj;
 }

@@ -1,8 +1,11 @@
 #include <thread>
 #include "api.h"
 
-LogClient::LogClient(std::string config_file) {
+LogClient::LogClient() {
 	// Start receive thread
+	// Get config object
+	// Initialize client variables
+	isRegistered = false;
 }
 
 template<class Entry>

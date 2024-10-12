@@ -17,10 +17,4 @@ add_subdirectory(code)
 # add the executable
 add_executable(simple experiments/unit_tests/simple_client.cpp)
 
-# Link the code library 
-target_link_libraries(simple PUBLIC code)
 
-target_include_directories(simple PUBLIC
-	"${PROJECT_BINARY_DIR}"
-	"${PROJECT_SOURCE_DIR}/code"
-	)

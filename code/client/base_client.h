@@ -1,47 +1,41 @@
 #include <string>
+#include <cstdint>
 
-using byte = unsigned char;
+/*** Structs, enums, etc. ***/
+struct NetworkConfig {
+	ClientType client;
+    std::string ip_addr;
+	uint64_t port;
+};
 
-public class BaseClient {
-	
+enum ClientType {
+	DUMMY,
+	RING,
+	SCALOG,
+	CORFU,
+	NONE
+};
+
+class BaseClient {
 	public:
-		/*** Structs, enums, etc. ***/
-		enum ClientType {
-			DUMMY,
-			RING,
-			SCALOG,
-			CORFU,
-			NONE
-		}
-		struct Config {
-			std::string ip_addr;
-			uint64_t port;
-			std::string client_type;
-		}
-		
+			
 		/*** Functions ***/
 
-		// Create client object
-		BaseClient createClient(ClientType type);
 		// Register client with system services (e.g. network)
 		void registerClient();
 		// Initializes client variables
-		void initClient();
+		void initClient(std::string config_file);
 		
 		/// Helper fxns
 		uint64_t get_cid();
-
-
 
 	protected:
 		uint64_t cid;
 
 	private:
 		/*** Variables ***/
-		Config* configObj;
-		ClientType type;
-		std::string ip_addr;
-		uint64_t port;
+		NetworkConfig* netConfig;
+		type;
 		int clientSocket;
 		bool isRegistered;
 
@@ -49,6 +43,10 @@ public class BaseClient {
 		
 		// Initializes client variables
 		ClientType fromStringToClientType(std::string type);
-		// Convert config file to Config object
-		Config readConfigFile(std::string config_file);
+		// Convert config file to NetworkConfig object
+		bool readConfigFile(std::string config_file);
 }
+
+// Create client object
+BaseClient createClient(ClientType type);
+

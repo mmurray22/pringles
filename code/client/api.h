@@ -7,7 +7,10 @@ public:
 	/*** Basic Log API functions ***/
 	
 	/*
-	 * Instantiates ring log client
+	 * Instantiates ring log client:
+     * - ingest all info from the yaml file 
+     * - setup networking
+     * - generate client id
 	 */
 	LogClient(std::string config_file);
 
