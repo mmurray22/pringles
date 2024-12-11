@@ -1,8 +1,14 @@
+/*
+ * Core assumption: The ringclient protobuf has an object called Entry
+ */
 #include <vector>
 #include <mutex>
 
-template<class Entry>
-class LogClient {
+#include "baseclient.h"
+#include "../../proto/ringclient.pb.h" 
+
+/* Client class */
+class LogClient extends BaseClient {
 public:
 	/*** Basic Log API functions ***/
 	
@@ -12,25 +18,22 @@ public:
      * - setup networking
      * - generate client id
 	 */
-	LogClient(std::string config_file);
+	LogClient(YAML::Node config);
 
 	/*
 	 * Append entries to the log
 	 */
-	template<class Entry>
-	uint64_t append(Entry log_entry);
+	uint64_t append(LogEntry log_entry);
 
 	/*
 	 * Read entries from the log
 	 */
-	template<class Entry>
-	Entry read(uint64_t idx);
+	LogEntry read(uint64_t idx);
 
 	/*
 	 * Gets latest committed log index
 	 */
-	template<class Entry>
-	Entry getTail();
+	LogEntry getTail();
 
 	/*
 	 * Subscribe to getting updates for all log
@@ -40,7 +43,8 @@ public:
 
 	/*** Additional Log stream functionality ***/
 	///TODO
-	
+    ///
+
 private:
 	// Immutable
 	/* Unique client identifier */
@@ -50,14 +54,16 @@ private:
 	/* ID of client's contact switch*/
 	uint64_t switch_id;
 	std::mutex switch_lock;
-	/* Current view number and corresponding lock */
-	uint64_t view_num;
-	std::mutex view_num_lock;
+
 	/* Local list of appended and read log entries and corresponding lock*/
-	std::vector<class Entry> cached_log_entries;
+	std::vector<LogEntry> cached_log_entries;
 	std::mutex log_lock;
 
+    /*Networking information*/
+    std::queue<char* buf> send_pkt;
+    std::queue<char* buf> rcv_pkt;
+
 	// Functions
+    void send_packet();
 	void receive_packets();
-	void change_view(uint64_t new_view_num);
 }

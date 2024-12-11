@@ -4,8 +4,12 @@ build/*
 ### Protobuf 
 proto/ringclient.pb.*
 
+### External Libraries
+code/utils/yaml-cpp/
+
 ### Switch simulation
 code/tutorials/exercises/*
+experiments/openvswitch-3.4.0/
 
 # Python byte code
 code/tutorials/*.pyc
@@ -28,7 +32,6 @@ code/tutorials/build*/
 
 # Logs folders
 code/tutorials/logs/
-
 
 ### Experiments
 experiments/personal.yaml

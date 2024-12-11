@@ -5,51 +5,31 @@
 #include <iostream>
 #include "yaml-cpp/yaml.h"
 
-/*** Main function ***/
-void BaseClient::initClient(std::string config_file) {
-	// Get config object
-	bool success = readConfigFile(config_file);
-	// Initialize client variables
-	ip_addr = configObj.ip_addr;
-	port = configObj.port;
-	ClientType client_type = fromStringToClientType(configObj.client_type);
-	isRegistered = false;
-}
+// Different Clients
+#include "simple_client.h"
+#include "pringles_client.h"
 
-BaseClient createClient(ClientType type) {
-	BaseClient client;
+/*** Main function ***/
+BaseClient createClient(std::string config_file) {
+    YAML::Node config = YAML::LoadFile(config_file);
+    std::client_str = config["type"].as<std::string>();
+    ClientType type = fromStringToClientType(client_str);
+
 	switch (type) {
 		case ClientType::RING:
-			//client = new LogClient();
-			break;
-		case ClientType::DUMMY:
-			//client = new SimpleClient(); //TODO: create SimpleClient
-			break;
+			return LogClient(config);
 		case ClientType::SCALOG:
 			break;
 		case ClientType::CORFU:
 			break;
 		default:
-			// code block
+            return SimpleClient(config);
 	};
-	return client;
 }
 
-/*
- * Sets up sockets and underlying network infrastructure so the client
- * can send packets to remote machines
- */
-void BaseClient::registerClient() {
-	int new_socket = socket(AF_INET, SOCK_STREAM, 0);
-	if (new_socket == -1) {
-		std::cerr << "Error creating socket" << std::endl;
-        	return;
-    	}
-
-	clientSocket = new_socket;
-	isRegistered = true;
+uint64_t BaseClient::get_cid() {
+    return cid;
 }
-
 
 /*** Helper function ***/
 ClientType BaseClient::fromStringToClientType(std::string type) {
@@ -66,13 +46,68 @@ ClientType BaseClient::fromStringToClientType(std::string type) {
 	return cliType;
 }
 
-bool BaseClient::readConfigFile(std::string config_file) { // combine with main initialiazation function
-	// Read in config file
-	YAML::Node config = YAML::LoadFile(config_file);
-	// Fill in config object
-	configObj->ip_addr = config["ip_addr"].as<std::string>();
-	configObj->port = config["port"].as<uint64_t>();
-    std::client_str = config["type"].as<std::string>();
-	configObj->client_type = fromStringToClientType(client_str);
-	return configObj;
+// Run in separate thread
+// ip address passed in needs to be the external IP
+void send_packets(std::string ip) {
+    /*Go through the steps of setting up a datagram UDP socket*/
+    struct addrinfo hint, *res;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM; //Datagram socket
+    int64_t status = getaddrinfo(ip.c_str(), NULL, &hints, res);
+    if (status != 0) {
+        std::cout << "Error " << status << "occurred: " << gai_strerror(status) << std::endl;
+        return;
+    }
+    int s_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);    
+    if (s_fd == -1) {
+         std::cout << "Error " << errno << "occurred: " << strerror(errno) << std::endl;
+        return;
+    }
+    int ret = connect(s_fd, res->ai_addr, res->ai_addrlen);
+    if (ret == -1) {
+        std::cout << "Error " << errno << "occurred: " << strerror(errno) << std::endl;
+    }
+
+    while (true) {
+        if (send_pkt.size() == 0) {
+            sleep(10);
+            continue;
+        }
+        if (/*check if the ip has changed*/) {
+        
+        }
+     
+        std::string* buf = send_pkt.dequeue();
+        ssize_t num_bytes = send(s_fd, buf, *buf.length(), 0);
+        if (num_bytes != *buf.length()) {
+             if (num_bytes == -1) {
+                 std::cout << "Error " << errno << "occurred: " << strerror(errno) << std::endl;
+             }
+        }
+    }
+}
+
+void receive_packets() {
+    // listen for receiving info from the ring
+    struct sockaddr_storage their_addr;
+    socklen_t addr_size;
+    struct addrinfo hints, *res;
+    int sockfd, new_fd;
+
+    // !! don't forget your error checking for these calls !!
+
+    // first, load up address structs with getaddrinfo():
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;  // use IPv4 or IPv6, whichever
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
+
+    getaddrinfo(NULL, RECEIVE_PORT, &hints, &res);
+
+    // make a socket, bind it, and listen on it:
+    sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    bind(sockfd, res->ai_addr, res->ai_addrlen);
+    listen(sockfd, BACKLOG);
 }

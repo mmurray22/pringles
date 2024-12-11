@@ -6,9 +6,10 @@
 const bit<16> TYPE_TUNNEL = 0x1212;
 const bit<16> TYPE_IPV4  = 0x0800;
 const bit<16> TYPE_CONTROL = 0x0820;
-const bit<16> TYPE_TAIL = 0x0840;
 const bit<16> TYPE_CLI_SEQ = 0x1414;
 const bit<16> TYPE_APPEND = 0x0860;
+const bit<16> TYPE_READ = 0x0870;
+const bit<16> TYPE_TAIL = 0x0840;
 #define STATIC_SHARD_NUM 100
 #define IDX_SET_SIZE 100
 #define NUM_BLOOM_HASH 4

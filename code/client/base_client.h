@@ -1,52 +1,67 @@
 #include <string>
 #include <cstdint>
+#include <memory>
 
 /*** Structs, enums, etc. ***/
-struct NetworkConfig {
-	ClientType client;
-    std::string ip_addr;
-	uint64_t port;
-};
-
 enum ClientType {
-	DUMMY,
+	SIMPLE,
 	RING,
 	SCALOG,
 	CORFU,
 	NONE
 };
 
+struct Config {
+    ClientType cli_type;
+    std::string ip_addr;
+	uint64_t port;
+    uint64_t cli_socket;
+    bool local;
+};
+
+
 class BaseClient {
 	public:
-			
-		/*** Functions ***/
+	    /*** Variables ***/
+        std::unique_ptr<Config> configObj;
 
-		// Register client with system services (e.g. network)
-		void registerClient();
-		// Initializes client variables
-		void initClient(std::string config_file);
-		
-		/// Helper fxns
+        /*** Virtual functions ***/
+        // Append entries to the log
+        virtual uint64_t append(std::unique_ptr<std::string> entry) = 0;
+        // Read from idx in the log
+        virtual std::unique_ptr<std::string> read(uint64_t idx) = 0;
+        // Get latest committed entry
+        virtual std::unique_ptr<std::string> get_tail() = 0;
+        // Subscribe to get all log updates after supplied index
+        virtual void subscribe(uint64_t idx) = 0;
+        // Garbage collect all log entries up to some index
+        virtual bool trim(uint64_t idx) = 0;
+
+        /*** Functions with inherited implementations ***/
+		// Convert config file to ConfigObject object
+		bool readConfigFile(std::string config_file);
+		/// Getter for client ID
 		uint64_t get_cid();
+        
+        /*Networking information*/
+        std::queue<char* buf> send_pkt;
+        std::queue<char* buf> rcv_pkt;
+
+	    // Functions
+        void send_packet();
+        uint64_t wait_for_append_idx(std::unique_ptr<std::string> entry);
+	    void receive_packets();
 
 	protected:
 		uint64_t cid;
 
 	private:
-		/*** Variables ***/
-		NetworkConfig* netConfig;
-		type;
-		int clientSocket;
-		bool isRegistered;
-
+	
 		/*** Functions ***/
-		
-		// Initializes client variables
+		// Initializes convert client types
 		ClientType fromStringToClientType(std::string type);
-		// Convert config file to NetworkConfig object
-		bool readConfigFile(std::string config_file);
 }
 
 // Create client object
-BaseClient createClient(ClientType type);
+BaseClient createClient(std::string config_file);
 
