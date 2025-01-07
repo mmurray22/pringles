@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <iostream>
 #include <string.h>
+#include <stdlib.h>
+#include <utility>
 #include "yaml-cpp/yaml.h"
 
 /*
@@ -61,7 +63,7 @@ void Network::run_send() {
                 return;
             }
         }
-        char* send_packet = NULL;
+        std::unique_ptr<std::string> send_packet = NULL; //std::make_unique<std::string>(NULL);
         {
             std::unique_lock<std::mutex> lock(send_queue_mutex);
             mutex_condition.wait(lock, [this] {
@@ -70,17 +72,15 @@ void Network::run_send() {
             if (terminate) {
                 return;
             }
-            send_packet = send_pkt.front();
+            send_packet = std::move(send_pkt.front());
             send_pkt.pop();
         }
         if (!send_packet) { // In the case that send_packet is still NULL
             continue;
         }
-        ssize_t num_bytes = send(s_fd, send_packet, *send_packet.length(), 0);
-        if (num_bytes != *send_packet.length()) {
-             if (num_bytes == -1) {
-                 std::cout << "Error " << errno << "occurred: " << strerror(errno) << std::endl;
-             }
+        ssize_t num_bytes = send(s_fd, (*send_packet.get()).c_str(), (*send_packet.get()).length(), 0);
+        if (num_bytes < 0 || (uint64_t)num_bytes != (*send_packet.get()).length()) {
+            std::cout << "Error " << errno << "occurred: " << strerror(errno) << std::endl;
         }
     }
 }
@@ -93,7 +93,12 @@ void Network::run_recv() {
         return;
     }
     accept(s_fd, NULL, NULL);
-    epoll_create(s_fd);
+    int efd = epoll_create(s_fd);
+    if (efd < 0) {
+        std::cout << "Epoll creation unsuccessful. Aborting" << std::endl;
+        return;
+    }
+
     // Send packets as they are queued
     while (!terminate) {
         // If IP has changed, create new datagram socket
@@ -105,37 +110,51 @@ void Network::run_recv() {
                 return;
             }
             accept(s_fd, NULL, NULL);
-            epoll_create(s_fd);
+            efd = epoll_create(s_fd);
+            if (efd < 0) {
+                std::cout << "Socket creation unsuccessful. Aborting" << std::endl;
+                return;
+            }
         }
         // Poll the socket to see if it has received a packet (UPDATE)
-        epoll_wait(s_fd, NULL, 1, MAX_POLL_TIME); // maxevents??
-        char buf[10000]; // Best way to size this??
-        recv(s_fd, buf, sizeof(buf), 0);
+        struct epoll_event ev;
+        ev.data.fd = s_fd;
+        ev.events = 0;
+        epoll_ctl(efd, EPOLL_CTL_ADD, s_fd, &ev);
+        epoll_wait(efd, &ev, 1, MAX_POLL_TIME); // maxevents??
+        char* buf = (char*)(std::malloc(BUF_SIZE)); // TODO get less bad solution
+        memset(buf, 0, BUF_SIZE);
+        recv(s_fd, buf, BUF_SIZE, 0);
         {
             std::unique_lock<std::mutex> lock(rcv_queue_mutex);
-            rcv_pkt.emplace(&buf);
+            std::string str(buf);
+            std::unique_ptr<std::string> str_ptr = std::make_unique<std::string>(str);
+            rcv_pkt.emplace(std::move(str_ptr));
         }
+        free(buf);
     }
 }
 
-void Network::add_to_send_queue(char* buf) {
+// TODO: Pass around the unique pointers!! need to pass in pointer because
+// this is the compiled pointer to protobuf string
+void Network::add_to_send_queue(std::unique_ptr<std::string> buf) {
     std::unique_lock<std::mutex> lock(send_queue_mutex);
     if (terminate) {
         std::cout << "No more packets accepted!" << std::endl;
         return; // false;
     }
-    send_pkt.emplace(buf); // Do I need to register output?
+    send_pkt.emplace(std::move(buf)); // Do I need to register output?
     mutex_condition.notify_one();
     return;
     //return (buf != NULL);
 }
 
-char* Network::read_from_recv_queue() {
+std::unique_ptr<std::string> Network::read_from_recv_queue() {
     std::unique_lock<std::mutex> lock(rcv_queue_mutex);
     if (rcv_pkt.empty()) {
         return NULL;
     }
-    char* receive_pkt = rcv_pkt.front();
+    std::unique_ptr<std::string> receive_pkt = std::move(rcv_pkt.front());
     rcv_pkt.pop();
     return receive_pkt;
 }

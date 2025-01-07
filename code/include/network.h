@@ -10,19 +10,20 @@ class Network {
     public:
         Network(uint64_t maxThreads, std::string ip_file);
         ~Network();
-        void add_to_send_queue(char* buf);
-        char* read_from_recv_queue();
-        void run_send();
-        void run_recv();
-        std::string update_ip_addrs();
+        void add_to_send_queue(std::unique_ptr<std::string> buf);
+        std::unique_ptr<std::string> read_from_recv_queue();
+               std::string update_ip_addrs();
         // TODO add: message formatting, custom header creation
         
     private:
         // Thread
+        const uint64_t BUF_SIZE = 1000;
         std::mutex lock_terminate;
         bool terminate = false;
         uint64_t total_num_threads;
         void stop_threads();
+        void run_send();
+        void run_recv();
 
         // Send Thread pool
         std::vector<std::thread> send_threads;
@@ -44,15 +45,14 @@ class Network {
         /* Send Packet queue
          * Assumption: All packets in the queue are of size > 0
          */
-        std::queue<char*> send_pkt;
+        std::queue<std::unique_ptr<std::string>> send_pkt;
         std::mutex send_queue_mutex;
-        std::queue<char*> rcv_pkt;
+        std::queue<std::unique_ptr<std::string>> rcv_pkt;
         std::mutex rcv_queue_mutex;
-        void send(char* buf);
         bool pkts_in_queue();
 
         // Socket handling
         const uint64_t BACKLOG = 5;
-        int setup_socket(std::string curr_ip, bool recv_socket);
+       int setup_socket(std::string curr_ip, bool recv_socket);
         void destroy_socket(int s_fd);
 };
