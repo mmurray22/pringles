@@ -1,7 +1,7 @@
 #include <string>
 #include <cstdint>
 #include <memory>
-
+#include <queue>
 /*** Structs, enums, etc. ***/
 enum ClientType {
 	SIMPLE,

@@ -19,13 +19,27 @@ L___code: Contains all code for all logs (Pringles and comparisons)
 |   CMakeLists.txt: file specifying cmake infrastructure
 |   README.md: File with general info about the project and the repo
 ```
-## Necessary setup steps:
+## How to Compile
+1.`cd /path/to/ringlog/build/`
+2. `cmake ..`
+3. `make`
+
+## Necessary setup steps: (Debian trixie)
 - I am requiring C++17 and above
 
 - Install cmake (I am using version 3.30.3)
 
+- Install Meson. There are many ways to do this depending on your OS. On debian, follow these instructions: https://packages.debian.org/trixie/meson
+
 - Install protobuf (I am using proco version 3.21.12) 
 Command: `sudo apt install -y protobuf-compiler` (Needs to be protoc --version > 3.x.x)
+
+- Install libyaml-cpp (I am using libyaml-cpp version 0.8.0)
+Command `sudo apt install libyaml-cpp-dev`
+
+- Add path to ringlog as an environment variable RINGLOG_PATH
+BEST: Add `export RINGLOG_PATH=/path/to/ringlog` to .bashrc
+OR: Command `export RINGLOG_PATH=/path/to/ringlog`
 
 ## Current build system status:
 09/30: I am using cmake for this project since it is largely built in C++. The cmake bare bones skeleton has been created. 

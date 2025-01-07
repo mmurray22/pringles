@@ -1,3 +1,4 @@
+#include "simple_client.h"
 // Simple client code
 //
 //

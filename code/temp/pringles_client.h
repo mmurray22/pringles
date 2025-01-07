@@ -4,8 +4,8 @@
 #include <vector>
 #include <mutex>
 
-#include "baseclient.h"
-#include "../../proto/ringclient.pb.h" 
+#include "base_client.h"
+#include "ringclient.pb.h" 
 
 /* Client class */
 class LogClient extends BaseClient {

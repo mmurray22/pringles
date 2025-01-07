@@ -1,4 +1,4 @@
-#include "base_sequencer.cpp"
+#include "base_sequencer.h"
 
 
 uint64_t BaseSequencer::assign_next_idx() {

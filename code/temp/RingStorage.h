@@ -1,8 +1,5 @@
 #include <vector>
 
-struct StorageServer {
-};
-
 template<class Entry>
 class LogStorageServer {
 public:
