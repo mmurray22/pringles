@@ -1,9 +1,6 @@
 #include "network.h"
-#include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
-#include <sys/types.h>
-#include <netdb.h>
 #include <unistd.h>
 #include <iostream>
 #include <string.h>
@@ -30,14 +27,14 @@ Network::Network(uint64_t maxThreads, std::string ip_file) {
     chosen_ip_addr = "127.0.0.1";//all_ip_addrs[0];
     std::cout << "Chosen IP Addr constructor: " << chosen_ip_addr << " from file " << ip_file << std::endl;
     
-    total_num_threads = maxThreads == 0 ? std::thread::hardware_concurrency() : maxThreads;   
+    total_num_threads = maxThreads == 0 ? std::thread::hardware_concurrency()-1 : maxThreads;   
     // Create sending threadpool
-    for (uint64_t i = 0; i < total_num_threads - 1; i++) {
+    for (uint64_t i = 0; i < total_num_threads; i++) {
         send_threads.emplace_back(std::thread(&Network::run_send, this)); 
     }
     // Create receiving threadpool (only 1 thread for now since it's Network I/O bound)
     for (uint64_t i = 0; i < 1; i++) {
-        recv_threads.emplace_back(std::thread(&Network::run_send, this)); 
+        recv_threads.emplace_back(std::thread(&Network::run_recv, this)); 
     }
 }
 
@@ -47,24 +44,26 @@ Network::~Network() {
 }
 
 // Threadpool send thread function
+// Send packets as they are queued
 void Network::run_send() {
-    std::string curr_ip = chosen_ip_addr;
-    std::cout <<"Chosen IP Addr : " << chosen_ip_addr << " Vector size: " << all_ip_addrs.size() << std::endl;
-    int s_fd = setup_socket(curr_ip, false);
-    if (s_fd < 0) {
-        std::cout << "SENDER Socket creation unsuccessful. Aborting" << std::endl;
-        return;
-    }
-    // Send packets as they are queued
+    std::string curr_ip = "";
+    int s_fd = -1;
+    struct addrinfo* it = (struct addrinfo*)(std::malloc(sizeof (struct addrinfo)));
     while (!terminate) {
         // If IP has changed, create new datagram socket
         if (curr_ip != chosen_ip_addr) {
-            destroy_socket(s_fd);
-            s_fd = setup_socket(curr_ip, false);
+            curr_ip = chosen_ip_addr;
+            // TODO: reset sockaddr?
+            std::cout <<"Chosen IP Addr : " << chosen_ip_addr << " Vector size: " << all_ip_addrs.size() << std::endl;
+            if (s_fd > -1) {
+                destroy_socket(s_fd);
+            }
+            s_fd = setup_talker_socket(curr_ip, false, it);
             if (s_fd < 0) {
                 std::cout << "SENDER Socket creation unsuccessful. Aborting" << std::endl;
                 return;
             }
+            std::cout << "IMMEDIATE Addr: " << it->ai_addr << std::endl;
         }
         std::unique_ptr<std::string> send_packet = NULL; //std::make_unique<std::string>(NULL);
         {
@@ -81,53 +80,61 @@ void Network::run_send() {
         if (!send_packet) { // In the case that send_packet is still NULL
             continue;
         }
-        ssize_t num_bytes = send(s_fd, (*send_packet.get()).c_str(), (*send_packet.get()).length(), 0);
-        if (num_bytes < 0 || (uint64_t)num_bytes != (*send_packet.get()).length()) {
+        std::cout << "sendto args: " << s_fd << ", " << (*send_packet.get()).c_str() << ", " << (*send_packet.get()).length() << ", " << it->ai_addr << ", " << it->ai_addrlen << std::endl;
+        ssize_t num_bytes = sendto(s_fd, (*send_packet.get()).c_str(), (*send_packet.get()).length(), 0, it->ai_addr, it->ai_addrlen);
+        std::cout << "Num bytes: " << num_bytes << std::endl;
+        if (num_bytes < 0 || ((uint64_t)num_bytes != (*send_packet.get()).length())) {
             std::cout << "Error " << errno << " occurred: " << strerror(errno) << std::endl;
+            continue;
         }
+        std::cout << "Successfully sent " << num_bytes << " bytes to the receiver." << std::endl;
     }
 }
 
+// Queue packets as they are received
 void Network::run_recv() {
-    std::string curr_ip = chosen_ip_addr;
-    int s_fd = setup_socket(curr_ip, true);
-    if (s_fd < 0) {
-        std::cout << "RECEIVER Socket creation unsuccessful. Aborting" << std::endl;
-        return;
-    }
-    accept(s_fd, NULL, NULL);
-    int efd = epoll_create(s_fd);
-    if (efd < 0) {
-        std::cout << "Epoll creation unsuccessful. Aborting" << std::endl;
-        return;
-    }
-
-    // Send packets as they are queued
+    std::cout << "RUNNING RECV THREAD " << std::endl;
+    std::string curr_ip = "";
+    int s_fd, efd = -1;
+    int numbytes;
+    struct addrinfo* it = (struct addrinfo*)(std::malloc(sizeof (struct addrinfo)));
     while (!terminate) {
+        struct sockaddr_storage src_addr;
+        socklen_t addr_len = sizeof src_addr;
         // If IP has changed, create new datagram socket
         if (curr_ip != chosen_ip_addr) {
-            destroy_socket(s_fd);
-            s_fd = setup_socket(curr_ip, true);
+            curr_ip = chosen_ip_addr;
+            if (s_fd > -1) {
+                destroy_socket(s_fd);
+            }
+            s_fd = setup_listener_socket(curr_ip, true, it);
+            std::cout << "RECEIVER FD CREATED " << s_fd << std::endl;
             if (s_fd < 0) {
                 std::cout << "RECEIVER Socket creation unsuccessful. Aborting" << std::endl;
                 return;
             }
-            accept(s_fd, NULL, NULL);
             efd = epoll_create(s_fd);
             if (efd < 0) {
                 std::cout << "Epoll creation unsuccessful. Aborting" << std::endl;
                 return;
             }
         }
-        // Poll the socket to see if it has received a packet (UPDATE)
+        // Poll the socket to see if it has received a packet (UPDATE to do async?? prob don't want thread just spinning)
+        std::cout << "Creating epoll event " << std::endl;
         struct epoll_event ev;
         ev.data.fd = s_fd;
         ev.events = 0;
         epoll_ctl(efd, EPOLL_CTL_ADD, s_fd, &ev);
         epoll_wait(efd, &ev, 1, MAX_POLL_TIME); // maxevents??
+        std::cout << "Done waiting!" << std::endl;
         char* buf = (char*)(std::malloc(BUF_SIZE)); // TODO get less bad solution
         memset(buf, 0, BUF_SIZE);
-        recv(s_fd, buf, BUF_SIZE, 0);
+        if ((numbytes = recvfrom(s_fd, buf, BUF_SIZE-1, 0, (struct sockaddr *)&src_addr, &addr_len)) == -1) {
+            std::cout << "Received error number of bytes" << std::endl;
+            return;
+        }
+        buf[numbytes] = '\0';
+        std::cout << "Receiver received the message with num bytes: " << numbytes << std::endl;
         {
             std::unique_lock<std::mutex> lock(rcv_queue_mutex);
             std::string str(buf);
@@ -179,37 +186,77 @@ bool Network::pkts_in_queue() {
 }
 
 /*Sets up a datagram UDP socket for chosen_ip_addr*/  
-int Network::setup_socket(std::string curr_ip, bool recv_socket) {
-    struct addrinfo hints, *res;
+int Network::setup_listener_socket(std::string curr_ip, bool recv_socket, struct addrinfo* it) {
+    struct addrinfo hints, *servinfo, *temp;
+    int s_fd;
+    int yes = 1;
+    //struct sockaddr_storage their_addr;
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM; //Datagram socket
     hints.ai_flags = AI_PASSIVE;
-    int64_t status = getaddrinfo(curr_ip.c_str(), NULL, &hints, &res);
+    int64_t status = getaddrinfo(curr_ip.c_str(), SEND_PORT, &hints, &servinfo);
     if (status != 0) {
         std::cout << "Cannot get getaddrinfo for IP " << curr_ip.c_str() << ", Error " << status << " occurred: " << gai_strerror(status) << std::endl;
         return -1;
     }
-    int s_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);    
-    if (s_fd == -1) {
-        std::cout << "Cannot get socket fd, Error " << errno << " occurred: " << strerror(errno) << std::endl;
+    for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
+        if ((s_fd = socket(temp->ai_family, temp->ai_socktype, temp->ai_protocol)) == -1) {
+            std::cout << "Cannot get socket fd, Error " << errno << " occurred: " << strerror(errno) << std::endl;
+            continue;
+        }
+        if (recv_socket && setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes, sizeof(int)) == -1) {
+            std::cout << "Cannot get socket fd, Error " << errno << " occurred: " << strerror(errno) << std::endl;
+            freeaddrinfo(servinfo);
+            return -1;
+        }
+        if (recv_socket && bind(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
+            close(s_fd);
+            std::cout << "Cannot bind socket, Error " << errno << "occurred: " << strerror(errno) << std::endl;
+            continue;
+        }
+        memcpy(it, temp, sizeof (struct addrinfo));
+        break;
+    }
+    if (temp == NULL) {
+        std::cout << "Socket failed to bind!" << std::endl;
         return -1;
     }
-    if (recv_socket){
-        int ret = bind(s_fd, res->ai_addr, res->ai_addrlen);
-        if (ret == -1) { // TODO abstract error handling into function
-            std::cout << "Cannot bind socket, Error " << errno << "occurred: " << strerror(errno) << std::endl;
-            return -1;
-        }
-        listen(s_fd, BACKLOG);
-        return s_fd;
-    } else {
-        int ret = connect(s_fd, res->ai_addr, res->ai_addrlen);
-        if (ret == -1) {
-            std::cout << "Cannot connect socket, Error " << errno << "occurred: " << strerror(errno) << std::endl;
-            return -1;
-        }
+    std::cout << "IT info: Addr " << it->ai_addr << " Len: " << it->ai_addrlen << std::endl;
+    //freeaddrinfo(servinfo);
+    return s_fd;
+}
+
+/*Sets up a datagram UDP socket for chosen_ip_addr*/  
+int Network::setup_talker_socket(std::string curr_ip, bool recv_socket, struct addrinfo* it) {
+    struct addrinfo hints, *servinfo, *temp;
+    int s_fd;
+    if (recv_socket) {
+        return -1;
     }
+    //struct sockaddr_storage their_addr;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM; //Datagram socket
+    int64_t status = getaddrinfo(curr_ip.c_str(), SEND_PORT, &hints, &servinfo);
+    if (status != 0) {
+        std::cout << "Cannot get getaddrinfo for IP " << curr_ip.c_str() << ", Error " << status << " occurred: " << gai_strerror(status) << std::endl;
+        return -1;
+    }
+    for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
+        if ((s_fd = socket(temp->ai_family, temp->ai_socktype, temp->ai_protocol)) == -1) {
+            std::cout << "Cannot get socket fd, Error " << errno << " occurred: " << strerror(errno) << std::endl;
+            continue;
+        }
+        memcpy(it, temp, sizeof (struct addrinfo));
+        break;
+    }
+    if (temp == NULL) {
+        std::cout << "Socket failed to bind!" << std::endl;
+        return -1;
+    }
+    std::cout << "IT info: Addr " << it->ai_addr << " Len: " << it->ai_addrlen << std::endl;
+    //freeaddrinfo(servinfo);
     return s_fd;
 }
 

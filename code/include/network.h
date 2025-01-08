@@ -5,6 +5,12 @@
 #include <mutex>
 #include <thread>
 #include <condition_variable>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+// PORTS ARE CRUCIAL
+#define SEND_PORT "4950" // TODO: Make this passed in argument?
 
 class Network {
     public:
@@ -53,6 +59,7 @@ class Network {
 
         // Socket handling
         const uint64_t BACKLOG = 5;
-       int setup_socket(std::string curr_ip, bool recv_socket);
+        int setup_listener_socket(std::string curr_ip, bool recv_socket, struct addrinfo* it);
+        int setup_talker_socket(std::string curr_ip, bool recv_socket, struct addrinfo* it);
         void destroy_socket(int s_fd);
 };
