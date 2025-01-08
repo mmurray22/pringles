@@ -16,6 +16,20 @@
  * "ip_addrs" that indexes to a list of IP address strings
  */
 Network::Network(uint64_t maxThreads, std::string ip_file) {
+    // Initialize initial IP list
+    YAML::Node config = YAML::LoadFile(ip_file);
+    for (std::size_t i=0; i< config["ip_addrs"].size(); i++) {
+        std::string ip_addr = config["ip_addrs"][i].as<std::string>();
+        all_ip_addrs.emplace_back(ip_addr); 
+    }
+    all_ip_addrs.push_back("127.0.0.1"); // TODO TODO
+    if (all_ip_addrs.empty()) {
+        std::cout << "NO IP ADDRESSES SUBMITTED, ABORTING" << std::endl;
+        throw; // TODO Do I need a exception code? 
+    }
+    chosen_ip_addr = "127.0.0.1";//all_ip_addrs[0];
+    std::cout << "Chosen IP Addr constructor: " << chosen_ip_addr << " from file " << ip_file << std::endl;
+    
     total_num_threads = maxThreads == 0 ? std::thread::hardware_concurrency() : maxThreads;   
     // Create sending threadpool
     for (uint64_t i = 0; i < total_num_threads - 1; i++) {
@@ -25,21 +39,9 @@ Network::Network(uint64_t maxThreads, std::string ip_file) {
     for (uint64_t i = 0; i < 1; i++) {
         recv_threads.emplace_back(std::thread(&Network::run_send, this)); 
     }
-
-
-    // Initialize initial IP list
-    YAML::Node config = YAML::LoadFile(ip_file);
-    for (std::size_t i=0; i< config["ip_addrs"].size(); i++) {
-        std::string ip_addr = config["ip_addrs"][i].as<std::string>();
-        all_ip_addrs.emplace_back(ip_addr); 
-    }
-    if (all_ip_addrs.empty()) {
-        std::cout << "NO IP ADDRESSES SUBMITTED, ABORTING" << std::endl;
-        throw; // TODO Do I need a exception code? 
-    }
-    chosen_ip_addr = all_ip_addrs[0];
 }
 
+    
 Network::~Network() {
     stop_threads();
 }
@@ -47,9 +49,10 @@ Network::~Network() {
 // Threadpool send thread function
 void Network::run_send() {
     std::string curr_ip = chosen_ip_addr;
+    std::cout <<"Chosen IP Addr : " << chosen_ip_addr << " Vector size: " << all_ip_addrs.size() << std::endl;
     int s_fd = setup_socket(curr_ip, false);
     if (s_fd < 0) {
-        std::cout << "Socket creation unsuccessful. Aborting" << std::endl;
+        std::cout << "SENDER Socket creation unsuccessful. Aborting" << std::endl;
         return;
     }
     // Send packets as they are queued
@@ -59,7 +62,7 @@ void Network::run_send() {
             destroy_socket(s_fd);
             s_fd = setup_socket(curr_ip, false);
             if (s_fd < 0) {
-                std::cout << "Socket creation unsuccessful. Aborting" << std::endl;
+                std::cout << "SENDER Socket creation unsuccessful. Aborting" << std::endl;
                 return;
             }
         }
@@ -80,7 +83,7 @@ void Network::run_send() {
         }
         ssize_t num_bytes = send(s_fd, (*send_packet.get()).c_str(), (*send_packet.get()).length(), 0);
         if (num_bytes < 0 || (uint64_t)num_bytes != (*send_packet.get()).length()) {
-            std::cout << "Error " << errno << "occurred: " << strerror(errno) << std::endl;
+            std::cout << "Error " << errno << " occurred: " << strerror(errno) << std::endl;
         }
     }
 }
@@ -89,7 +92,7 @@ void Network::run_recv() {
     std::string curr_ip = chosen_ip_addr;
     int s_fd = setup_socket(curr_ip, true);
     if (s_fd < 0) {
-        std::cout << "Socket creation unsuccessful. Aborting" << std::endl;
+        std::cout << "RECEIVER Socket creation unsuccessful. Aborting" << std::endl;
         return;
     }
     accept(s_fd, NULL, NULL);
@@ -106,13 +109,13 @@ void Network::run_recv() {
             destroy_socket(s_fd);
             s_fd = setup_socket(curr_ip, true);
             if (s_fd < 0) {
-                std::cout << "Socket creation unsuccessful. Aborting" << std::endl;
+                std::cout << "RECEIVER Socket creation unsuccessful. Aborting" << std::endl;
                 return;
             }
             accept(s_fd, NULL, NULL);
             efd = epoll_create(s_fd);
             if (efd < 0) {
-                std::cout << "Socket creation unsuccessful. Aborting" << std::endl;
+                std::cout << "Epoll creation unsuccessful. Aborting" << std::endl;
                 return;
             }
         }
@@ -181,20 +184,21 @@ int Network::setup_socket(std::string curr_ip, bool recv_socket) {
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM; //Datagram socket
+    hints.ai_flags = AI_PASSIVE;
     int64_t status = getaddrinfo(curr_ip.c_str(), NULL, &hints, &res);
     if (status != 0) {
-        std::cout << "Error " << status << "occurred: " << gai_strerror(status) << std::endl;
+        std::cout << "Cannot get getaddrinfo for IP " << curr_ip.c_str() << ", Error " << status << " occurred: " << gai_strerror(status) << std::endl;
         return -1;
     }
     int s_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);    
     if (s_fd == -1) {
-        std::cout << "Error " << errno << "occurred: " << strerror(errno) << std::endl;
+        std::cout << "Cannot get socket fd, Error " << errno << " occurred: " << strerror(errno) << std::endl;
         return -1;
     }
     if (recv_socket){
         int ret = bind(s_fd, res->ai_addr, res->ai_addrlen);
         if (ret == -1) { // TODO abstract error handling into function
-            std::cout << "Error " << errno << "occurred: " << strerror(errno) << std::endl;
+            std::cout << "Cannot bind socket, Error " << errno << "occurred: " << strerror(errno) << std::endl;
             return -1;
         }
         listen(s_fd, BACKLOG);
@@ -202,7 +206,7 @@ int Network::setup_socket(std::string curr_ip, bool recv_socket) {
     } else {
         int ret = connect(s_fd, res->ai_addr, res->ai_addrlen);
         if (ret == -1) {
-            std::cout << "Error " << errno << "occurred: " << strerror(errno) << std::endl;
+            std::cout << "Cannot connect socket, Error " << errno << "occurred: " << strerror(errno) << std::endl;
             return -1;
         }
     }

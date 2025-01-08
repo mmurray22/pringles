@@ -5,12 +5,11 @@
 #include <cstring>
 #include <utility>
 
-const std::string PATH_TO_YAML = "yaml/simple_net_ips.yaml";
+const std::string PATH_TO_YAML = "/home/micahrocks/Programming/ringlog/experiments/unit_tests/yaml/simple_net_ips.yaml";
 const uint64_t MAX_WAIT_TIME = 100;
 
-void client() {
-    std::cout << "Simple Net: Client" << std::endl;
-    std::unique_ptr<Network> net = std::make_unique<Network>(0, PATH_TO_YAML);
+void client(std::shared_ptr<Network> net) {
+    std::cout << "Simple Net Client!" << std::endl;
     std::unique_ptr<std::string> buf = std::make_unique<std::string>("Hello, World!");
     std::string val = *buf.get();
     net->add_to_send_queue(std::move(buf));
@@ -18,9 +17,8 @@ void client() {
     return;
 }
 
-void server() {
+void server(std::shared_ptr<Network> net) {
     std::cout << "Simple Net Server!" << std::endl;
-    std::unique_ptr<Network> net = std::make_unique<Network>(0, PATH_TO_YAML);
     std::string expected_string = "Hello, World!";
     std::unique_ptr<std::string> rcv_str = NULL;
     uint64_t wait_time = 10;
@@ -43,8 +41,9 @@ void server() {
 
 int main() {
     std::cout << "Simple Network! Sending on localhost 127.0.0.1" << std::endl;
-    std::thread server_thread(server);
-    std::thread client_thread(client);
+    std::shared_ptr<Network> net = std::make_shared<Network>(1, PATH_TO_YAML);
+    std::thread server_thread(server, net);
+    std::thread client_thread(client, net);
     client_thread.join();
     server_thread.join();
     return 0;
