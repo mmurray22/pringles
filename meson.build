@@ -6,6 +6,7 @@ add_global_arguments('-DSOME_TOKEN=value', language : 'cpp')
 yaml_cpp = dependency('yaml-cpp')
 protoc = find_program('protoc')
 protobuf = dependency('protobuf')
+spdlog = dependency('spdlog')
 add_project_link_arguments(['-lprotobuf'], language: ['cpp'])
 
 # Generate protobuf library

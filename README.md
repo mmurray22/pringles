@@ -27,8 +27,6 @@ L___code: Contains all code for all logs (Pringles and comparisons)
 ## Necessary setup steps: (Debian trixie)
 - I am requiring C++17 and above
 
-- Install cmake (I am using version 3.30.3)
-
 - Install Meson. There are many ways to do this depending on your OS. On debian, follow these instructions: https://packages.debian.org/trixie/meson
 
 - Install protobuf (I am using proco version 3.21.12) 
@@ -36,6 +34,8 @@ Command: `sudo apt install -y protobuf-compiler` (Needs to be protoc --version >
 
 - Install libyaml-cpp (I am using libyaml-cpp version 0.8.0)
 Command `sudo apt install libyaml-cpp-dev`
+
+- SPDLOG: sudo apt install libspdlog-dev
 
 - Add path to ringlog as an environment variable RINGLOG_PATH
 BEST: Add `export RINGLOG_PATH=/path/to/ringlog` to .bashrc

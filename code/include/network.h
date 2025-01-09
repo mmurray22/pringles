@@ -18,7 +18,8 @@ class Network {
         ~Network();
         void add_to_send_queue(std::unique_ptr<std::string> buf);
         std::unique_ptr<std::string> read_from_recv_queue();
-               std::string update_ip_addrs();
+        void done();
+        std::string update_ip_addrs();
         // TODO add: message formatting, custom header creation
         
     private:
@@ -59,7 +60,9 @@ class Network {
 
         // Socket handling
         const uint64_t BACKLOG = 5;
-        int setup_listener_socket(std::string curr_ip, bool recv_socket, struct addrinfo* it);
+        int setup_listener_socket(std::string curr_ip, bool recv_socket);
         int setup_talker_socket(std::string curr_ip, bool recv_socket, struct addrinfo* it);
         void destroy_socket(int s_fd);
+
+        // Create custom header 
 };

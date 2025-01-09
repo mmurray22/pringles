@@ -4,9 +4,10 @@
 #include <iostream>
 #include <cstring>
 #include <utility>
+#include <cassert>
 
 const std::string PATH_TO_YAML = "/home/micahrocks/Programming/ringlog/experiments/unit_tests/yaml/simple_net_ips.yaml";
-const uint64_t MAX_WAIT_TIME = 100000;
+const uint64_t MAX_WAIT_TIME = 100;
 
 void client(std::shared_ptr<Network> net) {
     std::cout << "Simple Net Client!" << std::endl;
@@ -16,7 +17,6 @@ void client(std::shared_ptr<Network> net) {
         net->add_to_send_queue(std::move(buf));
         std::cout << "Message -" << val << "- queued!" << std::endl;
     }
-    return;
 }
 
 void server(std::shared_ptr<Network> net) {
@@ -26,19 +26,18 @@ void server(std::shared_ptr<Network> net) {
     uint64_t wait_time = 10;
     while (true) {
         if (wait_time >= MAX_WAIT_TIME) {
-            std::cout << "No more packets to receive." << std::endl;
-            return;
+            std::cout << "!!!!!!!!!!!!!!No more packets to receive." << std::endl;
+            break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
         wait_time += 10;
+        //std::cout << "CURRENT WAIT TIME: " << wait_time << std::endl;
         rcv_str = net->read_from_recv_queue();
-        if (rcv_str != NULL && *rcv_str.get() == expected_string) {
-            std::cout << "SUCCESS: Strings match! Received string was " << *rcv_str.get() << std::endl;
-        } else if (rcv_str == NULL) {
-            //std::cout << "FAIL: Received string is NULL" << std::endl;
-        } else {
-            std::cout << "FAIL: Received string " << *rcv_str.get() << " differs from expected string " << expected_string << std::endl;
+        if (rcv_str == NULL) {
+            continue;
         }
+        assert (*rcv_str.get() == expected_string);
+        std::cout << "SUCCESS: Strings match! Received string was " << *rcv_str.get() << std::endl;
         wait_time = 10;
     }
 }
@@ -50,5 +49,7 @@ int main() {
     std::thread client_thread(client, net);
     client_thread.join();
     server_thread.join();
+    std::cout << "NET IS DONE" << std::endl;
+    net->done();
     return 0;
 }
