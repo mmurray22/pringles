@@ -25,28 +25,20 @@ L___code: Contains all code for all logs (Pringles and comparisons)
 3. `make`
 
 ## Necessary setup steps: (Debian trixie)
+- See setup.sh for all relevant packages
 - I am requiring C++17 and above
-
-- Install Meson. There are many ways to do this depending on your OS. On debian, follow these instructions: https://packages.debian.org/trixie/meson
-
-- Install protobuf (I am using proco version 3.21.12) 
-Command: `sudo apt install -y protobuf-compiler` (Needs to be protoc --version > 3.x.x)
-
-- Install libyaml-cpp (I am using libyaml-cpp version 0.8.0)
-Command `sudo apt install libyaml-cpp-dev`
-
-- SPDLOG: sudo apt install libspdlog-dev
 
 - Add path to ringlog as an environment variable RINGLOG_PATH
 BEST: Add `export RINGLOG_PATH=/path/to/ringlog` to .bashrc
 OR: Command `export RINGLOG_PATH=/path/to/ringlog`
 
 ## Current build system status:
-09/30: I am using cmake for this project since it is largely built in C++. The cmake bare bones skeleton has been created. 
-Right now, I am only compiling the client C++ source files, but in time I will add all components of the logging
-infrastructure to the CMake build system. The only executable being generated at the moment is a simple client 
-which is meant to unit test the client libraries.
+01/2025: Using Meson build system. Primary commands are:
+- `meson setup builddir && cd builddir`
+- `meson compile`
+- `meson test` // runs unit tests
 
 ## Current Compilation status:
-09/30: Primary codebase does NOT compile :') Will fix ASAP
-09/30: Paper codebase also does NOT compile (missing a sty file)
+01/08/2025: All code currently compiles and passes a single basic test.
+Code consists solely of a networking library at the moment. Other code going
+to be added in as layers on top of networking lib.
