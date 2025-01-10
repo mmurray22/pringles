@@ -9,12 +9,9 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-// PORTS ARE CRUCIAL
-#define SEND_PORT "4950" // TODO: Make this passed in argument?
-
 class Network {
     public:
-        Network(uint64_t maxThreads, std::string ip_file);
+        Network(uint64_t maxThreads, std::string ip_file, std::string send_port);
         ~Network();
         void add_to_send_queue(std::unique_ptr<std::string> buf);
         std::unique_ptr<std::string> read_from_recv_queue();
@@ -60,8 +57,9 @@ class Network {
 
         // Socket handling
         const uint64_t BACKLOG = 5;
+        std::string SEND_PORT;
         int setup_listener_socket(std::string curr_ip, bool recv_socket);
-        int setup_talker_socket(std::string curr_ip, bool recv_socket, struct addrinfo* it);
+        int setup_talker_socket(std::string curr_ip, bool recv_socket, std::unique_ptr<struct addrinfo>& it);
         void destroy_socket(int s_fd);
 
         // Create custom header 

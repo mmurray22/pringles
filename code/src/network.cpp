@@ -10,14 +10,16 @@
 #include "spdlog/spdlog.h"
 #include "yaml-cpp/yaml.h"
 
+
 /*
  * Assumption: Assumes the ip_file is a YAML file that has an entry called
  * "ip_addrs" that indexes to a list of IP address strings
  */
-Network::Network(uint64_t maxThreads, std::string input_yaml) {
+Network::Network(uint64_t maxThreads, std::string input_yaml, std::string send_port) {
+    SEND_PORT = send_port;
     // Initialize initial IP list TODO reading from YAML not working
     YAML::Node config = YAML::LoadFile(input_yaml);
-    uint64_t log_level = config["log_level"].as<uint64_t>();
+    uint64_t log_level = config["log_level"].as<uint64_t>(); // TODO make log level determiation utility function
     if (log_level == 1) { // Prints all log levels except trace
         spdlog::set_level(spdlog::level::debug);
         spdlog::debug("Log level set to: Debug");
@@ -69,7 +71,7 @@ Network::~Network() {
 void Network::run_send() {
     std::string curr_ip = "";
     int s_fd = -1;
-    struct addrinfo* it = (struct addrinfo*)(std::malloc(sizeof (struct addrinfo)));
+    std::unique_ptr<struct addrinfo> it = std::make_unique<struct addrinfo>();
     while (!terminate) {
         // If IP has changed, create new datagram socket
         if (curr_ip != chosen_ip_addr) {
@@ -107,7 +109,6 @@ void Network::run_send() {
         }
         spdlog::info("Successfully sent {} bytes to the receiver.", std::to_string(num_bytes));
     }
-    free(it);
 }
 
 // Queue packets as they are received
@@ -142,9 +143,8 @@ void Network::run_recv() {
         ev.events = 0;
         epoll_ctl(efd, EPOLL_CTL_ADD, s_fd, &ev);
         epoll_wait(efd, &ev, 1, MAX_POLL_TIME); // maxevents??
-        char* buf = (char*)(std::malloc(BUF_SIZE)); // TODO get less bad solution
-        memset(buf, 0, BUF_SIZE);
-        if ((numbytes = recvfrom(s_fd, buf, BUF_SIZE-1, 0, (struct sockaddr *)&src_addr, &addr_len)) == -1) {
+        std::unique_ptr<char[]> buf = std::make_unique<char[]>(BUF_SIZE);  
+        if ((numbytes = recvfrom(s_fd, buf.get(), BUF_SIZE-1, 0, (struct sockaddr *)&src_addr, &addr_len)) == -1) {
             spdlog::critical("Received error number of bytes");
             return;
         }
@@ -152,11 +152,10 @@ void Network::run_recv() {
         //std::cout << "Receiver received the message with num bytes: " << numbytes << std::endl;
         {
             std::unique_lock<std::mutex> lock(rcv_queue_mutex);
-            std::string str(buf);
+            std::string str(buf.get());
             std::unique_ptr<std::string> str_ptr = std::make_unique<std::string>(str);
             rcv_pkt.emplace(std::move(str_ptr));
         }
-        free(buf);
     }
 }
 
@@ -217,7 +216,7 @@ int Network::setup_listener_socket(std::string curr_ip, bool recv_socket) {
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM; //Datagram socket
     hints.ai_flags = AI_PASSIVE;
-    int64_t status = getaddrinfo(curr_ip.c_str(), SEND_PORT, &hints, &servinfo);
+    int64_t status = getaddrinfo(curr_ip.c_str(), SEND_PORT.c_str(), &hints, &servinfo);
     if (status != 0) {
         spdlog::critical("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), status, gai_strerror(status));
         return -1;
@@ -253,7 +252,7 @@ int Network::setup_listener_socket(std::string curr_ip, bool recv_socket) {
 }
 
 /*Sets up a datagram UDP socket for chosen_ip_addr*/  
-int Network::setup_talker_socket(std::string curr_ip, bool recv_socket, struct addrinfo* it) {
+int Network::setup_talker_socket(std::string curr_ip, bool recv_socket, std::unique_ptr<struct addrinfo>& it) {
     struct addrinfo hints, *servinfo, *temp;
     int s_fd;
     if (recv_socket) {
@@ -263,7 +262,7 @@ int Network::setup_talker_socket(std::string curr_ip, bool recv_socket, struct a
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM; //Datagram socket
-    int64_t status = getaddrinfo(curr_ip.c_str(), SEND_PORT, &hints, &servinfo);
+    int64_t status = getaddrinfo(curr_ip.c_str(), SEND_PORT.c_str(), &hints, &servinfo);
     if (status != 0) {
         std::cout << "Cannot get getaddrinfo for IP " << curr_ip.c_str() << ", Error " << status << " occurred: " << gai_strerror(status) << std::endl;
         return -1;
@@ -273,14 +272,14 @@ int Network::setup_talker_socket(std::string curr_ip, bool recv_socket, struct a
             std::cout << "Cannot get socket fd, Error " << errno << " occurred: " << strerror(errno) << std::endl;
             continue;
         }
-        memcpy(it, temp, sizeof (struct addrinfo));
+        memcpy(it.get(), temp, sizeof (struct addrinfo));
         break;
     }
     if (temp == NULL) {
         std::cout << "Socket failed to bind!" << std::endl;
         return -1;
     }
-    std::cout << "IT info: Addr " << it->ai_addr << " Len: " << it->ai_addrlen << std::endl;
+    //std::cout << "IT info: Addr " << it.get()->ai_addr << " Len: " << it.get()->ai_addrlen << std::endl;
     freeaddrinfo(servinfo);
     return s_fd;
 }
@@ -290,7 +289,6 @@ void Network::destroy_socket(int s_fd) {
 }
 
 void Network::stop_threads() {
-    std::cout << "STOP THREAD" << std::endl;
     {
         std::unique_lock<std::mutex> lock(lock_terminate);
         terminate = true;
@@ -302,12 +300,10 @@ void Network::stop_threads() {
     for (uint64_t i = 0; i < send_threads.size(); i++) {
         send_threads[i].join();
     }
-    std::cout << "We here? " << std::endl;
     send_threads.clear();
     for (uint64_t i = 0; i < recv_threads.size(); i++) {
         recv_threads[i].join();
     }
-    std::cout << "RECEIVE THREADS" << std::endl;
     recv_threads.clear();
 }
 
