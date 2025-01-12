@@ -8,12 +8,16 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <utility>
 
 class Network {
     public:
-        Network(uint64_t maxThreads, std::string ip_file, std::string send_port);
+        Network(uint64_t maxThreads, 
+                std::string ip_file, 
+                std::string send_port, 
+                uint64_t protocol_id);
         ~Network();
-        void add_to_send_queue(std::unique_ptr<std::string> buf);
+        void add_to_send_queue(std::unique_ptr<std::string> buf, std::string packet_type = "", int64_t nonce = -1, int64_t cid = -1);
         std::unique_ptr<std::string> read_from_recv_queue();
         void done();
         std::string update_ip_addrs();
@@ -45,14 +49,16 @@ class Network {
         uint64_t curr_ip_addrs_idx;
         std::mutex ip_addrs_idx_mutex;
                
-        // Packet queues & processing
+        // Packet queues & relevant processing data structures
         /* Send Packet queue
          * Assumption: All packets in the queue are of size > 0
          */
-        std::queue<std::unique_ptr<std::string>> send_pkt;
+        std::queue<std::pair<std::string, std::unique_ptr<std::string>>> send_pkt;
         std::mutex send_queue_mutex;
+
         std::queue<std::unique_ptr<std::string>> rcv_pkt;
         std::mutex rcv_queue_mutex;
+        
         bool pkts_in_queue();
 
         // Socket handling
@@ -62,5 +68,6 @@ class Network {
         int setup_talker_socket(std::string curr_ip, bool recv_socket, std::unique_ptr<struct addrinfo>& it);
         void destroy_socket(int s_fd);
 
-        // Create custom header 
+        // Headers
+        uint64_t protocol_id; // Networking protocol you are running
 };

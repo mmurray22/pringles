@@ -175,10 +175,10 @@ struct metadata {
 
 struct headers {
     ethernet_t              ethernet;
+    ipv4_t                  ipv4;
     control_pkt_t           cntrl;
     append_entry_t          append;
     myTunnel_t              myTunnel;
-    ipv4_t                  ipv4;
 }
 
 /*************************************************************************
@@ -196,11 +196,11 @@ parser MyParser(packet_in packet,
 
     state parse_ethernet {
         packet.extract(hdr.ethernet);
+        transition parse_ipv4;
         transition select(hdr.ethernet.etherType) {
             TYPE_CONTROL: parse_control;
             TYPE_CLI_SEQ: parse_client_seq;
             TYPE_TUNNEL: parse_tunnel;
-            TYPE_IPV4: parse_ipv4;
             TYPE_APPEND: parse_append;
 	    default: accept;
         }
@@ -231,7 +231,7 @@ parser MyParser(packet_in packet,
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
-        transition accept;
+        transition parse_ethernet;
     }
 }
 
