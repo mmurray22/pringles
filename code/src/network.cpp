@@ -1,45 +1,34 @@
 #include "network.h"
+#include <netinet/if_ether.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
+#include <net/ethernet.h>
+#include <linux/ip.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <iostream>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <fcntl.h>
-#include "spdlog/spdlog.h"
 #include "yaml-cpp/yaml.h"
 #include "structs.h"
+#include "utils.h"
+#include "spdlog/spdlog.h"
 
 /*
  * Assumption: Assumes the ip_file is a YAML file that has an entry called
  * "ip_addrs" that indexes to a list of IP address strings
  */
 Network::Network(uint64_t maxThreads, std::string input_yaml, std::string send_port, uint64_t protocol_id) {
+    // automated check to see if program is being run with sudo TODO
     SEND_PORT = send_port;
-    this.protocol_id = protocol_id;
+    this->protocol_id = protocol_id;
 
     // Initialize initial IP list TODO reading from YAML not working
     YAML::Node config = YAML::LoadFile(input_yaml);
     uint64_t log_level = config["log_level"].as<uint64_t>(); // TODO make log level determiation utility function
-    if (log_level == 1) { // Prints all log levels except trace
-        spdlog::set_level(spdlog::level::debug);
-        spdlog::debug("Log level set to: Debug");
-    } else if (log_level == 2) { // Prints error and critical
-        spdlog::set_level(spdlog::level::err);
-        spdlog::error("Log level set to: Error");
-    } else if (log_level == 3) { // Prints warn, error, and critical
-        spdlog::set_level(spdlog::level::warn);
-        spdlog::warn("Log level set to: Warn");
-    } else if (log_level == 4) { // Prints all but debug and trace
-        spdlog::set_level(spdlog::level::info);
-        spdlog::debug("Log level set to: Info");
-    } else if (log_level == 5) { // Prints all log levels
-        spdlog::set_level(spdlog::level::trace);
-        spdlog::debug("Log level set to: Trace");
-    } else { // Prints only critical
-        spdlog::set_level(spdlog::level::critical);
-        spdlog::critical("Log level set to: Critical");
-    }
+    set_spdlog_level(log_level); 
     for (std::size_t i=0; i< config["ip_addrs"].size(); i++) {
         std::string ip_addr = config["ip_addrs"][i].as<std::string>();
         all_ip_addrs.emplace_back(ip_addr); 
@@ -67,6 +56,16 @@ Network::~Network() {
     stop_threads();
 }
 
+unsigned short Network::checksum(unsigned short *buf, int nwords) {
+    unsigned long sum;
+    for(sum=0; nwords>0; nwords--) {
+        sum += *buf++;
+    }
+    sum = (sum >> 16) + (sum &0xffff);
+    sum += (sum >> 16);
+    return (unsigned short)(~sum);
+}
+
 // Threadpool send thread function
 // Send packets as they are queued
 void Network::run_send() {
@@ -82,7 +81,7 @@ void Network::run_send() {
             if (s_fd > -1) {
                 destroy_socket(s_fd);
             }
-            s_fd = setup_talker_socket(curr_ip, false, it);
+            s_fd = setup_talker_socket(curr_ip, it);
             if (s_fd < 0) {
                 spdlog::critical("SENDER Socket creation unsuccessful. Aborting");
                 return;
@@ -114,14 +113,15 @@ void Network::run_send() {
             spdlog::info("Successfully sent {} bytes to the receiver.", std::to_string(num_bytes));
             continue;
         }
-        size_t size_of_hdr = 0;
-        auto hdr = get_ptr_and_size(pkt_type, &size_of_hdr); // TODO make magic function work
-        std::unique_pointer<char[]> packet = std::make_unique<char[]>(sizeof struct iphdr + size_of_hdr + (*send_packet.get()).length());
-        
+        size_t size_of_hdr = get_size_of_hdr(pkt_type, protocol_id);
+        std::unique_ptr<char[]> packet = std::make_unique<char[]>(sizeof(struct iphdr) + size_of_hdr + (*send_packet.get()).length());
+        size_t packet_size = sizeof(struct iphdr) + size_of_hdr + (*send_packet.get()).length();
+        std::string src_ip = "127.0.0.1"; // TODO: Where to get the src from?? prob attach to interface?
+
         struct sockaddr_in sin;
         sin.sin_family = AF_INET;
         sin.sin_port = htons(std::stoi(SEND_PORT));
-        sin.sin_addr.s_addr = curr_ip.c_str();
+        sin.sin_addr.s_addr = inet_addr(src_ip.c_str());
         std::unique_ptr<struct iphdr> ip = std::make_unique<struct iphdr>();
         ip.get()->ihl      = 5; //version length
         ip.get()->version  = 4; // version; should we allow for ipv6?
@@ -129,32 +129,50 @@ void Network::run_send() {
         ip.get()->tot_len  = sizeof(struct iphdr) + size_of_hdr; // total length of packet header
         ip.get()->id       = htons(54321); // default ID number for ip packet
         ip.get()->ttl      = 64; // default hops; circle back in case of change
-        ip.get()->protocol = 150; // Unassigned: Custom protocol
+        ip.get()->protocol = IPPROTO_RAW; // Unassigned: Custom protocol
 
-        // source IP address, can use spoofed address here
-        ip.get()->saddr = /*get source address TODO*/; // source address
-        ip.get()->daddr = curr_ip.c_str(); // destination address
-
-        ip.get()->check = csum((unsigned short *)buffer,
-                   sizeof(struct iphdr) + size_of_hdr); // TODO: Add checksum function
-        memcpy(ip.get(), 0, sizeof struct iphdr);
-        memcpy(hdr.get(), sizeof struct iphdr, size_of_hdr);
-        memcpy(send_packet.get(), sizeof struct iphdr + size_of_hdr, (*send_packet.get()).length());
+        ip.get()->saddr = inet_addr(src_ip.c_str()); // source address
+        ip.get()->daddr = inet_addr(curr_ip.c_str()); // destination address
+        memcpy(packet.get(), ip.get(), sizeof(struct iphdr));
+        ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header
+                
+        /*Protocol specific code starts*/
+        if (protocol_id == 1) { // Corfu TODO NONCE AND CID NEEDED HOW TO PASS THAT IN??
+            if (pkt_type == "get_seq_no") {
+                std::unique_ptr<struct get_sequence_number> hdr = create_get_sequence_num(0);
+                memcpy(packet.get() + sizeof(struct iphdr), hdr.get(), size_of_hdr);
+            }
+        } else if (protocol_id == 2) { // Ringlog
+            if (pkt_type == "append_req") {
+                std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(0, 0);
+                memcpy(packet.get() + sizeof(struct iphdr), hdr.get(), size_of_hdr);
+            } else if (pkt_type == "append_resp") {
+                std::unique_ptr<struct ring_append_success> hdr = create_ring_append_reply(0, 0);
+                memcpy(packet.get() + sizeof(struct iphdr), hdr.get(), size_of_hdr);
+            }
+        }
+        spdlog::debug("Size of custom header is: {} and total packet size is {}", size_of_hdr, packet_size);
+        /*Protocol specific code ends*/
+        memcpy(packet.get() + sizeof(struct iphdr) + size_of_hdr, (*send_packet.get()).c_str(), (*send_packet.get()).length());
+        //spdlog::debug();
         ssize_t num_bytes = 0;
-        if ((num_bytes = sendto(s_fd, packet.get(), ip.get()->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin))) < 0 || 
-                ((uint64_t)num_bytes != (*send_packet.get()).length())) {
+        if ((num_bytes = sendto(s_fd, packet.get(), packet_size, 0, (struct sockaddr *)&sin, sizeof(sin))) < 0 || 
+                ((uint64_t)num_bytes != (sizeof(struct iphdr) + size_of_hdr + (*send_packet.get()).length()))) {
             spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
+            spdlog::debug("Num bytes sent: {} vs. expected: {}", num_bytes, (sizeof(struct iphdr) + size_of_hdr + (*send_packet.get()).length()));
             continue;
         }
         spdlog::info("Successfully sent {} bytes to the receiver.", std::to_string(num_bytes));
     }
 }
 
+
 // Queue packets as they are received
 void Network::run_recv() {
     spdlog::info("RUNNING RECV THREAD");
     std::string curr_ip = "";
-    int s_fd, efd = -1;
+    int s_fd = -1;
+    int efd = -1;
     int numbytes;
     while (!terminate) {
         struct sockaddr_storage src_addr;
@@ -165,7 +183,7 @@ void Network::run_recv() {
             if (s_fd > -1) {
                 destroy_socket(s_fd);
             }
-            s_fd = setup_listener_socket(curr_ip, true);
+            s_fd = setup_listener_socket(curr_ip); // TODO follow instructions on man page for packet
             if (s_fd < 0) {
                 spdlog::critical("RECEIVER Socket creation unsuccessful. Aborting");
                 return;
@@ -182,16 +200,24 @@ void Network::run_recv() {
         ev.events = 0;
         epoll_ctl(efd, EPOLL_CTL_ADD, s_fd, &ev);
         epoll_wait(efd, &ev, 1, MAX_POLL_TIME); // maxevents??
+        
         std::unique_ptr<char[]> buf = std::make_unique<char[]>(BUF_SIZE);  
         if ((numbytes = recvfrom(s_fd, buf.get(), BUF_SIZE-1, 0, (struct sockaddr *)&src_addr, &addr_len)) == -1) {
             spdlog::critical("Received error number of bytes");
             return;
         }
-        buf[numbytes] = '\0';
-        //std::cout << "Receiver received the message with num bytes: " << numbytes << std::endl;
+        /*struct ethhdr* eth = (struct ethhdr*)buf.get();
+        std::cout << "Eth protocol: " << eth->h_proto;*/
+        size_t custom_hdr_size = 0; //get_header_size(eth->h_proto);
+        // TODO TODO add post receive processing
+        // TODO TODO ADD THE PROCESSING OF THE ETHERNET HEADER TO READ THE TYPE AND THE DYAMICALLY DETERMINE THE HEADER
+        char* rcv_str = (char*)(buf.get() + sizeof(struct iphdr) + 28/*TODO custom_hdr_size*/);
+
+        spdlog::debug("Receiver received the message with num bytes: {}, eth hdr: {}, ip hdr: {}, append hdr: {}", std::to_string(numbytes), std::to_string(sizeof(struct ethhdr)), std::to_string(sizeof(struct iphdr)), std::to_string(custom_hdr_size));
         {
             std::unique_lock<std::mutex> lock(rcv_queue_mutex);
-            std::string str(buf.get());
+            std::string str(rcv_str);
+            spdlog::debug("The string is: {}", str);
             std::unique_ptr<std::string> str_ptr = std::make_unique<std::string>(str);
             rcv_pkt.emplace(std::move(str_ptr));
         }
@@ -200,9 +226,7 @@ void Network::run_recv() {
 
 // this is the compiled pointer to protobuf string
 void Network::add_to_send_queue(std::unique_ptr<std::string> buf, 
-                                std::string packet_type = "", 
-                                int64_t nonce = -1, 
-                                int64_t cid = -1) {
+                                std::string packet_type) {
     std::unique_lock<std::mutex> lock(send_queue_mutex);
     if (terminate) {
         spdlog::info("No more packets accepted!");
@@ -246,19 +270,38 @@ bool Network::pkts_in_queue() {
     return busy;
 }
 
-/*Sets up a datagram UDP socket for chosen_ip_addr*/  
-int Network::setup_listener_socket(std::string curr_ip, bool recv_socket) {
+/*Sets up a datagram receiver socket for chosen_ip_addr*/  
+int Network::setup_listener_socket(std::string curr_ip) {
     struct addrinfo hints, *servinfo, *temp;
     int s_fd;
     int yes = 1;
-    //struct sockaddr_storage their_addr;
+    if (protocol_id != 0) {
+        if ((s_fd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW/*htons(ETH_P_ALL)*/)) == -1) { // TODO TODO: INCORRECT CHANGE TO AF_PACKET AS PER MAN 7 packet
+            spdlog::critical("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), std::to_string(errno), strerror(errno));
+            return -1;
+        }
+        spdlog::debug("Created raw receive socket of fd {}", s_fd);
+        /*if (setsockopt(s_fd, IPPROTO_IP, SO_REUSEADDR | IP_HDRINCL, &yes, sizeof(int)) == -1) {
+            spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+            return -1;
+        }*/
+        /*if (bind(s_fd, curr_ip.c_str(), ) == -1) {
+        }*/
+        int flags = fcntl(s_fd, F_GETFL, 0);
+        if (flags == -1) return false;
+        flags = flags | O_NONBLOCK;
+        if (fcntl(s_fd, F_SETFL, flags) != 0) {
+            spdlog::critical("UNABLE TO SET FCNTL FLAGS");
+        }
+        return s_fd;
+    }
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_DGRAM; //Datagram socket
+    hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags = AI_PASSIVE;
     int64_t status = getaddrinfo(curr_ip.c_str(), SEND_PORT.c_str(), &hints, &servinfo);
     if (status != 0) {
-        spdlog::critical("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), status, gai_strerror(status));
+        spdlog::critical("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), std::to_string(status), gai_strerror(status));
         return -1;
     }
     for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
@@ -266,12 +309,12 @@ int Network::setup_listener_socket(std::string curr_ip, bool recv_socket) {
             spdlog::critical("Cannot get socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
             continue;
         }
-        if (recv_socket && setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes, sizeof(int)) == -1) {
-            spdlog::critical("Cannot get socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        if (setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes, sizeof(int)) == -1) {
+            spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
             freeaddrinfo(servinfo);
             return -1;
         }
-        if (recv_socket && bind(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
+        if (bind(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
             close(s_fd);
             spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
             continue;
@@ -286,21 +329,28 @@ int Network::setup_listener_socket(std::string curr_ip, bool recv_socket) {
     int flags = fcntl(s_fd, F_GETFL, 0);
     if (flags == -1) return false;
     flags = flags | O_NONBLOCK;
-    if (fcntl(s_fd, F_SETFL, flags) != 0) 
+    if (fcntl(s_fd, F_SETFL, flags) != 0) {
         spdlog::critical("UNABLE TO SET FCNTL FLAGS");
+    }
     return s_fd;
 }
 
 /*Sets up a datagram UDP socket for chosen_ip_addr*/  
-int Network::setup_talker_socket(std::string curr_ip, bool recv_socket, std::unique_ptr<struct addrinfo>& it) {
+int Network::setup_talker_socket(std::string curr_ip, std::unique_ptr<struct addrinfo>& it) {
     struct addrinfo hints, *servinfo, *temp;
     int s_fd;
+    //int yes = 1;
     if (protocol_id != 0) { // All Raw socket communications ONLY use IPv4...TODO?
         hints.ai_socktype = SOCK_RAW; // Raw socket
-        if ((s_fd = socket(AF_INET, SOCK_RAW, 150/*TODO make macro*/)) == -1) {
+        if ((s_fd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) == -1) {
             spdlog::critical("Unable to create raw socket! Error {} occurred: {}", std::to_string(errno), strerror(errno));
             return -1;
         }
+        spdlog::debug("Created raw receive socket of fd {}", s_fd);
+        /*if (setsockopt(s_fd, IPPROTO_IP, SO_REUSEADDR | IP_HDRINCL, &yes, sizeof(int)) == -1) {
+            spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+            return -1;
+        }*/
         return s_fd;
     }
     memset(&hints, 0, sizeof hints);
@@ -308,7 +358,7 @@ int Network::setup_talker_socket(std::string curr_ip, bool recv_socket, std::uni
     hints.ai_socktype = SOCK_DGRAM; // Normal UDP Datagram Socket
     int64_t status = getaddrinfo(curr_ip.c_str(), SEND_PORT.c_str(), &hints, &servinfo);
     if (status != 0) {
-        std::cout << "Cannot get getaddrinfo for IP " << curr_ip.c_str() << ", Error " << status << " occurred: " << gai_strerror(status) << std::endl;
+        spdlog::debug("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), status, gai_strerror(status));
         return -1;
     }
     for (temp = servinfo; temp != NULL; temp = temp->ai_next) {

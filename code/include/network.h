@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <utility>
 
+
+
 class Network {
     public:
         Network(uint64_t maxThreads, 
@@ -17,13 +19,20 @@ class Network {
                 std::string send_port, 
                 uint64_t protocol_id);
         ~Network();
-        void add_to_send_queue(std::unique_ptr<std::string> buf, std::string packet_type = "", int64_t nonce = -1, int64_t cid = -1);
+        void add_to_send_queue(std::unique_ptr<std::string> buf, std::string packet_type = "");
         std::unique_ptr<std::string> read_from_recv_queue();
         void done();
         std::string update_ip_addrs();
         // TODO add: message formatting, custom header creation
         
     private:
+        const int64_t CUSTOM_IP_PROTOCOL = 4;          
+
+        // Headers
+        uint64_t protocol_id; // Networking protocol you are running
+        unsigned short checksum(unsigned short *buf, int nwords); // checksum for IP packet header construction
+
+        
         // Thread
         const uint64_t BUF_SIZE = 1000;
         std::mutex lock_terminate;
@@ -64,10 +73,7 @@ class Network {
         // Socket handling
         const uint64_t BACKLOG = 5;
         std::string SEND_PORT;
-        int setup_listener_socket(std::string curr_ip, bool recv_socket);
-        int setup_talker_socket(std::string curr_ip, bool recv_socket, std::unique_ptr<struct addrinfo>& it);
+        int setup_listener_socket(std::string curr_ip);
+        int setup_talker_socket(std::string curr_ip, std::unique_ptr<struct addrinfo>& it);
         void destroy_socket(int s_fd);
-
-        // Headers
-        uint64_t protocol_id; // Networking protocol you are running
 };
