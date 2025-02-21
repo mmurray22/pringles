@@ -20,23 +20,52 @@
 
 const uint64_t MAX_WAIT_TIME = 100;
 
+void client(std::shared_ptr<Network> net) {
+    spdlog::info("Simple Net Client!");
+    for (int i = 0; i < 3; i++) {
+        std::unique_ptr<std::string> buf = std::make_unique<std::string>("Hello, World!");
+        std::string val = *buf.get();
+        net->add_to_send_queue(std::move(buf));
+        spdlog::debug("Message {} queued!", val);
+    }
+}
+
+void server(std::shared_ptr<Network> net) {
+    spdlog::info("Simple Net Server!");
+    std::string expected_string = "Hello, World!";
+    std::unique_ptr<std::string> rcv_str = NULL;
+    uint64_t wait_time = 10;
+    while (true) {
+        if (wait_time >= MAX_WAIT_TIME) {
+            spdlog::debug("!!!!!!!!!!!!!!No more packets to receive.");
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
+        wait_time += 10;
+        rcv_str = net->read_from_recv_queue();
+        if (rcv_str == NULL) {
+            continue;
+        }
+        assert (*rcv_str.get() == expected_string);
+        spdlog::info("SUCCESS: Strings match! Received string was {}", *rcv_str.get());
+        wait_time = 10;
+    }
+}
+
 void custom_client(std::shared_ptr<Network> net, std::shared_ptr<Trace<std::string>> trace) {
     spdlog::info("Simple Net Client!");
     for (auto it = trace->trace_vals.begin(); it != trace->trace_vals.end(); it++) {
-        spdlog::debug("Message to queue: {}", it->second);
         std::unique_ptr<std::string> buf = std::make_unique<std::string>(it->second);
         std::string pkt_type = it->first;
         net->add_to_send_queue(std::move(buf), pkt_type);
+        spdlog::debug("Message {} queued!", *buf.get());
     }
 }
 
 void custom_server(std::shared_ptr<Network> net, std::shared_ptr<Trace<std::string>> trace) {
-    (void) net;
-    (void) trace;
     spdlog::info("Simple Net Server!");
     std::unique_ptr<std::string> rcv_str = NULL;
     uint64_t wait_time = 10;
-    uint64_t it_over_trace = 0;
     auto it = trace->trace_vals.begin();
     while (it != trace->trace_vals.end()) {
         if (wait_time >= MAX_WAIT_TIME) {
@@ -52,12 +81,11 @@ void custom_server(std::shared_ptr<Network> net, std::shared_ptr<Trace<std::stri
         spdlog::debug("Received string: {}", std::to_string((*rcv_str.get()).length()));
         assert (*rcv_str.get() == it->second);
         spdlog::info("SUCCESS: Strings match! Received string was {}", *rcv_str.get());
-        it_over_trace += 1;
         ++it;
         wait_time = 10;
     }
     if (it != trace->trace_vals.end()) {
-        spdlog::critical("Failed to receive the entire trace! Only received: {}", it_over_trace);
+        spdlog::critical("Failed to receive the entire trace!");
         assert(1 == 0);
     }
     spdlog::critical("SUCCESS: All strings matched and the entire trace was received.");
@@ -72,14 +100,21 @@ int main(int argc, char* argv[]) {
 
     std::shared_ptr<Network> custom_net = std::make_shared<Network>(get_threads(config), 
                                                                     get_ips(config), 
-                                                                    get_send_port(config), 
-                                                                    get_recv_port(config),
+                                                                    get_port(config), 
                                                                     get_protocol(config), 
                                                                     get_log_level(config));
     set_spdlog_level(get_log_level(config));
     spdlog::info("Simple Network! Sending on localhost 127.0.0.1");
     std::shared_ptr<Trace<std::string>> trace = std::make_shared<Trace<std::string>>(get_trace_file(config));
    
+    /*uint64_t protocol_id = 0;
+    std::shared_ptr<Network> net = std::make_shared<Network>(1, PATH_TO_YAML, str, protocol_id);
+    std::thread server_thread(server, net);
+    std::thread client_thread(client, net);
+    client_thread.join();
+    server_thread.join();
+    net->done();*/
+
     std::thread server_thread(custom_server, custom_net, trace);
     std::thread client_thread(custom_client, custom_net, trace);
     client_thread.join();

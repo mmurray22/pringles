@@ -12,6 +12,13 @@
 #define CORFU 1
 #define RING 2
 
+/*New ethernet header types*/
+#define ETH_CLI_SEQ 0x1414
+#define ETH_APPEND_REQ 0x0860
+#define ETH_APPEND_RESP 0x861
+#define ETH_READ 0x870
+#define ETH_TAIL 0x840
+
 /* UDP - no need to define, already in SOCK_DGRAM */
 
 /* Corfu Log w/ Programmable Switches API */
@@ -67,6 +74,8 @@ struct ring_append_success {
 /*template <typename T>
 std::unique_ptr<T> get_ptr_and_size(std::string pkt_type, size_t &size_of_hdr, int64_t nonce = 0, int64_t cid = 0);*/
 size_t get_size_of_hdr(std::string pkt_type, uint64_t protocol_id);
+size_t get_size_of_hdr_int(int pkt_type, uint64_t protocol_id);
+int get_eth_type(std::string pkt_type, uint64_t protocol_id);
 
 //Creation functions
 std::unique_ptr<struct get_sequence_number> create_get_sequence_num(int64_t cid);

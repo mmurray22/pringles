@@ -10,14 +10,14 @@
 #include <sys/types.h>
 #include <utility>
 
-
-
 class Network {
     public:
         Network(uint64_t maxThreads, 
-                std::string ip_file, 
+                std::vector<std::string> ips, 
                 std::string send_port, 
-                uint64_t protocol_id);
+                std::string recv_port,
+                uint64_t protocol_id,
+                uint64_t log_level);
         ~Network();
         void add_to_send_queue(std::unique_ptr<std::string> buf, std::string packet_type = "");
         std::unique_ptr<std::string> read_from_recv_queue();
@@ -31,7 +31,6 @@ class Network {
         // Headers
         uint64_t protocol_id; // Networking protocol you are running
         unsigned short checksum(unsigned short *buf, int nwords); // checksum for IP packet header construction
-
         
         // Thread
         const uint64_t BUF_SIZE = 1000;
@@ -73,7 +72,9 @@ class Network {
         // Socket handling
         const uint64_t BACKLOG = 5;
         std::string SEND_PORT;
+        std::string RECV_PORT;
         int setup_listener_socket(std::string curr_ip);
         int setup_talker_socket(std::string curr_ip, std::unique_ptr<struct addrinfo>& it);
+        int setup_raw_talker_socket();
         void destroy_socket(int s_fd);
 };

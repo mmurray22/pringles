@@ -7,3 +7,4 @@
 install_headers('utils.h')
 install_headers('structs.h')
 install_headers('network.h')
+install_headers('trace.h')

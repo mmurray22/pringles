@@ -2,10 +2,6 @@ syntax="proto3";
 
 package ringclient;
 
-message AppendEntry {
-    LogEntry log_entry=1;
-}
-
 message LogEntry {
     string entry=1;
 }

@@ -1,0 +1,3 @@
+[submodule "experiments/comparison-systems/scalog"]
+	path = experiments/comparison-systems/scalog
+	url = https://github.com/chn0318/scalog.git

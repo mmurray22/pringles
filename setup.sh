@@ -10,3 +10,5 @@ sudo apt install dpkg-dev
 sudo apt install -y protobuf-compiler # Needs to be at least v3.x.x
 sudo apt install libyaml-cpp-dev
 sudo apt install libspdlog-dev
+sudo apt install meson
+sudo apt install pkg-config
