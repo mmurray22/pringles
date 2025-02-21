@@ -27,13 +27,13 @@ L___README.md: File with general info about the project and the repo
 Key components of the codebase:
 - Network class: The underlying networking library which sends and receives all messages for all supported logging protocols. Contains a threadpool for the sending of messages. supports UDP and custom raw packets, and will support message batching (TODO).
 - Trace class: This class ingests a text file with two space separated columns, with the first column specifying the type of request (e.g. append, read, etc.) and the second column specifying the actual payload of the request.
-- Base Client class:
-- Base Storage class: 
+- Base Client class: Sets up a virtual class from which all client classes for custom logging protocols can be derived. Contains core functions including append, read, subscribe, getTail, and trim.
+- Base Storage class: Sets up a virtual class from which all storage server classes for custom logging protocols can be derived. Contains core functions including getting from and writing to a KV store of indices --> values
 - Structs/Custom headers: Contains all the custom headers used by all logging protocols and helper functions for their construction/destruction.
 - Utils: A collection of general purpose functions, which are mostly focused on YAML parsing.
 
 ## How to Setup and Compile
-See setup.sh for all relevant packages. C++17 at minimum required.
+See setup.sh for all relevant packages. C++17 at minimum required. If you are using cloudlab for testing, you can use the Cloudlab profile `run-pringles` which already has the appropriate packages.
 
 To compile, follow these steps:
 1. `cd /path/to/ringlog`
