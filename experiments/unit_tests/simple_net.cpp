@@ -23,9 +23,9 @@ const uint64_t MAX_WAIT_TIME = 100;
 void custom_client(std::shared_ptr<Network> net, std::shared_ptr<Trace<std::string>> trace) {
     spdlog::info("Simple Net Client!");
     for (auto it = trace->trace_vals.begin(); it != trace->trace_vals.end(); it++) {
-        spdlog::debug("Message to queue: {}", it->second);
-        std::unique_ptr<std::string> buf = std::make_unique<std::string>(it->second);
-        std::string pkt_type = it->first;
+        spdlog::debug("Message to queue: {}", it->first);
+        std::unique_ptr<std::string> buf = std::make_unique<std::string>(it->first);
+        std::string pkt_type = it->second;
         net->add_to_send_queue(std::move(buf), pkt_type);
     }
 }
@@ -37,8 +37,7 @@ void custom_server(std::shared_ptr<Network> net, std::shared_ptr<Trace<std::stri
     std::unique_ptr<std::string> rcv_str = NULL;
     uint64_t wait_time = 10;
     uint64_t it_over_trace = 0;
-    auto it = trace->trace_vals.begin();
-    while (it != trace->trace_vals.end()) {
+    while (it_over_trace < trace->trace_vals.size()) {
         if (wait_time >= MAX_WAIT_TIME) {
             spdlog::debug("!!!!!!!!!!!!!!No more packets to receive.");
             break;
@@ -50,13 +49,12 @@ void custom_server(std::shared_ptr<Network> net, std::shared_ptr<Trace<std::stri
             continue;
         }
         spdlog::debug("Received string: {}", std::to_string((*rcv_str.get()).length()));
-        assert (*rcv_str.get() == it->second);
+        assert (trace->trace_vals.find(*rcv_str.get()) != trace->trace_vals.end()); // TODO: worry about duplicates??
         spdlog::info("SUCCESS: Strings match! Received string was {}", *rcv_str.get());
         it_over_trace += 1;
-        ++it;
         wait_time = 10;
     }
-    if (it != trace->trace_vals.end()) {
+    if (it_over_trace < trace->trace_vals.size()) {
         spdlog::critical("Failed to receive the entire trace! Only received: {}", it_over_trace);
         assert(1 == 0);
     }

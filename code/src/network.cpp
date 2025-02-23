@@ -278,7 +278,7 @@ void Network::run_recv() {
             continue;
         }
         // TODO TODO ADD THE PROCESSING OF THE ETHERNET HEADER TO READ THE TYPE AND THE DYAMICALLY DETERMINE THE HEADER
-        char* rcv_str = (char*)(buf.get() + sizeof(struct iphdr) + 28/*TODO custom_hdr_size*/);
+        char* rcv_str = (char*)(buf.get() + sizeof(struct ethhdr) + sizeof(struct iphdr) + custom_hdr_size);
 
         spdlog::debug("Receiver received the message with num bytes: {}, eth hdr: {}, ip hdr: {}, append hdr: {}", std::to_string(numbytes), std::to_string(sizeof(struct ethhdr)), std::to_string(sizeof(struct iphdr)), std::to_string(custom_hdr_size));
         {

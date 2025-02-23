@@ -14,8 +14,9 @@ Trace<T>::Trace(std::string filename) {
     T val;
     while (txt >> op >> val) {
         spdlog::debug("Operation: {}, Val: {}", op, val);
-        trace_vals.emplace(op, val);
+        trace_vals.emplace(val, op);
     }
+    spdlog::debug("Size of map: {}", trace_vals.size());
 }
 
 template <typename T>
