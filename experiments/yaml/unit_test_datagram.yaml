@@ -1,0 +1,10 @@
+---
+loglevel: 1
+ip_list: 
+  - ip: "127.0.0.1"
+send_port: "4950"
+recv_port: "9405"
+threads: 1
+protocol: 2
+trace_file: "/home/micahrocks/Programming/ringlog/experiments/traces/unit_test_datagram.txt"
+...

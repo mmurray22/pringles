@@ -5,7 +5,9 @@
 
 const bit<16> TYPE_TUNNEL = 0x1212;
 const bit<16> TYPE_IPV4  = 0x0800;
-const bit<16> TYPE_CONTROL = 0x0820;
+
+// Currently unused ethernet types 
+const bit<16> TYPE_CONTROL = 0x0820; // only for the switches
 const bit<16> TYPE_CLI_SEQ = 0x1414;
 const bit<16> TYPE_APPEND = 0x0860;
 const bit<16> TYPE_READ = 0x0870;
@@ -175,10 +177,10 @@ struct metadata {
 
 struct headers {
     ethernet_t              ethernet;
+    ipv4_t                  ipv4;
     control_pkt_t           cntrl;
     append_entry_t          append;
     myTunnel_t              myTunnel;
-    ipv4_t                  ipv4;
 }
 
 /*************************************************************************
@@ -196,11 +198,11 @@ parser MyParser(packet_in packet,
 
     state parse_ethernet {
         packet.extract(hdr.ethernet);
+        transition parse_ipv4;
         transition select(hdr.ethernet.etherType) {
             TYPE_CONTROL: parse_control;
             TYPE_CLI_SEQ: parse_client_seq;
             TYPE_TUNNEL: parse_tunnel;
-            TYPE_IPV4: parse_ipv4;
             TYPE_APPEND: parse_append;
 	    default: accept;
         }
@@ -231,7 +233,7 @@ parser MyParser(packet_in packet,
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
-        transition accept;
+        transition parse_ethernet;
     }
 }
 
@@ -254,6 +256,12 @@ control MyIngress(inout headers hdr,
    
     /** Registers **/
 
+    /// Sequencing state
+    register<bit<32>>(1) local_seq_no; // Rack local sequence number. Reset each time it's added to global counter
+    register<bit<32>>(1) global_seq_no; // Latest global sequence number known to the switch.  TODO confusing names :/ 
+    register<bit<32>>(1) highest_seen_seq_no; // Latest global sequence number known to the ring. Updated every time control packet is received
+ 
+
     /// Ring State
     register<bit<32>>(1) pred_switch_id; // ID of the switch immediately before this switch in the ring
     register<bit<32>>(1) succ_switch_id; // ID of the switch immediately following this switch in the ring
@@ -261,9 +269,6 @@ control MyIngress(inout headers hdr,
     register<bit<32>>(1) iteration; // Used to track stale packets
 
     /// Local Switch State
-    register<bit<32>>(1) local_seq_cntr; // Rack local sequence number. Reset each time it's added to global counter
-    register<bit<32>>(1) global_offset; // Latest global sequence number known to the switch.  TODO confusing names :/ 
-    register<bit<32>>(1) known_global_seq_no; // Latest global sequence number known to the ring. Updated every time control packet is received
     register<bit<1>>(IDX_SET_SIZE) idx_buf; // Tracks every index which is being actively processed by the switch's storage shard NO REMOVE FUNCTION TODO
     register<bit<32>>(NUM_BLOOM_HASH) k_bloom_pos;
     register<bit<1>>(1) value_not_found;
@@ -375,36 +380,50 @@ control MyIngress(inout headers hdr,
         }
     }
 
-    apply {
+    action process_cntrl_pkt() {
+        bit<32> ring_view_reg;
+        bit<32> global_seq_no;
+        bit<32> local_seq_no;
+        bit<32> highest_seq_no;
+        ring_view.read(ring_view_reg, 0);
+            
+        // Step 0: Check if the control packet's view is outdated
+        if (hdr.cntrl.ring_view < ring_view_reg) {
+            drop(); // TODO don't just drop it lol
+            return;
+        }
+        // Step 1: Update global sequence number
+        if (hdr.cntrl.global_seq_no > global_seq_no || hdr.cntrl.highest_seq_no > highest_seen_seq_no) {
+            global_seq_no.write(0, highest_seen_seq_no)
+            cntrl.hdr.global_seq_no = global_seq_no
+        }
+
+        // Step 2: Update control packet + local highest seen seq no
+        highest_seen_seq_no.write(0, hdr.cntrl.highest_seq_no + local_seq_no)
+        hdr.cntrl.highest_seq_no = highest_seen_seq_no
+
+
+        // Update control packet global seq number
+        bit<32> local_seq_cntr_reg;
+        local_seq_cntr.read(local_seq_cntr_reg, 0);
+        hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + local_seq_cntr_reg;
+        
+        // Update global offset on the switch
+        global_offset.write(0, hdr.cntrl.global_seq_no);
+
+        // Update the local seq no register
+        local_seq_cntr.write(0, 0);
+
+        // Set which switch/group to forward message to
+        standard_metadata.mcast_grp = 1;
+    }
+
+    apply { // Parcel all header state changes into actions TODO 
 
         /** Process Control packets **/
-        if (hdr.cntrl.isValid()) {
-            bit<32> ring_view_reg;
-            ring_view.read(ring_view_reg, 0);
-            
-            // If the control packet's view is outdated
-            if (hdr.cntrl.ring_view < ring_view_reg) {
-                drop();
-                return;
-            }
-
-            // Record most recent global seq number
-            known_global_seq_no.write(0, hdr.cntrl.global_seq_no);
-            
-            // Update control packet global seq number
-            bit<32> local_seq_cntr_reg;
-            local_seq_cntr.read(local_seq_cntr_reg, 0);
-            hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + local_seq_cntr_reg;
-          
-            // Update global offset on the switch
-            global_offset.write(0, hdr.cntrl.global_seq_no);
-
-            // Update the local seq no register
-            local_seq_cntr.write(0, 0);
-
-            // Set which switch/group to forward message to
-            standard_metadata.mcast_grp = 1;
-	    }
+        if (hdr.cntrl.isValid()) { // composed of 3 steps
+            process_cntrl_pkt.apply();
+        }
 
         /** Process AppendEntry packets **/
         if (hdr.append.isValid()) {

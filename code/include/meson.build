@@ -4,5 +4,7 @@
 #install_headers('pringles_client.h')
 #install_headers('RingStorage.h')
 #install_headers('simple_client.h')
-#install_headers('utils.h')
+install_headers('utils.h')
+install_headers('structs.h')
 install_headers('network.h')
+install_headers('trace.h')

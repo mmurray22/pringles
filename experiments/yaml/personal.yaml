@@ -1,0 +1,5 @@
+cloudlab_pem: $HOME/cloudlab.pem
+ssh_pub_key: $HOME/keys/cloudlab.pub
+ssh_priv_key: $HOOME/keys/cloudlab
+cloudlab_username: mmurray22
+cloudlab_project: Ove

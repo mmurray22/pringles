@@ -1,0 +1,8 @@
+syntax="proto3";
+
+package ringstorage;
+
+message AppendReply {
+    int64 nonce=1;
+    int64 global_idx=2;
+}
