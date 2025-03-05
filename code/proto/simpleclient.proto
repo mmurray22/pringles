@@ -2,7 +2,36 @@ syntax="proto3";
 
 package simpleclient;
 
+message Payload {
+    string packet_type=1;
+    int64 nonce=2;
+    optional AppendEntry append = 3;
+    optional ReadEntry read = 4;
+    optional GetTail tail = 5;
+    optional Subscribe sub = 6;
+    optional Trim trim = 7;
+}
+
 message AppendEntry {
-   string log_entry=1;
+   int64 idx=1;
+   string entry=2;
+
+}
+
+message ReadEntry {
+    int64 idx = 1;
+    string entry=2;
+}
+
+message GetTail {
+    int64 idx = 1;
+}
+
+message Subscribe {
+    int64 idx = 1;
+}
+
+message Trim {
+    int64 idx = 1;
 }
  
