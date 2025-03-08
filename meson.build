@@ -7,7 +7,8 @@ yaml_cpp = dependency('yaml-cpp')
 protoc = find_program('protoc')
 protobuf = dependency('protobuf')
 spdlog = dependency('spdlog')
-add_project_link_arguments(['-lprotobuf'], language: ['cpp'])
+add_project_link_arguments(['-lprotobuf','-lssl','-lcrypto'], language: ['cpp'])
+# -lssl -lcrypto
 
 # Generate protobuf library
 gen = generator(protoc,

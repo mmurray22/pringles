@@ -20,12 +20,27 @@ std::unique_ptr<T> get_ptr_and_size(std::string pkt_type, size_t &size_of_hdr, i
     return NULL;
 }*/
 
-size_t get_size_of_hdr(std::string pkt_type, uint64_t protocol_id) {
-    if (protocol_id == 1) {
+/*** Helper function: converts string type to client type ***/
+ClientType fromStringToClientType(std::string type) {
+	ClientType cliType = ClientType::NONE;
+	if (type == "simple") {
+		cliType = ClientType::SIMPLE;
+	} else if (type == "ring") {
+		cliType = ClientType::RING;
+	} else if (type == "corfu") {
+		cliType = ClientType::CORFU;
+	} else {
+        cliType = ClientType::NONE;
+    }
+	return cliType;
+}
+
+size_t get_size_of_hdr(std::string pkt_type, ClientType protocol) {
+    if (protocol == CORFU) {
         if (pkt_type == "get_seq_no") {
             return sizeof(struct get_sequence_number);
         }
-    } else if (protocol_id == 2) {
+    } else if (protocol == RING) {
         if (pkt_type == "append_req") {
             return sizeof(struct ring_append_entry);
         } else if (pkt_type == "append_resp") {
@@ -35,12 +50,12 @@ size_t get_size_of_hdr(std::string pkt_type, uint64_t protocol_id) {
     return 0;
 }
 
-size_t get_size_of_hdr_int(int pkt_type, uint64_t protocol_id) {
-    if (protocol_id == 1) {
+size_t get_size_of_hdr_int(int pkt_type, ClientType protocol) {
+    if (protocol == CORFU) {
         if (pkt_type == ETH_CLI_SEQ) {
             return sizeof(struct get_sequence_number);
         }
-    } else if (protocol_id == 2) {
+    } else if (protocol == RING) {
         if (pkt_type == ETH_APPEND_REQ) {
             return sizeof(struct ring_append_entry);
         } else if (pkt_type == ETH_APPEND_RESP) {
@@ -51,12 +66,12 @@ size_t get_size_of_hdr_int(int pkt_type, uint64_t protocol_id) {
 }
 
 
-int get_eth_type(std::string pkt_type, uint64_t protocol_id) {
-    if (protocol_id == 1) {
+int get_eth_type(std::string pkt_type, ClientType protocol) {
+    if (protocol == CORFU) {
         if (pkt_type == "get_seq_no") {
             return ETH_CLI_SEQ;
         }
-    } else if (protocol_id == 2) {
+    } else if (protocol == RING) {
         if (pkt_type == "append_req") {
             return ETH_APPEND_REQ;
         } else if (pkt_type == "append_resp") {

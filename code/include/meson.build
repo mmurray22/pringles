@@ -1,4 +1,4 @@
-#install_headers('base_client.h')
+install_headers('base_client.h')
 #install_headers('base_sequencer.h')
 #install_headers('base_storage.h')
 #install_headers('pringles_client.h')
