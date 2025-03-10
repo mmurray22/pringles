@@ -30,8 +30,8 @@ class Network {
         std::unique_ptr<std::string> read_from_recv_queue();
         void done();
         //std::string update_ip_addrs();
-        
-        // TODO add: message formatting, custom header creation
+        void add_pkt_type(std::string pkt_type);
+        bool remove_pkt_type(std::string pkt_type);
         
     private:
         const int64_t CUSTOM_IP_PROTOCOL = 4;          
@@ -66,6 +66,7 @@ class Network {
          */
         std::map<std::string, std::queue<std::unique_ptr<std::string>>> send_pkt_qs;
         std::mutex send_pkt_qs_mutex;
+        
         
         std::queue<std::unique_ptr<std::string>> rcv_pkt;
         std::mutex rcv_queue_mutex;

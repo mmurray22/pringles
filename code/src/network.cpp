@@ -591,3 +591,16 @@ bool Network::validate_ip_address(const std::string &ip_addr) {
     return result != 0;
 }
 
+void Network::add_pkt_type(std::string pkt_type) {
+    send_pkt_qs.insert(std::pair<std::string, std::queue<std::unique_ptr<std::string>>>(pkt_type, std::queue<std::unique_ptr<std::string>>()));
+}
+
+bool Network::remove_pkt_type(std::string pkt_type) {
+    for (auto it = send_pkt_qs.begin(); it != send_pkt_qs.end(); it++) {
+        if (it->first == pkt_type) {
+            send_pkt_qs.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
