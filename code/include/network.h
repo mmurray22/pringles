@@ -85,6 +85,7 @@ class Network {
         //std::vector<int> storage_sockets;
         int seq_socket;
         int seq_recv_socket;
+        bool validate_ip_address(const std::string &ip_addr);
         //std::mutex ip_addrs_idx_mutex;
          
         // Socket handling

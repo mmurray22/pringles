@@ -52,17 +52,19 @@ Network::Network(uint64_t maxThreads,
     RECV_PORT = recv_port;
     this->storage_multicast_addr = storage_multicast_addr;
 
-    /* Create storage and sequence sockets */ 
-    std::shared_ptr<struct addrinfo> storage_it = std::make_shared<struct addrinfo>();
-    storage_socket = socket_type == "UDP" ? setup_talker_socket(storage_multicast_addr, storage_it) : setup_raw_talker_socket();
-    if (storage_socket < 0) {
-        spdlog::critical("SENDER Storage Socket creation for IP {} unsuccessful. Aborting", this->storage_multicast_addr);
-        throw std::runtime_error("Can't create sending socket");
-    } 
-    storage_recv_socket = setup_listener_socket(storage_multicast_addr);
-    if (storage_recv_socket < 0) {
-        spdlog::critical("RECEIVER Storage Socket creation for IP {} unsuccessful. Aborting", this->storage_multicast_addr);
-        throw std::runtime_error("Can't create receiving socket");
+    if (storage_multicast_addr != "") {
+        /* Create storage and sequence sockets */ 
+        std::shared_ptr<struct addrinfo> storage_it = std::make_shared<struct addrinfo>();
+        storage_socket = socket_type == "UDP" ? setup_talker_socket(storage_multicast_addr, storage_it) : setup_raw_talker_socket();
+        if (storage_socket < 0) {
+            spdlog::critical("SENDER Storage Socket creation for IP {} unsuccessful. Aborting", this->storage_multicast_addr);
+            throw std::runtime_error("Can't create sending socket");
+        } 
+        storage_recv_socket = setup_listener_socket(storage_multicast_addr);
+        if (storage_recv_socket < 0) {
+            spdlog::critical("RECEIVER Storage Socket creation for IP {} unsuccessful. Aborting", this->storage_multicast_addr);
+            throw std::runtime_error("Can't create receiving socket");
+        }
     }
     
     // If this protocol requires a seq_ip
@@ -122,8 +124,7 @@ unsigned short Network::checksum(unsigned short *buf, int nwords) {
 // Threadpool send thread function
 // Send packets as they are queued
 void Network::run_send(std::string pkt_type) {
-    std::unique_ptr<char> send_packet = std::make_unique<char>(batch_size); 
-    //char* send_packet = (char*)std::malloc(batch_size);
+    std::unique_ptr<char> send_packet = std::make_unique<char>(batch_size + batch_size*sizeof(size_t)); 
     size_t offset = 0;
     uint64_t batch_bytes = 0;
     while (!terminate) {
@@ -149,7 +150,38 @@ void Network::run_send(std::string pkt_type) {
             }
         }
         //std::unique_ptr<char> send_packet = std::make_unique<char>(send_packet);
+        //
+        
+        // If the packet type is IP addresses AND socket_type UDP
+        // There is no support for custom headers + IP addresses
+        if (validate_ip_address(pkt_type) && socket_type == "UDP") {
+            std::shared_ptr<struct addrinfo> it = std::make_shared<struct addrinfo>();
+            int s_fd = setup_talker_socket(pkt_type, it);
+            if (s_fd < 0) {
+                spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", pkt_type);
+                throw std::runtime_error("Can't create sending socket");
+            } 
+            ssize_t num_bytes = sendto(s_fd, send_packet.get(), batch_bytes, 0, it->ai_addr, it->ai_addrlen);
+            if (num_bytes < 0 || ((uint64_t)num_bytes != batch_bytes)) {
+                spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
+                memset(send_packet.get(), 0, batch_size);
+                batch_bytes = 0;
+                offset = 0;
+                continue;
+            }
+            spdlog::info("Successfully sent {} bytes to the receiver.", std::to_string(num_bytes));
+            memset(send_packet.get(), 0, batch_size);
+            batch_bytes = 0;
+            offset = 0;
+            continue;
+        }
+
+        // If the packet type is a descriptive string to indicate header type
         int s_fd = get_socket(pkt_type, protocol_type);
+        if (s_fd < 0) {
+            spdlog::critical("No socket found, dropping buffers");
+            continue;
+        }
         
 
         if (socket_type == "UDP") { // If we are running UDP
@@ -372,7 +404,6 @@ void Network::run_recv(int s_fd) {
 }
 
 // this is the compiled pointer to protobuf string
-//
 void Network::add_to_send_queue(std::unique_ptr<std::string> buf, 
                                 std::string packet_type) {
     std::unique_lock<std::mutex> lock(send_pkt_qs_mutex);
@@ -552,5 +583,11 @@ void Network::stop_threads() {
 
 bool Network::check_socket_type(std::string socket_type) {
     return (socket_type == "UDP" || socket_type == "RAW");
+}
+
+bool Network::validate_ip_address(const std::string &ip_addr) {
+    struct sockaddr_in sa;
+    int result = inet_pton(AF_INET, ip_addr.c_str(), &(sa.sin_addr));
+    return result != 0;
 }
 
