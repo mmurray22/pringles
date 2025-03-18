@@ -377,28 +377,34 @@ void Network::run_recv(int s_fd) {
         epoll_ctl(efd, EPOLL_CTL_ADD, s_fd, &ev);
         epoll_wait(efd, &ev, 1, MAX_POLL_TIME); // maxevents??
         
-        std::unique_ptr<char[]> buf = std::make_unique<char[]>(BUF_SIZE);  
-        if ((numbytes = recvfrom(s_fd, buf.get(), BUF_SIZE-1, 0, (struct sockaddr *)&src_addr, &addr_len)) == -1) {
+        std::unique_ptr<char[]> buf = std::make_unique<char[]>(batch_size + batch_size*sizeof(int));  
+        if ((numbytes = recvfrom(s_fd, buf.get(), batch_size + batch_size*sizeof(int), 0, (struct sockaddr *)&src_addr, &addr_len)) == -1) {
             spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            //return;
             continue;
         }
-        struct ethhdr* eth = (struct ethhdr*)buf.get();
-        size_t custom_hdr_size = get_size_of_hdr_int(eth->h_proto, protocol_type);
-        spdlog::debug("Ethernet protocol with size {}", custom_hdr_size);
-        if (custom_hdr_size == 0) {
-            continue;
-        }
-        // TODO TODO ADD THE PROCESSING OF THE ETHERNET HEADER TO READ THE TYPE AND THE DYAMICALLY DETERMINE THE HEADER
-        char* rcv_str = (char*)(buf.get() + sizeof(struct ethhdr) + sizeof(struct iphdr) + custom_hdr_size);
+        size_t offset = 0;
+        for (uint64_t i = 0; i < batch_size; i++) {
+            offset += sizeof(size_t);
+            size_t size_of_pkt = *((size_t*)(buf.get() + offset));
+            offset += size_of_pkt;
+            std::unique_ptr<char[]> sample_pkt = std::make_unique<char[]>(size_of_pkt));
+            struct ethhdr* eth = (struct ethhdr*)sample_pkt.get();
+            size_t custom_hdr_size = get_size_of_hdr_int(eth->h_proto, protocol_type);
+            spdlog::debug("Ethernet protocol with size {}", custom_hdr_size);
+            if (custom_hdr_size == 0) {
+                continue;
+            }
+            // TODO TODO ADD THE PROCESSING OF THE ETHERNET HEADER TO READ THE TYPE AND THE DYAMICALLY DETERMINE THE HEADER
+            char* rcv_str = (char*)(sample_pkt.get() + sizeof(struct ethhdr) + sizeof(struct iphdr) + custom_hdr_size);
 
-        spdlog::debug("Receiver received the message with num bytes: {}, eth hdr: {}, ip hdr: {}, append hdr: {}", std::to_string(numbytes), std::to_string(sizeof(struct ethhdr)), std::to_string(sizeof(struct iphdr)), std::to_string(custom_hdr_size));
-        {
-            std::unique_lock<std::mutex> lock(rcv_queue_mutex);
-            std::string str(rcv_str);
-            spdlog::debug("The string is: {}", str);
-            std::unique_ptr<std::string> str_ptr = std::make_unique<std::string>(str);
-            rcv_pkt.emplace(std::move(str_ptr));
+            spdlog::debug("Receiver received the message with num bytes: {}, eth hdr: {}, ip hdr: {}, append hdr: {}", std::to_string(numbytes), std::to_string(sizeof(struct ethhdr)), std::to_string(sizeof(struct iphdr)), std::to_string(custom_hdr_size));
+            {
+                std::unique_lock<std::mutex> lock(rcv_queue_mutex);
+                std::string str(rcv_str);
+                spdlog::debug("The string is: {}", str);
+                std::unique_ptr<std::string> str_ptr = std::make_unique<std::string>(str);
+                rcv_pkt.emplace(std::move(str_ptr));
+            }
         }
     }
 }

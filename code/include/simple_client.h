@@ -31,6 +31,9 @@ class SimpleClient : public BaseClient {
         uint64_t seq_no;
         bool terminate;
 
+        // IP Addresses
+        std::vector<std::string> ip_addr;
+
         // Timeouts
         uint64_t wait_for_read_acks;
         uint64_t wait_for_write_acks;

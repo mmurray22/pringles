@@ -65,7 +65,16 @@ std::unique_ptr<std::string> SimpleClient::read(uint64_t idx) {
         std::lock_guard payload_lk(pending_read_lock);
         pending_reads.emplace(idx, 0);
     }
-    net->add_to_send_queue(payload, "");
+    std::string ip_addr = get_route_ip(idx);
+    net->add_to_send_queue(payload, ip_addr);
+    while (/*wait for timeout to be reached*/) {
+        std::lock_guard pal(pending_append_lock);
+        palCV.wait(pal, []{return pending_appends_updated;});
+        num_acks = pending_appends[idx];
+        if (num_acks >= (Math.floor(num_storage_servers/2) + 1)) {
+            break;
+        }
+    }
     // TODO add read specific logic here
     return wait_for_read();
 }
@@ -81,7 +90,9 @@ void SimpleClient::subscribe(uint64_t idx) {
 
 bool SimpleClient::trim(uint64_t idx) {
     for (uint64_t i = 1; i <= idx; i++) {
-        // send a message to 
+        std::string use_ip = get_route_ip(i);
+        std::unique_ptr<std::string> payload = trace->serialize_str_entry("", cli_type, "trim", i);
+        net->add_to_send_queue(payload, use_ip);
     }
     return true;
 }
@@ -165,4 +176,7 @@ uint64_t fill(std::string entry. uint64_t idx) { // TODO
     }
     std::unique_ptr<std::string> payload = trace->serialize_str_entry(entry, cli_type, "append", idx);
     net->add_to_send_queue(payload, "");
+}
+
+std::string get_route_ip(uint64_t idx) {
 }
