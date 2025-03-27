@@ -104,23 +104,51 @@ def writeTunnelRules(p4info_helper, ingress_sw, egress_sw, tunnel_id,
     egress_sw.WriteTableEntry(table_entry)
     print("Installed egress tunnel rule on %s" % egress_sw.name)
 
-def updateAckValues(p4info_helper, sw, register_name, index):
+def addAckTable(p4info_helper, ingress_sw, egress_sw, src_idx, src_ip_addr):
     """
-    Reads the specified counter at the specified index from the switch. In our
-    program, the index is the tunnel ID. If the index is 0, it will return all
-    values from the counter.
+    Installs three rules:
+    1) An tunnel ingress rule on the ingress switch in the ipv4_lpm table that
+       encapsulates traffic into a tunnel with the specified ID
+    2) A transit rule on the ingress switch that forwards traffic based on
+       the specified ID
+    3) An tunnel egress rule on the egress switch that decapsulates traffic
+       with the specified ID and sends it to the host
 
     :param p4info_helper: the P4Info helper
-    :param sw:  the switch connection
+    :param ingress_sw: the ingress switch connection
+    :param egress_sw: the egress switch connection
+    :param tunnel_id: the specified tunnel ID
+    :param dst_eth_addr: the destination IP to match in the ingress rule
+    :param dst_ip_addr: the destination Ethernet address to write in the
+                        egress rule
     """
-    for response in sw.UpdateAckInfo(p4info_helper.get_registers_id(register_name), index):
-        for entity in response.entities:
-            print(entity)
-            #counter = entity.counter_entry
-            #print("%s %s %d: %d packets (%d bytes)" % (
-            #    sw.name, counter_name, index,
-            #    counter.data.packet_count, counter.data.byte_count
-            #))
+    # 1) Tunnel Ingress Rule
+    table_entry = p4info_helper.buildTableEntry(
+        table_name="MyIngress.ip_idx",
+        match_fields={
+            "hdr.ipv4.srcAddr": (src_ip_addr, 32)
+        },
+        action_name="MyIngress.get_src_idx",
+        action_params={
+            "src_idx": src_idx,
+        })
+    ingress_sw.WriteTableEntry(table_entry)
+    print("Installed ingress ack rule on %s" % ingress_sw.name)
+
+def switchIDtoPort(p4info_helper, ingress_sw, egress_sw, switch_id,port):
+    """
+    """
+    table_entry = p4info_helper.buildTableEntry(
+        table_name="MyIngress.id_to_port",
+        match_fields={
+            "hdr.cntrl.id": (switch_id, 64)
+        },
+        action_name="MyIngress.get_id_port",
+        action_params={
+            "port": port,
+        })
+    ingress_sw.WriteTableEntry(table_entry)
+    print("Installed ingress ID rule on %s" % ingress_sw.name)
 
 
 
@@ -143,42 +171,65 @@ def printCounter(p4info_helper, sw, counter_name, index):
                 counter.data.packet_count, counter.data.byte_count
             ))
 
+# Necessary inputs!!!!
+# - List of storage servers 
+# - Array of switch ips?
+
 def main(p4info_file_path, bmv2_file_path):
     # TODO: Understand what exactly this is
     # Instantiate a P4Runtime helper from the p4info file
     p4info_helper = p4runtime_lib.helper.P4InfoHelper(p4info_file_path)
-
+    storage_servers = ['127.0.0.1:5001']
     try:
         # Create a switch connection object for s1 and s2;
         # this is backed by a P4Runtime gRPC connection.
         # Also, dump all P4Runtime messages sent to switch to given txt files.
-        s1 = p4runtime_lib.bmv2.Bmv2SwitchConnection(
-            name='s1',
-            address='127.0.0.1:50051',
-            device_id=0,
-            proto_dump_file='logs/s1-p4runtime-requests.txt')
+        switch_arr = []
+        for i in range(0, len(switch_arr):
+            this_switch_name = 's' + str(i)
+            this_log_file = 'logs/' + this_switch_name + '-p4runtime-requests.txt'
+            s = p4runtime_lib.bmv2.Bmv2SwitchConnection(
+                name=this_switch_name,
+                address=switch_arr[i],
+                device_id=i,
+                proto_dump_file=this_log_file)
+            
+            # Send master arbitration update message to establish this controller as
+            # master (required by P4Runtime before performing any other write operation)
+            s.MasterArbitrationUpdate()
+            
+            # Install the P4 program on the switches    
+            s.SetForwardingPipelineConfig(p4info=p4info_helper.p4info, bmv2_json_file_path=bmv2_file_path)
+            switch_arr.push(s)
+            print("Installed P4 Program using SetForwardingPipelineConfig on switch")
 
-        # Send master arbitration update message to establish this controller as
-        # master (required by P4Runtime before performing any other write operation)
-        s1.MasterArbitrationUpdate()
+        # Routing based on ID
+        ##### Setting Up Table ######
 
-        # Install the P4 program on the switches
-        s1.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
-                                       bmv2_json_file_path=bmv2_file_path)
-        print("Installed P4 Program using SetForwardingPipelineConfig on s1")
-        print("Installed P4 Program using SetForwardingPipelineConfig on s2")
+        # Sending to storage servers
+        for i in range(0, len(storage_servers)):
+            addAckTable(p4info_helper, ingress_sw=s1, egress_sw=s2, src_ip=storage_servers[i], src_idx=i)
+        
+        addContiguousSeqNoTable()
 
-        # Write the rules that tunnel traffic from h1 to h2
+        # Routing tables
+        addCntrlPktTable(p4info_helper, ingress_sw=s1, egress_sw=s2, membership_arr=membership)
+        addSeqNoToShardTable()
+        addSeqNoToSwitchTable()
+        
+        # Unnecessary tables
+        addTailHopsTable()
+        addUnwrittenReadTable()
+
+
         #writeTunnelRules(p4info_helper, ingress_sw=s1, egress_sw=s2, tunnel_id=100,
         #                 dst_eth_addr="08:00:00:00:02:22", dst_ip_addr="10.0.2.2")
 
         #readTableRules(p4info_helper, s1)
 
-        # Print the tunnel counters every 2 seconds
-        while True:
-            print('\n----- Updating Ack  -----')
-            updateAckValues(p4info_helper, s1, "MyIngress.rack_acks_reg", 0)
-            #printCounter(p4info_helper, s1, "MyIngress.egressTunnelCounter", 200)
+        ### Initializing state on the ASIC ####
+
+        ### Start timers, add recovery logic ####
 
     except KeyboardInterrupt:
         print(" Shutting down.")

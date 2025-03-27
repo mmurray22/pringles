@@ -60,14 +60,23 @@ header ipv4_t {
 
 
 /******* Headers ********/
+/*
+ * Numbers which need to be read as integers or take part in arithmetic operations are ints.
+ * Numbers that are merely for identification are bit arrays.
+*/
+
+
 
 // Header for control packet
 header control_pkt_t {
    // This is the current global sequence number.
-   bit<32> global_seq_no;
+   int<32> global_seq_no;
 
    // Current view of the ring
    bit<32> ring_view;
+
+   // ID of last sending switch
+   bit<32> id;
 }
 
 // Header for heartbeats 
@@ -88,9 +97,9 @@ header append_entry_t {
     /** Part of header: Set by switches **/
     
     // Global sequence number of message
-    bit<32> g_idx;
+    int<32> g_idx;
     // Number of payloads in batch 
-    bit<32> batch_size;
+    int<32> batch_size;
     // ID of the shard where the message must be written to
     bit<32> shard_id;
     // View number of switch forwarding entry
@@ -103,7 +112,7 @@ header append_entry_t {
     bit<32> status;
 
     // Metadata: The number of times the control packet had been seen when entry is first received
-    bit<32> cntrl_pkt_it;
+    int<32> cntrl_pkt_it;
 }
 
 // ReadEntry header
@@ -113,11 +122,15 @@ header read_entry_t {
     // Unique nonce used to detect duplicates of the message
     bit<32> nonce;
     // Global sequence number of message
-    bit<32> g_idx;
+    int<32> g_idx;
 
     /** Filled in by switches **/
     // ID of the shard storing the sequence number. Filled in by switches.
     int<32> shard_id;
+    // Unwritten or not
+    int<32> unwritten;
+    // Status of the read request
+    int<32> status;
 }
 
 // Header for requesting the current tail
@@ -126,15 +139,19 @@ header tail_req_t {
     bit<32> cid;
     // Unique nonce used to detect duplicates of the message
     bit<32> nonce;
-    
+   
+    /*Altered by switches*/
+    // Keeps track of how many nodes in the ring the tail request has been passed to
+    int<32> hops;
+
     /** Filled in by switches **/
     // Sequence number that is the current tail - filled in by the switches
-    bit<32> tail;
+    int<32> tail_seq_no;
 }
 
 // Header for acks sent from the storage servers
 header ack_t {
-    bit<32> seq_no; // Sequence number being acked
+    int<32> seq_no; // Sequence number being acked
 
     bit<32> view; // View number
 }
@@ -146,6 +163,9 @@ header myTunnel_t {
 }
 
 struct metadata {
+    bit<32> highest_contiguous_seq_no;
+    bit<32> default_bit;
+    bit<32> circulate;
 }
 
 struct headers {
@@ -175,15 +195,7 @@ parser MyParser(packet_in packet,
     state parse_ethernet {
         packet.extract(hdr.ethernet);
         transition parse_ipv4;
-        transition select(hdr.ethernet.etherType) {
-            TYPE_CONTROL: parse_control;
-            TYPE_TUNNEL: parse_tunnel;
-            TYPE_APPEND: parse_append;
-            TYPE_READ: parse_read;
-            TYPE_TAIL: parse_tail;
-            TYPE_ACK: parse_ack;
-	    default: accept;
-        }
+        
     }
 
     state parse_control {
@@ -221,7 +233,15 @@ parser MyParser(packet_in packet,
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
-        transition parse_ethernet;
+	    transition select(hdr.ethernet.etherType) {
+            TYPE_CONTROL: parse_control;
+            TYPE_TUNNEL: parse_tunnel;
+            TYPE_APPEND: parse_append;
+            TYPE_READ: parse_read;
+            TYPE_TAIL: parse_tail;
+            TYPE_ACK: parse_ack;
+	        default: accept;
+        }
     }
 }
 
@@ -245,28 +265,22 @@ control MyIngress(inout headers hdr,
     /** Registers **/
     
     /// Ring State
-    register<bit<32>>(1) pred_switch_id; // ID of the switch immediately before this switch in the ring
-    register<bit<32>>(1) succ_switch_id; // ID of the switch immediately following this switch in the ring
-    register<bit<32>>(1) ring_view; // Current ring view number
-    register<bit<32>>(1) iteration; // Used to track stale packets TODO?
+    register<bit<32>>(1) ring_view; // Current ring view number TODO will need to be written to from the control plane
 
     /// Sequencing state
     register<bit<32>>(1) highest_seen_seq_no; // Largest global sequence number known to the switch Updated every time control packet is received.
     register<bit<32>>(1) local_seq_no; // Local seq no batch counter 
-    register<bit<32>>(1) highest_replicated_seq_no; // Largest global sequence number corresponding to a successfully replicated entry.
     register<bit<32>>(1) cntrl_pkt_it; // Number of total times the switch has seen the control packet TODO potential to overflow?
 
     /// Replication state
-    register<bit<32>>(1) assigned_seq_nos;
+    register<bit<32>>(1) highest_replicated_seq_no; // Largest global sequence number corresponding to a successfully replicated entry.
+    register<bit<32>>(1) highest_contiguous_seq_no; // Largest global sequence number corresponding to the latest contiguous successfully replicated entry.
+    register<bit<32>>(1) lower_bound_seq_no;
+    register<bit<32>>(1) upper_bound_seq_no;
     register<bit<32>>(IDX_SET_SIZE) seq_no_to_ack; // Tracks IDX_SET_SIZE number of acks for the sequence numbers the switch is responsible for
-    register<bit<STORAGE_SHARD_SIZE>>(IDX_SET_SIZE) seq_no_to_ip; // Map to detect for duplicate acks
-    register<bit<1>>(1) idx_maps_full;
+    register<bit<1>>(STORAGE_SHARD_SIZE*IDX_SET_SIZE) seq_no_to_ip; // Map to detect for duplicate acks
+    register<bit<1>>(1) idx_maps_full; // TODO: USE 
     
-    /// UNSURE TODO
-    register<bit<32>>(NUM_BLOOM_HASH) k_bloom_pos;
-    register<bit<1>>(1) value_not_found;
-    register<bit<32>>(1) num_shards; // Total number of storage shards, actual shard IDs are stored in multicast table
-   
     /** ACTIONS **/
 
     /* Standard IPv4 routing */
@@ -291,31 +305,14 @@ control MyIngress(inout headers hdr,
             NoAction;
         }
         size = 1024;
-        default_action = NoAction(); //drop();
-    }
-
-    /* Standard tunneling */
-    action myTunnel_forward(egressSpec_t port) {
-	    standard_metadata.egress_spec = port;
-    }
-
-    table myTunnel_exact {
-        key = {
-           hdr.myTunnel.dst_id: exact;
-        }
-        actions = {
-           myTunnel_forward;
-           drop;
-        }
-        size = 1024;
-        default_action = drop();
+        default_action = NoAction();
     }
 
     /* Control Packet */
     action process_cntrl_pkt() {
         bit<32> ring_view_reg;
         bit<32> local_seq_no_reg;
-        bit<32> highest_seen_seq_no_reg;
+        int<32> highest_seen_seq_no_reg;
         bit<32> cntrl_pkt_it_reg;
         ring_view.read(ring_view_reg, 0);
             
@@ -327,29 +324,27 @@ control MyIngress(inout headers hdr,
         
         // Step 1: Update control packet global sequence number
         local_seq_no.read(local_seq_no_reg, 0);
-        hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + local_seq_no_reg
+        hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + (int<32>)local_seq_no_reg;
 
         // Step 2: Update control packet + local highest seen seq no
-        highest_seen_seq_no.write(0, hdr.cntrl.global_seq_no)
+        highest_seen_seq_no.write(0, (bit<32>)(hdr.cntrl.global_seq_no));
 
         // Step 3: Update local sequence counter
         local_seq_no.write(0, 0);
 
         // Step 4: Control packet iteration increase
         cntrl_pkt_it.read(cntrl_pkt_it_reg, 0);
-        cntrl_pkt_it.write(0, cntrl_pkt_it_reg + 1);
+        cntrl_pkt_it.write(0, (bit<32>)((int<32>)cntrl_pkt_it_reg + 1));
     }
     
-    action cntrl_forward(macAddr_t dstAddr, egressSpec_t port) {
+    action cntrl_forward(egressSpec_t port, bit<32> id) {
         standard_metadata.egress_spec = port;
-        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
-        hdr.ethernet.dstAddr = dstAddr;
-        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+        hdr.cntrl.id = id;
     }
 
     table cntrl_id_to_ip {
         key = {
-            succID: exact;
+            hdr.cntrl.id: exact;
         }
         actions = {
             cntrl_forward;
@@ -360,166 +355,257 @@ control MyIngress(inout headers hdr,
         default_action = NoAction();
     }
 
-    /* Append: Sequencing */
+    action forward_ack_pkt(egressSpec_t port) {
+	   	standard_metadata.egress_spec = port;
+    }
 
-    /* Append: Replication */
-    action route_append_pkt() { 
-        int<32> pred_sw_id_reg;
-        pred_switch_id.read(0, pred_sw_id_reg);
-        int<32> succ_sw_id_reg;
-        succ_switch_id.read(0, succ_sw_id_reg);
-
-        if (hdr.append.shard_id > pred_sw_id_reg && hdr.append.shard_id < succ_sw_id_reg && hdr.append.shard_id < switch_id_reg) {
-            standard_metadata.mcast_grp = 1;
-            hdr.append.status += 1;
-        } else if (hdr.append.shard_id < pred_sw_id_reg) {
-            standard_metadata.mcast_grp = 2; // TODO do I need a multicast group here? I don't think so
-        } else if (hdr.append.shard_id > succ_sw_id_reg) {
-            standard_metadata.mcast_grp = 3;
+    action collect_acks(int<32> entry_num, int<32> seq_num_idx) {
+        bit<1> ack_received;
+        seq_no_to_ip.read(ack_received, (bit<32>)(seq_num_idx*entry_num));
+        if (ack_received == 0) {
+            seq_no_to_ip.write((bit<32>)(seq_num_idx * entry_num), 1);
+            bit<32> ack_cnt;
+            seq_no_to_ack.read(ack_cnt, (bit<32>)seq_num_idx);
+            seq_no_to_ack.write((bit<32>)seq_num_idx, (bit<32>)((int<32>)ack_cnt + 1));
         }
+        drop();
     }
     
-    action collect_acks(bit<32> entry_num. bit<32> seq_num) {
-        if (seq_no_to_ip[entry_num] == 0) {
-            seq_no_to_ip[seq_num][entry_num] = 1;
-            seq_no_to_ack
-        }
-    }
-    
-    table ipv4_acks {
-         key = { headers.ip.dstAddr: lpm; }  // longest-prefix match
+    table ipv4_ack {
+         key = { 
+            hdr.ack.seq_no: exact;
+	        hdr.ipv4.srcAddr: exact; 
+	     }  // longest-prefix match
          actions = {
-            collect_acks
+            forward_ack_pkt;
+            collect_acks;
+            drop;
          }
          size = 1024;
-         default_action = Drop_action;
+         default_action = drop;
     }
 
     /* Read */
     
-
-    /* Helper functions */
-    action send_to_target_switch(int mcast_grp_num) {
+    action multicast_append(bit<16> mcast_grp_num) {
         standard_metadata.mcast_grp = mcast_grp_num;
     }
     
-    table find_shard_id {
+    table get_append_shard_id {
         key = { 
-            headers.read.g_idx: exact; 
-            headers.append.g_idx: exact;
+            hdr.append.g_idx: exact;
         }
         actions = {
-            send_to_target_switch
+            multicast_append;
+            drop;
         }
         size = 1024;
-        default_action = Drop_action;
+        default_action = drop;
     }
 
-   
+    action read_request(bit<16> mcast_grp_num) {
+	    bit<32> hc_seq_no;
+    	bit<32> bot_seq_no;
+	    bit<32> top_seq_no;
+    	highest_contiguous_seq_no.read(hc_seq_no, 0);
+    	lower_bound_seq_no.read(bot_seq_no, 0);
+    	upper_bound_seq_no.read(top_seq_no, 0);
+    	if ((int<32>)hc_seq_no > hdr.read.g_idx) {
+    	    standard_metadata.mcast_grp = mcast_grp_num;       
+    	} else {
+    	    if (hdr.read.g_idx > (int<32>)bot_seq_no && 
+    		    hdr.read.g_idx < (int<32>)top_seq_no) { 
+                bit<32> num_acks;
+                seq_no_to_ack.read(num_acks, (bit<32>)hdr.read.g_idx);
+    	    	if (num_acks > QUORUM_SIZE) {
+    	    	    standard_metadata.mcast_grp = mcast_grp_num;
+                    hdr.read.status = 4;
+    	    	} else {
+                    hdr.read.status = 3;
+    	    	}
+    	    } else {
+    		    hdr.read.unwritten = 1;
+                hdr.ipv4.srcAddr = hdr.ipv4.dstAddr;
+    	    } 
+    	}
+    }
+ 
+    table get_read_shard_id {
+        key = { 
+            hdr.read.g_idx: exact;
+        }
+        actions = {
+            read_request;
+            drop;
+        }
+        size = 1024;
+        default_action = drop;
+    }
     
-    action send_to_storage_servers() { // TODO
-        int<32> pred_sw_id_reg;
-        pred_switch_id.read(0, pred_sw_id_reg);
-        int<32> succ_sw_id_reg;
-        succ_switch_id.read(0, succ_sw_id_reg);
-
-        if (hdr.read.shard_id > pred_sw_id_reg && hdr.read.shard_id < succ_sw_id_reg && hdr.read.shard_id < switch_id_reg) {
-            standard_metadata.mcast_grp = 1;
-            hdr.read.status += 1;
-        } else if (hdr.read.shard_id < pred_sw_id_reg) {
-            standard_metadata.mcast_grp = 2; // TODO do I need a multicast group here? I don't think so
-        } else if (hdr.read.shard_id > succ_sw_id_reg) {
-            standard_metadata.mcast_grp = 3;
+    action read_switch(egressSpec_t port) {
+	    if (port == 0) {
+		    hdr.read.status = 2;
+        } else {
+	   	    standard_metadata.egress_spec = port;
         }
     }
     
-    action circulate() { // TODO
+    table get_read_switch {
+        key = { 
+            hdr.read.g_idx: exact;
+        }
+        actions = {
+            read_switch;
+            drop;
+        }
+        size = 1024;
+        default_action = drop;
     }
+
+    /* Tail */
+    action update_tail(egressSpec_t port) {
+        bit<32> hr_seq_no;
+        highest_replicated_seq_no.read(hr_seq_no, 0);
+        if (hdr.tail.tail_seq_no < (int<32>)hr_seq_no) {
+            hdr.tail.tail_seq_no = (int<32>)hr_seq_no;
+        }
+        standard_metadata.egress_spec = port;
+    }
+    
+    action return_tail(macAddr_t dstAddr, egressSpec_t port) {
+        standard_metadata.egress_spec = port;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = dstAddr;
+        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+    }
+    
+    table process_tail {
+        key = { 
+            hdr.tail.hops: range;
+        }
+        actions = {
+            update_tail;
+            return_tail;
+            drop;
+        }
+        size = 1024;
+        default_action = drop;
+    }
+
+    action circulate_port(egressSpec_t port) {
+        standard_metadata.egress_spec = port;
+    }
+
+    table circulate_table {
+        key = {
+            meta.default_bit: exact;
+        }
+        actions = {
+            circulate_port;
+            NoAction;
+        }
+        default_action = NoAction;
+    }
+
+    action new_contiguous_value (bit<32> new_seq_no) {
+        highest_contiguous_seq_no.write(0, (bit<32>)new_seq_no);
+        meta.highest_contiguous_seq_no = new_seq_no;
+    }
+
+    table update_contiguous_seq_no {
+        key = {
+            meta.highest_contiguous_seq_no: lpm;
+        }
+        actions = {
+            new_contiguous_value;
+            drop;
+        }
+        size = 1024;
+        default_action = drop;
+    }
+
+    /*action get_arr_idx(int<32> seq_num) {
+        return 0;
+    }*/
     
 
     apply { // Parcel all header state changes into actions TODO 
-
+        meta.circulate = 0;
         /** Process Control packets **/
         if (hdr.cntrl.isValid()) {
-            process_cntrl_pkt.apply();
-            cntrl_id_to_ip.apply()
-        }
-
-        /** Process AppendEntry packets **/
-        if (hdr.append.isValid()) {
+            process_cntrl_pkt();
+            cntrl_id_to_ip.apply();
+        } else if (hdr.append.isValid()) { /** Process AppendEntry packets **/
             // Change processing of append based on the status of the packet
             // Status 1: First time the packet has been seen
             if (hdr.append.status == 1) {
 
-                // 1) Assign local seq no
+                // 1) Assign local seq no TODO check how you initialize variables???
                 bit<32> local_seq_no_reg;
                 local_seq_no.read(local_seq_no_reg, 0);
-                local_seq_no_reg = local_seq_no_reg + hdr.append.batch_size
+                local_seq_no_reg = (bit<32>)((int<32>)local_seq_no_reg + hdr.append.batch_size);
                 local_seq_no.write(0, local_seq_no_reg);
 
                 // Update packet header variables
                 // Set status to 2 (pending sequence number)
-                hdr.append.g_idx = local_seq_cntr_reg;
+                hdr.append.g_idx = (int<32>)local_seq_no_reg;
                 hdr.append.status = 2;
-                
-                standard_metadata.egress_spec = port;
-                hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
-                hdr.ethernet.dstAddr = dstAddr;
-                // Set multicast group
-                standard_metadata.mcast_grp = 1; // TODO: What multicast group??
             } else if (hdr.append.status == 2) {
                 bit<32> cntrl_pkt_it_reg;
                 cntrl_pkt_it.read(cntrl_pkt_it_reg, 0);
-                if (hdr.append.cntrl_pkt_it == cntrl_pkt_it_reg) {
-                    circulate.apply()
-                    return;
+                if (hdr.append.cntrl_pkt_it == (int<32>)cntrl_pkt_it_reg) {
+                } else {
+                    // Status 2: Packet is waiting for a global seq no assignment
+                    
+                    // Assign global seq no
+                    bit<32> h_seen_seq_no_reg;
+                    highest_seen_seq_no.read(h_seen_seq_no_reg, 0);
+                    hdr.append.g_idx = hdr.append.g_idx + (int<32>)h_seen_seq_no_reg;
+                    hdr.append.status = 3;
                 }
-                // Status 2: Packet is waiting for a global seq no assignment
-                
-                // Assign global seq no
-                bit<32> h_seen_seq_no_reg;
-                highest_seen_seq_on.read(h_seen_seq_no_reg, 0);
-                hdr.append.g_idx = hdr.append.g_idx + g_seq_no;
-                hdr.append.status = 3;
-                circulate.apply();
-            } else if (hdr.append.status == 3) {
-                bit<32> g_offset_reg;
-                global_offset.read(0, g_offset_reg);
-                if (hdr.append.g_idx > g_offset_reg) {
-                    get_shard_id();
-                    hdr.append.status = 4;
-                }
-                circulate.apply();
-            } else if (hdr.append.status == 4) {
-                send_to_storage_server();
-            } else if (hdr.append.status == 5) {
             }
-        }
-        
-        if (hdr.read.isValid()) {
-            /* Process read entry headers */
-            if (hdr.read.status == 2) {
-                route_read_pkt();
-            } else if (hdr.read.status == 3) {
-                
-            } else if (hdr.read.status == 1) {
-                find_shard_id.apply();
+            bit<32> h_seen_seq_no_reg;
+            highest_seen_seq_no.read(h_seen_seq_no_reg, 0);
+            if (hdr.append.status == 3 && hdr.append.g_idx > (int<32>)h_seen_seq_no_reg) {
+		        hdr.append.status = 4;
+                get_append_shard_id.apply();
+            } else {
+                meta.circulate = 1;
+		    }
+        } else if (hdr.read.isValid()) {
+            /* Process read entry hdr */
+
+            // Check if the packet is at the right switch
+            if (hdr.read.status == 1) {
+                get_read_switch.apply();
+            } 
+
+            // Process packet if it is
+            if (hdr.read.status >= 2) {
+		        get_read_shard_id.apply();        
             }
+
+            if (hdr.read.status == 3) {
+                meta.circulate = 1;
+            }
+        } else if (hdr.tail.isValid()) {
+            process_tail.apply();
+	    } else if (hdr.ack.isValid()) {
+            bit<32> hc_seq_no;
+            highest_contiguous_seq_no.read(hc_seq_no, 0);
+            meta.highest_contiguous_seq_no = hc_seq_no;
+            ipv4_ack.apply();
+            update_contiguous_seq_no.apply();
         }
 
-        if (hdr.acks.isValid()) {
-            ipv4_acks.apply();
+        if (meta.circulate == 1) {
+            circulate_table.apply();
         }
 
-        /* Process IP headers */
+        /* Process IP hdr */
         if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
         }
-
-        /* Process tunnel headers */
-        if (hdr.myTunnel.isValid()) {
-            myTunnel_exact.apply();
-        } 
     }
 }
 
@@ -530,14 +616,38 @@ control MyIngress(inout headers hdr,
 control MyEgress(inout headers hdr,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
-	apply { }
+	
+    action return_read(macAddr_t dstAddr, egressSpec_t port) {
+        standard_metadata.egress_spec = port;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = dstAddr;
+        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+    }
+
+    table check_unwritten {
+        key = {
+            hdr.read.unwritten: exact;
+        }
+        actions = {
+            return_read;
+            NoAction;
+        }
+        size = 1024;
+        default_action = NoAction(); //drop();
+    }
+
+    apply { 
+        if (hdr.read.isValid()) {
+            check_unwritten.apply();
+        }
+    }
 }
 
 /*************************************************************************
 *************   C H E C K S U M    C O M P U T A T I O N   ***************
 *************************************************************************/
 
-control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
+control MyComputeChecksum(inout headers hdr, inout metadata meta) {
      apply {
         update_checksum(
             hdr.ipv4.isValid(),

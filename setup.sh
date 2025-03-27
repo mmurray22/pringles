@@ -12,3 +12,5 @@ sudo apt install libyaml-cpp-dev
 sudo apt install libspdlog-dev
 sudo apt install meson
 sudo apt install pkg-config
+sudo apt install texlive-full
+sudo apt install ripgrep
