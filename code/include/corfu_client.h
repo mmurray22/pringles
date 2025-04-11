@@ -1,6 +1,10 @@
 // Corfu client
+#include <vector>
 #include <map>
+#include <cstdint>
+#include <cstddef>
 #include "base_client.h"
+#include "flash_id.h"
 
 /*
  * CorfuClient
@@ -11,11 +15,10 @@
  * valid replication.
  */
 
-#define TIMEOUT 10
-
 class CorfuClient : public BaseClient {
     public:
         CorfuClient(YAML::Node config);
+
         std::byte read();
         uint64_t append();
         uint64_t fill();
@@ -27,8 +30,15 @@ class CorfuClient : public BaseClient {
         uint64_t reconfigure();
 
         /*** Local Shared State ***/
+        std::vector<FlashID> corfu_log;
+        std::map<uint64_t, bool> junk;
+        std::vector<std::map<std::pair<uint64_t, uint64_t>, std::vector<FlashID>>> auxiliary;
+        uint64_t curr_epoch = 0;
+        bool projection_sealed = false;
 
         /*** Timeouts ***/
-        std::mutex local_lock;
-        std::map<uint64_t, std::string> personal_log;
+        static constexpr uint64_t RECONFIGURATION_TIMEOUT 10
+        static constexpr uint64_t READ_TIMEOUT 10
+        static constexpr uint64_t APPEND_TIMEOUT 10
+        static constexpr uint64_t TRIM_TIMEOUT 10
 }
