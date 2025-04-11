@@ -12,6 +12,11 @@
         ["tmp_4", 32, false],
         ["tmp_5", 32, false],
         ["tmp_6", 32, false],
+        ["tmp_7", 32, false],
+        ["tmp_8", 32, false],
+        ["tmp_9", 32, true],
+        ["tmp_10", 32, true],
+        ["tmp_11", 32, true],
         ["ring_view_reg_0", 32, false],
         ["local_seq_no_reg_0", 32, false],
         ["cntrl_pkt_it_reg_0", 32, false],
@@ -22,6 +27,7 @@
         ["top_seq_no_0", 32, false],
         ["num_acks_0", 32, false],
         ["hr_seq_no_0", 32, false],
+        ["mod_res_0", 32, false],
         ["local_seq_no_reg_1", 32, false],
         ["cntrl_pkt_it_reg_1", 32, false],
         ["h_seen_seq_no_reg_0", 32, false],
@@ -30,6 +36,7 @@
         ["metadata.highest_contiguous_seq_no", 32, false],
         ["metadata.default_bit", 32, false],
         ["metadata.circulate", 32, false],
+        ["metadata.switch_id", 32, false],
         ["_padding_0", 7, false]
       ]
     },
@@ -114,6 +121,7 @@
         ["nonce", 32, false],
         ["g_idx", 32, true],
         ["shard_id", 32, true],
+        ["switch_id", 32, true],
         ["unwritten", 32, true],
         ["status", 32, true]
       ]
@@ -132,16 +140,17 @@
       "name" : "ack_t",
       "id" : 8,
       "fields" : [
-        ["seq_no", 32, true],
-        ["view", 32, false]
+        ["g_idx", 32, true],
+        ["view", 32, false],
+        ["switch_id", 32, false],
+        ["status", 32, false]
       ]
     },
     {
-      "name" : "myTunnel_t",
+      "name" : "heartbeat_t",
       "id" : 9,
       "fields" : [
-        ["proto_id", 16, false],
-        ["dst_id", 16, false]
+        ["live", 32, false]
       ]
     }
   ],
@@ -210,9 +219,9 @@
       "pi_omit" : true
     },
     {
-      "name" : "myTunnel",
+      "name" : "heartbeat",
       "id" : 9,
-      "header_type" : "myTunnel_t",
+      "header_type" : "heartbeat_t",
       "metadata" : false,
       "pi_omit" : true
     }
@@ -221,7 +230,13 @@
   "header_union_types" : [],
   "header_unions" : [],
   "header_union_stacks" : [],
-  "field_lists" : [],
+  "field_lists" : [
+    {
+      "id" : 1,
+      "name" : "fl",
+      "elements" : []
+    }
+  ],
   "errors" : [
     ["NoError", 0],
     ["PacketTooShort", 1],
@@ -250,177 +265,7 @@
                 }
               ],
               "op" : "extract"
-            }
-          ],
-          "transitions" : [
-            {
-              "type" : "default",
-              "value" : null,
-              "mask" : null,
-              "next_state" : "parse_ipv4"
-            }
-          ],
-          "transition_key" : []
-        },
-        {
-          "name" : "parse_control",
-          "id" : 1,
-          "parser_ops" : [
-            {
-              "parameters" : [
-                {
-                  "type" : "regular",
-                  "value" : "cntrl"
-                }
-              ],
-              "op" : "extract"
-            }
-          ],
-          "transitions" : [
-            {
-              "type" : "default",
-              "value" : null,
-              "mask" : null,
-              "next_state" : "parse_tunnel"
-            }
-          ],
-          "transition_key" : []
-        },
-        {
-          "name" : "parse_append",
-          "id" : 2,
-          "parser_ops" : [
-            {
-              "parameters" : [
-                {
-                  "type" : "regular",
-                  "value" : "append"
-                }
-              ],
-              "op" : "extract"
-            }
-          ],
-          "transitions" : [
-            {
-              "type" : "default",
-              "value" : null,
-              "mask" : null,
-              "next_state" : "parse_tunnel"
-            }
-          ],
-          "transition_key" : []
-        },
-        {
-          "name" : "parse_read",
-          "id" : 3,
-          "parser_ops" : [
-            {
-              "parameters" : [
-                {
-                  "type" : "regular",
-                  "value" : "read"
-                }
-              ],
-              "op" : "extract"
-            }
-          ],
-          "transitions" : [
-            {
-              "type" : "default",
-              "value" : null,
-              "mask" : null,
-              "next_state" : "parse_tunnel"
-            }
-          ],
-          "transition_key" : []
-        },
-        {
-          "name" : "parse_tail",
-          "id" : 4,
-          "parser_ops" : [
-            {
-              "parameters" : [
-                {
-                  "type" : "regular",
-                  "value" : "tail"
-                }
-              ],
-              "op" : "extract"
-            }
-          ],
-          "transitions" : [
-            {
-              "type" : "default",
-              "value" : null,
-              "mask" : null,
-              "next_state" : "parse_tunnel"
-            }
-          ],
-          "transition_key" : []
-        },
-        {
-          "name" : "parse_ack",
-          "id" : 5,
-          "parser_ops" : [
-            {
-              "parameters" : [
-                {
-                  "type" : "regular",
-                  "value" : "ack"
-                }
-              ],
-              "op" : "extract"
-            }
-          ],
-          "transitions" : [
-            {
-              "type" : "default",
-              "value" : null,
-              "mask" : null,
-              "next_state" : "parse_tunnel"
-            }
-          ],
-          "transition_key" : []
-        },
-        {
-          "name" : "parse_tunnel",
-          "id" : 6,
-          "parser_ops" : [
-            {
-              "parameters" : [
-                {
-                  "type" : "regular",
-                  "value" : "myTunnel"
-                }
-              ],
-              "op" : "extract"
-            }
-          ],
-          "transitions" : [
-            {
-              "type" : "hexstr",
-              "value" : "0x0800",
-              "mask" : null,
-              "next_state" : "parse_ipv4"
             },
-            {
-              "type" : "default",
-              "value" : null,
-              "mask" : null,
-              "next_state" : null
-            }
-          ],
-          "transition_key" : [
-            {
-              "type" : "field",
-              "value" : ["myTunnel", "proto_id"]
-            }
-          ]
-        },
-        {
-          "name" : "parse_ipv4",
-          "id" : 7,
-          "parser_ops" : [
             {
               "parameters" : [
                 {
@@ -437,12 +282,6 @@
               "value" : "0x0820",
               "mask" : null,
               "next_state" : "parse_control"
-            },
-            {
-              "type" : "hexstr",
-              "value" : "0x1212",
-              "mask" : null,
-              "next_state" : "parse_tunnel"
             },
             {
               "type" : "hexstr",
@@ -469,6 +308,12 @@
               "next_state" : "parse_ack"
             },
             {
+              "type" : "hexstr",
+              "value" : "0x0880",
+              "mask" : null,
+              "next_state" : "parse_heartbeat"
+            },
+            {
               "type" : "default",
               "value" : null,
               "mask" : null,
@@ -481,6 +326,150 @@
               "value" : ["ethernet", "etherType"]
             }
           ]
+        },
+        {
+          "name" : "parse_control",
+          "id" : 1,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "cntrl"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : []
+        },
+        {
+          "name" : "parse_heartbeat",
+          "id" : 2,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "heartbeat"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : []
+        },
+        {
+          "name" : "parse_append",
+          "id" : 3,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "append"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : []
+        },
+        {
+          "name" : "parse_read",
+          "id" : 4,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "read"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : []
+        },
+        {
+          "name" : "parse_tail",
+          "id" : 5,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "tail"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : []
+        },
+        {
+          "name" : "parse_ack",
+          "id" : 6,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "ack"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : []
         }
       ]
     }
@@ -492,11 +481,11 @@
       "id" : 0,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 674,
+        "line" : 718,
         "column" : 8,
         "source_fragment" : "MyDeparser"
       },
-      "order" : ["ethernet", "cntrl", "myTunnel", "ipv4"],
+      "order" : ["ethernet", "cntrl", "ack", "tail", "ipv4", "append", "read", "heartbeat"],
       "primitives" : []
     }
   ],
@@ -508,7 +497,7 @@
       "id" : 0,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 268,
+        "line" : 276,
         "column" : 25,
         "source_fragment" : "ring_view"
       },
@@ -520,7 +509,7 @@
       "id" : 1,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 271,
+        "line" : 279,
         "column" : 25,
         "source_fragment" : "highest_seen_seq_no"
       },
@@ -532,7 +521,7 @@
       "id" : 2,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 272,
+        "line" : 280,
         "column" : 25,
         "source_fragment" : "local_seq_no"
       },
@@ -544,7 +533,7 @@
       "id" : 3,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 273,
+        "line" : 281,
         "column" : 25,
         "source_fragment" : "cntrl_pkt_it"
       },
@@ -556,7 +545,7 @@
       "id" : 4,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 276,
+        "line" : 284,
         "column" : 25,
         "source_fragment" : "highest_replicated_seq_no"
       },
@@ -568,7 +557,7 @@
       "id" : 5,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 277,
+        "line" : 285,
         "column" : 25,
         "source_fragment" : "highest_contiguous_seq_no"
       },
@@ -580,7 +569,7 @@
       "id" : 6,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 278,
+        "line" : 286,
         "column" : 25,
         "source_fragment" : "lower_bound_seq_no"
       },
@@ -592,7 +581,7 @@
       "id" : 7,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 279,
+        "line" : 287,
         "column" : 25,
         "source_fragment" : "upper_bound_seq_no"
       },
@@ -604,7 +593,7 @@
       "id" : 8,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 280,
+        "line" : 288,
         "column" : 27,
         "source_fragment" : "seq_no_to_ack"
       },
@@ -616,7 +605,7 @@
       "id" : 9,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 281,
+        "line" : 289,
         "column" : 28,
         "source_fragment" : "seq_no_to_ip"
       },
@@ -628,7 +617,7 @@
       "id" : 10,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 282,
+        "line" : 290,
         "column" : 24,
         "source_fragment" : "idx_maps_full"
       },
@@ -640,9 +629,53 @@
     {
       "name" : "calc",
       "id" : 0,
+      "algo" : "identity",
+      "input" : [
+        {
+          "type" : "field",
+          "value" : ["scalars", "tmp_7"]
+        }
+      ]
+    },
+    {
+      "name" : "calc_0",
+      "id" : 1,
+      "algo" : "identity",
+      "input" : [
+        {
+          "type" : "field",
+          "value" : ["scalars", "tmp_9"]
+        }
+      ]
+    },
+    {
+      "name" : "calc_1",
+      "id" : 2,
+      "algo" : "identity",
+      "input" : [
+        {
+          "type" : "field",
+          "value" : ["scalars", "tmp_10"]
+        }
+      ]
+    },
+    {
+      "name" : "calc_2",
+      "id" : 3,
+      "algo" : "identity",
+      "input" : [
+        {
+          "type" : "field",
+          "value" : ["scalars", "tmp_11"]
+        }
+      ]
+    },
+    {
+      "name" : "calc_3",
+      "id" : 4,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 652,
+        "line" : 696,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
       },
@@ -730,7 +763,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -752,7 +785,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -774,7 +807,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -796,7 +829,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -818,7 +851,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -840,7 +873,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -862,7 +895,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -884,7 +917,29 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
+            "column" : 8,
+            "source_fragment" : "mark_to_drop(standard_metadata)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.drop",
+      "id" : 11,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "mark_to_drop",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "standard_metadata"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -893,7 +948,7 @@
     },
     {
       "name" : "MyIngress.ipv4_forward",
-      "id" : 11,
+      "id" : 12,
       "runtime_data" : [
         {
           "name" : "dstAddr",
@@ -919,7 +974,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 292,
+            "line" : 300,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = port"
           }
@@ -938,7 +993,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 293,
+            "line" : 301,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.srcAddr = hdr.ethernet.dstAddr"
           }
@@ -957,7 +1012,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 294,
+            "line" : 302,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.dstAddr = dstAddr"
           }
@@ -999,7 +1054,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 295,
+            "line" : 303,
             "column" : 8,
             "source_fragment" : "hdr.ipv4.ttl = hdr.ipv4.ttl - 1"
           }
@@ -1008,7 +1063,7 @@
     },
     {
       "name" : "MyIngress.process_cntrl_pkt",
-      "id" : 12,
+      "id" : 13,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -1029,7 +1084,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 317,
+            "line" : 325,
             "column" : 8,
             "source_fragment" : "ring_view.read(ring_view_reg, 0)"
           }
@@ -1038,7 +1093,7 @@
           "op" : "_jump_if_zero",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 320,
+            "line" : 328,
             "column" : 8,
             "source_fragment" : "if"
           },
@@ -1083,7 +1138,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -1092,7 +1147,7 @@
           "op" : "_jump",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 320,
+            "line" : 328,
             "column" : 8,
             "source_fragment" : "if"
           },
@@ -1121,7 +1176,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 326,
+            "line" : 334,
             "column" : 8,
             "source_fragment" : "local_seq_no.read(local_seq_no_reg, 0)"
           }
@@ -1173,7 +1228,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 327,
+            "line" : 335,
             "column" : 8,
             "source_fragment" : "hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + (int<32>)local_seq_no_reg"
           }
@@ -1205,7 +1260,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 330,
+            "line" : 338,
             "column" : 37,
             "source_fragment" : "(bit<32>)(hdr.cntrl.global_seq_no)"
           }
@@ -1228,7 +1283,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 330,
+            "line" : 338,
             "column" : 8,
             "source_fragment" : "highest_seen_seq_no.write(0, (bit<32>)(hdr.cntrl.global_seq_no))"
           }
@@ -1251,7 +1306,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 333,
+            "line" : 341,
             "column" : 8,
             "source_fragment" : "local_seq_no.write(0, 0)"
           }
@@ -1274,7 +1329,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 336,
+            "line" : 344,
             "column" : 8,
             "source_fragment" : "cntrl_pkt_it.read(cntrl_pkt_it_reg, 0)"
           }
@@ -1336,7 +1391,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 337,
+            "line" : 345,
             "column" : 30,
             "source_fragment" : "(bit<32>)((int<32>)cntrl_pkt_it_reg + 1)"
           }
@@ -1359,7 +1414,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 337,
+            "line" : 345,
             "column" : 8,
             "source_fragment" : "cntrl_pkt_it.write(0, (bit<32>)((int<32>)cntrl_pkt_it_reg + 1))"
           }
@@ -1368,7 +1423,7 @@
     },
     {
       "name" : "MyIngress.cntrl_forward",
-      "id" : 13,
+      "id" : 14,
       "runtime_data" : [
         {
           "name" : "port",
@@ -1394,7 +1449,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 341,
+            "line" : 349,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = port"
           }
@@ -1413,40 +1468,9 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 342,
+            "line" : 350,
             "column" : 8,
             "source_fragment" : "hdr.cntrl.id = id"
-          }
-        }
-      ]
-    },
-    {
-      "name" : "MyIngress.forward_ack_pkt",
-      "id" : 14,
-      "runtime_data" : [
-        {
-          "name" : "port",
-          "bitwidth" : 9
-        }
-      ],
-      "primitives" : [
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["standard_metadata", "egress_spec"]
-            },
-            {
-              "type" : "runtime_data",
-              "value" : 0
-            }
-          ],
-          "source_info" : {
-            "filename" : "log_bmv2.p4",
-            "line" : 359,
-            "column" : 5,
-            "source_fragment" : "standard_metadata.egress_spec = port"
           }
         }
       ]
@@ -1512,7 +1536,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 364,
+            "line" : 368,
             "column" : 40,
             "source_fragment" : "(bit<32>)(seq_num_idx*entry_num)"
           }
@@ -1535,7 +1559,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 364,
+            "line" : 368,
             "column" : 8,
             "source_fragment" : "seq_no_to_ip.read(ack_received, (bit<32>)(seq_num_idx*entry_num))"
           }
@@ -1544,7 +1568,7 @@
           "op" : "_jump_if_zero",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 365,
+            "line" : 369,
             "column" : 8,
             "source_fragment" : "if"
           },
@@ -1626,7 +1650,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 366,
+            "line" : 370,
             "column" : 31,
             "source_fragment" : "(bit<32>)(seq_num_idx * entry_num)"
           }
@@ -1649,7 +1673,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 366,
+            "line" : 370,
             "column" : 12,
             "source_fragment" : "seq_no_to_ip.write((bit<32>)(seq_num_idx * entry_num), 1)"
           }
@@ -1681,7 +1705,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 368,
+            "line" : 372,
             "column" : 40,
             "source_fragment" : "(bit<32>)seq_num_idx"
           }
@@ -1704,7 +1728,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 368,
+            "line" : 372,
             "column" : 12,
             "source_fragment" : "seq_no_to_ack.read(ack_cnt, (bit<32>)seq_num_idx)"
           }
@@ -1736,7 +1760,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 369,
+            "line" : 373,
             "column" : 32,
             "source_fragment" : "(bit<32>)seq_num_idx"
           }
@@ -1798,7 +1822,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 369,
+            "line" : 373,
             "column" : 54,
             "source_fragment" : "(bit<32>)((int<32>)ack_cnt + 1)"
           }
@@ -1821,7 +1845,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 369,
+            "line" : 373,
             "column" : 12,
             "source_fragment" : "seq_no_to_ack.write((bit<32>)seq_num_idx, (bit<32>)((int<32>)ack_cnt + 1))"
           }
@@ -1836,7 +1860,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 288,
+            "line" : 296,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -1867,7 +1891,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 391,
+            "line" : 393,
             "column" : 8,
             "source_fragment" : "standard_metadata.mcast_grp = mcast_grp_num"
           }
@@ -1875,8 +1899,112 @@
       ]
     },
     {
-      "name" : "MyIngress.read_request",
+      "name" : "MyIngress.ack_request",
       "id" : 17,
+      "runtime_data" : [
+        {
+          "name" : "port",
+          "bitwidth" : 9
+        }
+      ],
+      "primitives" : [
+        {
+          "op" : "_jump_if_zero",
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 410,
+            "column" : 4,
+            "source_fragment" : "if"
+          },
+          "parameters" : [
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "b2d",
+                  "left" : null,
+                  "right" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "==",
+                      "left" : {
+                        "type" : "local",
+                        "value" : 0
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0x0000"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x3"
+            }
+          ]
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["ack", "status"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000002"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 411,
+            "column" : 6,
+            "source_fragment" : "hdr.ack.status = 2"
+          }
+        },
+        {
+          "op" : "_jump",
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 410,
+            "column" : 4,
+            "source_fragment" : "if"
+          },
+          "parameters" : [
+            {
+              "type" : "hexstr",
+              "value" : "0x4"
+            }
+          ]
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["standard_metadata", "egress_spec"]
+            },
+            {
+              "type" : "runtime_data",
+              "value" : 0
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 413,
+            "column" : 9,
+            "source_fragment" : "standard_metadata.egress_spec = port"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.read_request",
+      "id" : 18,
       "runtime_data" : [
         {
           "name" : "mcast_grp_num",
@@ -1902,7 +2030,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 410,
+            "line" : 433,
             "column" : 5,
             "source_fragment" : "highest_contiguous_seq_no.read(hc_seq_no, 0)"
           }
@@ -1925,7 +2053,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 411,
+            "line" : 434,
             "column" : 5,
             "source_fragment" : "lower_bound_seq_no.read(bot_seq_no, 0)"
           }
@@ -1948,7 +2076,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 412,
+            "line" : 435,
             "column" : 5,
             "source_fragment" : "upper_bound_seq_no.read(top_seq_no, 0)"
           }
@@ -1957,7 +2085,7 @@
           "op" : "_jump_if_zero",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 413,
+            "line" : 436,
             "column" : 5,
             "source_fragment" : "if"
           },
@@ -2016,7 +2144,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 414,
+            "line" : 437,
             "column" : 9,
             "source_fragment" : "standard_metadata.mcast_grp = mcast_grp_num"
           }
@@ -2025,7 +2153,7 @@
           "op" : "_jump",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 413,
+            "line" : 436,
             "column" : 5,
             "source_fragment" : "if"
           },
@@ -2040,7 +2168,7 @@
           "op" : "_jump_if_zero",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 416,
+            "line" : 439,
             "column" : 9,
             "source_fragment" : "if"
           },
@@ -2142,7 +2270,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 419,
+            "line" : 442,
             "column" : 45,
             "source_fragment" : "(bit<32>)hdr.read.g_idx"
           }
@@ -2165,7 +2293,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 419,
+            "line" : 442,
             "column" : 16,
             "source_fragment" : "seq_no_to_ack.read(num_acks, (bit<32>)hdr.read.g_idx)"
           }
@@ -2174,7 +2302,7 @@
           "op" : "_jump_if_zero",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 420,
+            "line" : 443,
             "column" : 10,
             "source_fragment" : "if"
           },
@@ -2223,7 +2351,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 421,
+            "line" : 444,
             "column" : 14,
             "source_fragment" : "standard_metadata.mcast_grp = mcast_grp_num"
           }
@@ -2242,7 +2370,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 422,
+            "line" : 445,
             "column" : 20,
             "source_fragment" : "hdr.read.status = 4"
           }
@@ -2251,7 +2379,7 @@
           "op" : "_jump",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 420,
+            "line" : 443,
             "column" : 10,
             "source_fragment" : "if"
           },
@@ -2276,7 +2404,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 424,
+            "line" : 447,
             "column" : 20,
             "source_fragment" : "hdr.read.status = 3"
           }
@@ -2285,7 +2413,7 @@
           "op" : "_jump",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 416,
+            "line" : 439,
             "column" : 9,
             "source_fragment" : "if"
           },
@@ -2310,7 +2438,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 427,
+            "line" : 450,
             "column" : 10,
             "source_fragment" : "hdr.read.unwritten = 1"
           }
@@ -2329,7 +2457,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 428,
+            "line" : 451,
             "column" : 16,
             "source_fragment" : "hdr.ipv4.srcAddr = hdr.ipv4.dstAddr"
           }
@@ -2338,7 +2466,7 @@
     },
     {
       "name" : "MyIngress.read_switch",
-      "id" : 18,
+      "id" : 19,
       "runtime_data" : [
         {
           "name" : "port",
@@ -2350,7 +2478,7 @@
           "op" : "_jump_if_zero",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 446,
+            "line" : 469,
             "column" : 5,
             "source_fragment" : "if"
           },
@@ -2399,7 +2527,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 447,
+            "line" : 470,
             "column" : 6,
             "source_fragment" : "hdr.read.status = 2"
           }
@@ -2408,7 +2536,7 @@
           "op" : "_jump",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 446,
+            "line" : 469,
             "column" : 5,
             "source_fragment" : "if"
           },
@@ -2433,7 +2561,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 449,
+            "line" : 472,
             "column" : 9,
             "source_fragment" : "standard_metadata.egress_spec = port"
           }
@@ -2442,7 +2570,7 @@
     },
     {
       "name" : "MyIngress.update_tail",
-      "id" : 19,
+      "id" : 20,
       "runtime_data" : [
         {
           "name" : "port",
@@ -2468,7 +2596,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 468,
+            "line" : 491,
             "column" : 8,
             "source_fragment" : "highest_replicated_seq_no.read(hr_seq_no, 0)"
           }
@@ -2477,7 +2605,7 @@
           "op" : "_jump_if_zero",
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 469,
+            "line" : 492,
             "column" : 8,
             "source_fragment" : "if"
           },
@@ -2549,7 +2677,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 470,
+            "line" : 493,
             "column" : 12,
             "source_fragment" : "hdr.tail.tail_seq_no = (int<32>)hr_seq_no"
           }
@@ -2568,7 +2696,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 472,
+            "line" : 495,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = port"
           }
@@ -2577,7 +2705,7 @@
     },
     {
       "name" : "MyIngress.return_tail",
-      "id" : 20,
+      "id" : 21,
       "runtime_data" : [
         {
           "name" : "dstAddr",
@@ -2603,7 +2731,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 476,
+            "line" : 499,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = port"
           }
@@ -2622,7 +2750,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 477,
+            "line" : 500,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.srcAddr = hdr.ethernet.dstAddr"
           }
@@ -2641,7 +2769,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 478,
+            "line" : 501,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.dstAddr = dstAddr"
           }
@@ -2683,7 +2811,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 479,
+            "line" : 502,
             "column" : 8,
             "source_fragment" : "hdr.ipv4.ttl = hdr.ipv4.ttl - 1"
           }
@@ -2692,7 +2820,7 @@
     },
     {
       "name" : "MyIngress.circulate_port",
-      "id" : 21,
+      "id" : 22,
       "runtime_data" : [
         {
           "name" : "port",
@@ -2714,7 +2842,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 496,
+            "line" : 519,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = port"
           }
@@ -2723,14 +2851,135 @@
     },
     {
       "name" : "MyIngress.new_contiguous_value",
-      "id" : 22,
+      "id" : 23,
       "runtime_data" : [
         {
-          "name" : "new_seq_no",
+          "name" : "offset",
           "bitwidth" : 32
         }
       ],
       "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_7"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["read", "switch_id"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 536,
+            "column" : 53,
+            "source_fragment" : "(bit<32>)hdr.read.switch_id"
+          }
+        },
+        {
+          "op" : "modify_field_with_hash_based_offset",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "mod_res_0"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000000"
+            },
+            {
+              "type" : "calculation",
+              "value" : "calc"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000004"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 536,
+            "column" : 8,
+            "source_fragment" : "hash(mod_res, HashAlgorithm.identity, base, {(bit<32>)hdr.read.switch_id}, (bit<32>)4)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_8"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "+",
+                      "left" : {
+                        "type" : "expression",
+                        "value" : {
+                          "op" : "&",
+                          "left" : {
+                            "type" : "expression",
+                            "value" : {
+                              "op" : "<<",
+                              "left" : {
+                                "type" : "local",
+                                "value" : 0
+                              },
+                              "right" : {
+                                "type" : "hexstr",
+                                "value" : "0x2"
+                              }
+                            }
+                          },
+                          "right" : {
+                            "type" : "hexstr",
+                            "value" : "0xffffffff"
+                          }
+                        }
+                      },
+                      "right" : {
+                        "type" : "field",
+                        "value" : ["scalars", "mod_res_0"]
+                      }
+                    }
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 538,
+            "column" : 43,
+            "source_fragment" : "new_seq_no"
+          }
+        },
         {
           "op" : "register_write",
           "parameters" : [
@@ -2743,15 +2992,15 @@
               "value" : "0x00000000"
             },
             {
-              "type" : "runtime_data",
-              "value" : 0
+              "type" : "field",
+              "value" : ["scalars", "tmp_8"]
             }
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 511,
+            "line" : 538,
             "column" : 8,
-            "source_fragment" : "highest_contiguous_seq_no.write(0, (bit<32>)new_seq_no)"
+            "source_fragment" : "highest_contiguous_seq_no.write(0, new_seq_no)"
           }
         },
         {
@@ -2762,13 +3011,56 @@
               "value" : ["scalars", "metadata.highest_contiguous_seq_no"]
             },
             {
-              "type" : "runtime_data",
-              "value" : 0
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "+",
+                      "left" : {
+                        "type" : "expression",
+                        "value" : {
+                          "op" : "&",
+                          "left" : {
+                            "type" : "expression",
+                            "value" : {
+                              "op" : "<<",
+                              "left" : {
+                                "type" : "local",
+                                "value" : 0
+                              },
+                              "right" : {
+                                "type" : "hexstr",
+                                "value" : "0x2"
+                              }
+                            }
+                          },
+                          "right" : {
+                            "type" : "hexstr",
+                            "value" : "0xffffffff"
+                          }
+                        }
+                      },
+                      "right" : {
+                        "type" : "field",
+                        "value" : ["scalars", "mod_res_0"]
+                      }
+                    }
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
             }
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 512,
+            "line" : 539,
             "column" : 8,
             "source_fragment" : "meta.highest_contiguous_seq_no = new_seq_no"
           }
@@ -2776,8 +3068,34 @@
       ]
     },
     {
-      "name" : "log_bmv2l545",
-      "id" : 23,
+      "name" : "log_bmv2l563",
+      "id" : 24,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "clone_ingress_pkt_to_egress",
+          "parameters" : [
+            {
+              "type" : "hexstr",
+              "value" : "0x00000064"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x1"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 563,
+            "column" : 12,
+            "source_fragment" : "clone(CloneType.I2E,100)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "log_bmv2l571",
+      "id" : 25,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -2798,7 +3116,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 545,
+            "line" : 571,
             "column" : 16,
             "source_fragment" : "local_seq_no.read(local_seq_no_reg, 0)"
           }
@@ -2860,7 +3178,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 546,
+            "line" : 572,
             "column" : 16,
             "source_fragment" : "local_seq_no_reg = (bit<32>)((int<32>)local_seq_no_reg + hdr.append.batch_size)"
           }
@@ -2883,7 +3201,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 547,
+            "line" : 573,
             "column" : 16,
             "source_fragment" : "local_seq_no.write(0, local_seq_no_reg)"
           }
@@ -2915,7 +3233,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 551,
+            "line" : 577,
             "column" : 16,
             "source_fragment" : "hdr.append.g_idx = (int<32>)local_seq_no_reg"
           }
@@ -2934,7 +3252,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 552,
+            "line" : 578,
             "column" : 16,
             "source_fragment" : "hdr.append.status = 2"
           }
@@ -2942,8 +3260,8 @@
       ]
     },
     {
-      "name" : "log_bmv2l562",
-      "id" : 24,
+      "name" : "log_bmv2l588",
+      "id" : 26,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -2964,7 +3282,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 562,
+            "line" : 588,
             "column" : 20,
             "source_fragment" : "highest_seen_seq_no.read(h_seen_seq_no_reg, 0)"
           }
@@ -3016,7 +3334,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 563,
+            "line" : 589,
             "column" : 20,
             "source_fragment" : "hdr.append.g_idx = hdr.append.g_idx + (int<32>)h_seen_seq_no_reg"
           }
@@ -3035,7 +3353,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 564,
+            "line" : 590,
             "column" : 20,
             "source_fragment" : "hdr.append.status = 3"
           }
@@ -3043,8 +3361,8 @@
       ]
     },
     {
-      "name" : "log_bmv2l555",
-      "id" : 25,
+      "name" : "log_bmv2l581",
+      "id" : 27,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -3065,7 +3383,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 555,
+            "line" : 581,
             "column" : 16,
             "source_fragment" : "cntrl_pkt_it.read(cntrl_pkt_it_reg, 0)"
           }
@@ -3073,8 +3391,8 @@
       ]
     },
     {
-      "name" : "log_bmv2l570",
-      "id" : 26,
+      "name" : "log_bmv2l596",
+      "id" : 28,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -3091,16 +3409,62 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 570,
+            "line" : 596,
             "column" : 10,
             "source_fragment" : "hdr.append.status = 4"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_9"]
+            },
+            {
+              "type" : "field",
+              "value" : ["append", "g_idx"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 597,
+            "column" : 73,
+            "source_fragment" : "hdr.append.g_idx"
+          }
+        },
+        {
+          "op" : "modify_field_with_hash_based_offset",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["append", "shard_id"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000000"
+            },
+            {
+              "type" : "calculation",
+              "value" : "calc_0"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000003"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 597,
+            "column" : 16,
+            "source_fragment" : "hash(hdr.append.shard_id, HashAlgorithm.identity, base, {hdr.append.g_idx}, (bit<32>)3)"
           }
         }
       ]
     },
     {
-      "name" : "log_bmv2l573",
-      "id" : 27,
+      "name" : "log_bmv2l600",
+      "id" : 29,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -3117,7 +3481,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 573,
+            "line" : 600,
             "column" : 16,
             "source_fragment" : "meta.circulate = 1"
           }
@@ -3125,8 +3489,8 @@
       ]
     },
     {
-      "name" : "log_bmv2l568",
-      "id" : 28,
+      "name" : "log_bmv2l594",
+      "id" : 30,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -3147,7 +3511,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 568,
+            "line" : 594,
             "column" : 12,
             "source_fragment" : "highest_seen_seq_no.read(h_seen_seq_no_reg, 0)"
           }
@@ -3155,8 +3519,114 @@
       ]
     },
     {
-      "name" : "log_bmv2l589",
-      "id" : 29,
+      "name" : "log_bmv2l608",
+      "id" : 31,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_10"]
+            },
+            {
+              "type" : "field",
+              "value" : ["read", "g_idx"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 608,
+            "column" : 76,
+            "source_fragment" : "hdr.read.g_idx"
+          }
+        },
+        {
+          "op" : "modify_field_with_hash_based_offset",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["read", "switch_id"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000000"
+            },
+            {
+              "type" : "calculation",
+              "value" : "calc_1"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000004"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 608,
+            "column" : 20,
+            "source_fragment" : "hash(hdr.read.switch_id, HashAlgorithm.identity, base, {hdr.read.g_idx}, (bit<32>)4)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "log_bmv2l615",
+      "id" : 32,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_11"]
+            },
+            {
+              "type" : "field",
+              "value" : ["read", "g_idx"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 615,
+            "column" : 71,
+            "source_fragment" : "hdr.read.g_idx"
+          }
+        },
+        {
+          "op" : "modify_field_with_hash_based_offset",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["read", "shard_id"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000000"
+            },
+            {
+              "type" : "calculation",
+              "value" : "calc_2"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000003"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 615,
+            "column" : 16,
+            "source_fragment" : "hash(hdr.read.shard_id, HashAlgorithm.identity, base, {hdr.read.g_idx}, (bit<32>)3)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "log_bmv2l620",
+      "id" : 33,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -3173,7 +3643,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 589,
+            "line" : 620,
             "column" : 16,
             "source_fragment" : "meta.circulate = 1"
           }
@@ -3181,8 +3651,8 @@
       ]
     },
     {
-      "name" : "log_bmv2l595",
-      "id" : 30,
+      "name" : "log_bmv2l626",
+      "id" : 34,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -3203,7 +3673,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 595,
+            "line" : 626,
             "column" : 12,
             "source_fragment" : "highest_contiguous_seq_no.read(hc_seq_no, 0)"
           }
@@ -3222,7 +3692,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 596,
+            "line" : 627,
             "column" : 12,
             "source_fragment" : "meta.highest_contiguous_seq_no = hc_seq_no"
           }
@@ -3230,8 +3700,8 @@
       ]
     },
     {
-      "name" : "log_bmv2l533",
-      "id" : 31,
+      "name" : "log_bmv2l556",
+      "id" : 35,
       "runtime_data" : [],
       "primitives" : [
         {
@@ -3248,7 +3718,7 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 533,
+            "line" : 556,
             "column" : 8,
             "source_fragment" : "meta.circulate = 0"
           }
@@ -3256,80 +3726,27 @@
       ]
     },
     {
-      "name" : "NoAction",
-      "id" : 32,
+      "name" : "log_bmv2l677",
+      "id" : 36,
       "runtime_data" : [],
-      "primitives" : []
-    },
-    {
-      "name" : "MyEgress.return_read",
-      "id" : 33,
-      "runtime_data" : [
-        {
-          "name" : "dstAddr",
-          "bitwidth" : 48
-        },
-        {
-          "name" : "port",
-          "bitwidth" : 9
-        }
-      ],
       "primitives" : [
         {
           "op" : "assign",
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["standard_metadata", "egress_spec"]
+              "value" : ["ethernet", "dstAddr"]
             },
-            {
-              "type" : "runtime_data",
-              "value" : 1
-            }
-          ],
-          "source_info" : {
-            "filename" : "log_bmv2.p4",
-            "line" : 621,
-            "column" : 8,
-            "source_fragment" : "standard_metadata.egress_spec = port"
-          }
-        },
-        {
-          "op" : "assign",
-          "parameters" : [
             {
               "type" : "field",
               "value" : ["ethernet", "srcAddr"]
-            },
-            {
-              "type" : "field",
-              "value" : ["ethernet", "dstAddr"]
             }
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 622,
-            "column" : 8,
-            "source_fragment" : "hdr.ethernet.srcAddr = hdr.ethernet.dstAddr"
-          }
-        },
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["ethernet", "dstAddr"]
-            },
-            {
-              "type" : "runtime_data",
-              "value" : 0
-            }
-          ],
-          "source_info" : {
-            "filename" : "log_bmv2.p4",
-            "line" : 623,
-            "column" : 8,
-            "source_fragment" : "hdr.ethernet.dstAddr = dstAddr"
+            "line" : 677,
+            "column" : 16,
+            "source_fragment" : "hdr.ethernet.dstAddr = hdr.ethernet.srcAddr"
           }
         },
         {
@@ -3369,9 +3786,95 @@
           ],
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 624,
-            "column" : 8,
+            "line" : 678,
+            "column" : 16,
             "source_fragment" : "hdr.ipv4.ttl = hdr.ipv4.ttl - 1"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "log_bmv2l681",
+      "id" : 37,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "add_header",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "heartbeat"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 681,
+            "column" : 12,
+            "source_fragment" : "hdr.heartbeat.setValid()"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["heartbeat", "live"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000001"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 682,
+            "column" : 12,
+            "source_fragment" : "hdr.heartbeat.live = 1"
+          }
+        },
+        {
+          "op" : "remove_header",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "ethernet"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 683,
+            "column" : 12,
+            "source_fragment" : "hdr.ethernet.setInvalid()"
+          }
+        },
+        {
+          "op" : "remove_header",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "ipv4"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 684,
+            "column" : 12,
+            "source_fragment" : "hdr.ipv4.setInvalid()"
+          }
+        },
+        {
+          "op" : "remove_header",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "cntrl"
+            }
+          ],
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 685,
+            "column" : 12,
+            "source_fragment" : "hdr.cntrl.setInvalid()"
           }
         }
       ]
@@ -3383,18 +3886,18 @@
       "id" : 0,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 261,
+        "line" : 269,
         "column" : 8,
         "source_fragment" : "MyIngress"
       },
-      "init_table" : "tbl_log_bmv2l533",
+      "init_table" : "tbl_log_bmv2l556",
       "tables" : [
         {
-          "name" : "tbl_log_bmv2l533",
+          "name" : "tbl_log_bmv2l556",
           "id" : 0,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 533,
+            "line" : 556,
             "column" : 23,
             "source_fragment" : "="
           },
@@ -3405,14 +3908,14 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [31],
-          "actions" : ["log_bmv2l533"],
+          "action_ids" : [35],
+          "actions" : ["log_bmv2l556"],
           "base_default_next" : "node_3",
           "next_tables" : {
-            "log_bmv2l533" : "node_3"
+            "log_bmv2l556" : "node_3"
           },
           "default_entry" : {
-            "action_id" : 31,
+            "action_id" : 35,
             "action_const" : true,
             "action_data" : [],
             "action_entry_const" : true
@@ -3423,7 +3926,7 @@
           "id" : 1,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 536,
+            "line" : 561,
             "column" : 12,
             "source_fragment" : "process_cntrl_pkt()"
           },
@@ -3434,14 +3937,14 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [12],
+          "action_ids" : [13],
           "actions" : ["MyIngress.process_cntrl_pkt"],
           "base_default_next" : "MyIngress.cntrl_id_to_ip",
           "next_tables" : {
             "MyIngress.process_cntrl_pkt" : "MyIngress.cntrl_id_to_ip"
           },
           "default_entry" : {
-            "action_id" : 12,
+            "action_id" : 13,
             "action_const" : true,
             "action_data" : [],
             "action_entry_const" : true
@@ -3452,7 +3955,7 @@
           "id" : 2,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 345,
+            "line" : 353,
             "column" : 10,
             "source_fragment" : "cntrl_id_to_ip"
           },
@@ -3470,13 +3973,13 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [13, 4, 1],
+          "action_ids" : [14, 4, 1],
           "actions" : ["MyIngress.cntrl_forward", "MyIngress.drop", "NoAction"],
-          "base_default_next" : "node_31",
+          "base_default_next" : "tbl_log_bmv2l563",
           "next_tables" : {
-            "MyIngress.cntrl_forward" : "node_31",
-            "MyIngress.drop" : "node_31",
-            "NoAction" : "node_31"
+            "MyIngress.cntrl_forward" : "tbl_log_bmv2l563",
+            "MyIngress.drop" : "tbl_log_bmv2l563",
+            "NoAction" : "tbl_log_bmv2l563"
           },
           "default_entry" : {
             "action_id" : 1,
@@ -3486,11 +3989,40 @@
           }
         },
         {
-          "name" : "tbl_log_bmv2l545",
+          "name" : "tbl_log_bmv2l563",
           "id" : 3,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 545,
+            "line" : 563,
+            "column" : 12,
+            "source_fragment" : "clone(CloneType.I2E,100)"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [24],
+          "actions" : ["log_bmv2l563"],
+          "base_default_next" : "node_37",
+          "next_tables" : {
+            "log_bmv2l563" : "node_37"
+          },
+          "default_entry" : {
+            "action_id" : 24,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_log_bmv2l571",
+          "id" : 4,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 571,
             "column" : 16,
             "source_fragment" : "local_seq_no.read(local_seq_no_reg, 0); ..."
           },
@@ -3501,25 +4033,25 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [23],
-          "actions" : ["log_bmv2l545"],
-          "base_default_next" : "tbl_log_bmv2l568",
+          "action_ids" : [25],
+          "actions" : ["log_bmv2l571"],
+          "base_default_next" : "tbl_log_bmv2l594",
           "next_tables" : {
-            "log_bmv2l545" : "tbl_log_bmv2l568"
+            "log_bmv2l571" : "tbl_log_bmv2l594"
           },
           "default_entry" : {
-            "action_id" : 23,
+            "action_id" : 25,
             "action_const" : true,
             "action_data" : [],
             "action_entry_const" : true
           }
         },
         {
-          "name" : "tbl_log_bmv2l555",
-          "id" : 4,
+          "name" : "tbl_log_bmv2l581",
+          "id" : 5,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 555,
+            "line" : 581,
             "column" : 16,
             "source_fragment" : "cntrl_pkt_it.read(cntrl_pkt_it_reg, 0)"
           },
@@ -3530,25 +4062,25 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [25],
-          "actions" : ["log_bmv2l555"],
-          "base_default_next" : "node_11",
+          "action_ids" : [27],
+          "actions" : ["log_bmv2l581"],
+          "base_default_next" : "node_12",
           "next_tables" : {
-            "log_bmv2l555" : "node_11"
+            "log_bmv2l581" : "node_12"
           },
           "default_entry" : {
-            "action_id" : 25,
+            "action_id" : 27,
             "action_const" : true,
             "action_data" : [],
             "action_entry_const" : true
           }
         },
         {
-          "name" : "tbl_log_bmv2l562",
-          "id" : 5,
+          "name" : "tbl_log_bmv2l588",
+          "id" : 6,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 562,
+            "line" : 588,
             "column" : 20,
             "source_fragment" : "highest_seen_seq_no.read(h_seen_seq_no_reg, 0); ..."
           },
@@ -3559,25 +4091,25 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [24],
-          "actions" : ["log_bmv2l562"],
-          "base_default_next" : "tbl_log_bmv2l568",
+          "action_ids" : [26],
+          "actions" : ["log_bmv2l588"],
+          "base_default_next" : "tbl_log_bmv2l594",
           "next_tables" : {
-            "log_bmv2l562" : "tbl_log_bmv2l568"
+            "log_bmv2l588" : "tbl_log_bmv2l594"
           },
           "default_entry" : {
-            "action_id" : 24,
+            "action_id" : 26,
             "action_const" : true,
             "action_data" : [],
             "action_entry_const" : true
           }
         },
         {
-          "name" : "tbl_log_bmv2l568",
-          "id" : 6,
+          "name" : "tbl_log_bmv2l594",
+          "id" : 7,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 568,
+            "line" : 594,
             "column" : 12,
             "source_fragment" : "highest_seen_seq_no.read(h_seen_seq_no_reg, 0)"
           },
@@ -3588,11 +4120,40 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [28],
-          "actions" : ["log_bmv2l568"],
-          "base_default_next" : "node_14",
+          "action_ids" : [30],
+          "actions" : ["log_bmv2l594"],
+          "base_default_next" : "node_15",
           "next_tables" : {
-            "log_bmv2l568" : "node_14"
+            "log_bmv2l594" : "node_15"
+          },
+          "default_entry" : {
+            "action_id" : 30,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_log_bmv2l596",
+          "id" : 8,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 596,
+            "column" : 28,
+            "source_fragment" : "= 4; ..."
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [28],
+          "actions" : ["log_bmv2l596"],
+          "base_default_next" : "MyIngress.get_append_shard_id",
+          "next_tables" : {
+            "log_bmv2l596" : "MyIngress.get_append_shard_id"
           },
           "default_entry" : {
             "action_id" : 28,
@@ -3602,48 +4163,19 @@
           }
         },
         {
-          "name" : "tbl_log_bmv2l570",
-          "id" : 7,
-          "source_info" : {
-            "filename" : "log_bmv2.p4",
-            "line" : 570,
-            "column" : 28,
-            "source_fragment" : "="
-          },
-          "key" : [],
-          "match_type" : "exact",
-          "type" : "simple",
-          "max_size" : 1024,
-          "with_counters" : false,
-          "support_timeout" : false,
-          "direct_meters" : null,
-          "action_ids" : [26],
-          "actions" : ["log_bmv2l570"],
-          "base_default_next" : "MyIngress.get_append_shard_id",
-          "next_tables" : {
-            "log_bmv2l570" : "MyIngress.get_append_shard_id"
-          },
-          "default_entry" : {
-            "action_id" : 26,
-            "action_const" : true,
-            "action_data" : [],
-            "action_entry_const" : true
-          }
-        },
-        {
           "name" : "MyIngress.get_append_shard_id",
-          "id" : 8,
+          "id" : 9,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 394,
+            "line" : 396,
             "column" : 10,
             "source_fragment" : "get_append_shard_id"
           },
           "key" : [
             {
               "match_type" : "exact",
-              "name" : "hdr.append.g_idx",
-              "target" : ["append", "g_idx"],
+              "name" : "hdr.append.shard_id",
+              "target" : ["append", "shard_id"],
               "mask" : null
             }
           ],
@@ -3655,10 +4187,10 @@
           "direct_meters" : null,
           "action_ids" : [16, 6],
           "actions" : ["MyIngress.multicast_append", "MyIngress.drop"],
-          "base_default_next" : "node_31",
+          "base_default_next" : "node_37",
           "next_tables" : {
-            "MyIngress.multicast_append" : "node_31",
-            "MyIngress.drop" : "node_31"
+            "MyIngress.multicast_append" : "node_37",
+            "MyIngress.drop" : "node_37"
           },
           "default_entry" : {
             "action_id" : 6,
@@ -3668,114 +4200,11 @@
           }
         },
         {
-          "name" : "tbl_log_bmv2l573",
-          "id" : 9,
-          "source_info" : {
-            "filename" : "log_bmv2.p4",
-            "line" : 573,
-            "column" : 31,
-            "source_fragment" : "="
-          },
-          "key" : [],
-          "match_type" : "exact",
-          "type" : "simple",
-          "max_size" : 1024,
-          "with_counters" : false,
-          "support_timeout" : false,
-          "direct_meters" : null,
-          "action_ids" : [27],
-          "actions" : ["log_bmv2l573"],
-          "base_default_next" : "node_31",
-          "next_tables" : {
-            "log_bmv2l573" : "node_31"
-          },
-          "default_entry" : {
-            "action_id" : 27,
-            "action_const" : true,
-            "action_data" : [],
-            "action_entry_const" : true
-          }
-        },
-        {
-          "name" : "MyIngress.get_read_switch",
+          "name" : "tbl_log_bmv2l600",
           "id" : 10,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 453,
-            "column" : 10,
-            "source_fragment" : "get_read_switch"
-          },
-          "key" : [
-            {
-              "match_type" : "exact",
-              "name" : "hdr.read.g_idx",
-              "target" : ["read", "g_idx"],
-              "mask" : null
-            }
-          ],
-          "match_type" : "exact",
-          "type" : "simple",
-          "max_size" : 1024,
-          "with_counters" : false,
-          "support_timeout" : false,
-          "direct_meters" : null,
-          "action_ids" : [18, 8],
-          "actions" : ["MyIngress.read_switch", "MyIngress.drop"],
-          "base_default_next" : "node_21",
-          "next_tables" : {
-            "MyIngress.read_switch" : "node_21",
-            "MyIngress.drop" : "node_21"
-          },
-          "default_entry" : {
-            "action_id" : 8,
-            "action_const" : false,
-            "action_data" : [],
-            "action_entry_const" : false
-          }
-        },
-        {
-          "name" : "MyIngress.get_read_shard_id",
-          "id" : 11,
-          "source_info" : {
-            "filename" : "log_bmv2.p4",
-            "line" : 433,
-            "column" : 10,
-            "source_fragment" : "get_read_shard_id"
-          },
-          "key" : [
-            {
-              "match_type" : "exact",
-              "name" : "hdr.read.g_idx",
-              "target" : ["read", "g_idx"],
-              "mask" : null
-            }
-          ],
-          "match_type" : "exact",
-          "type" : "simple",
-          "max_size" : 1024,
-          "with_counters" : false,
-          "support_timeout" : false,
-          "direct_meters" : null,
-          "action_ids" : [17, 7],
-          "actions" : ["MyIngress.read_request", "MyIngress.drop"],
-          "base_default_next" : "node_23",
-          "next_tables" : {
-            "MyIngress.read_request" : "node_23",
-            "MyIngress.drop" : "node_23"
-          },
-          "default_entry" : {
-            "action_id" : 7,
-            "action_const" : false,
-            "action_data" : [],
-            "action_entry_const" : false
-          }
-        },
-        {
-          "name" : "tbl_log_bmv2l589",
-          "id" : 12,
-          "source_info" : {
-            "filename" : "log_bmv2.p4",
-            "line" : 589,
+            "line" : 600,
             "column" : 31,
             "source_fragment" : "="
           },
@@ -3787,10 +4216,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [29],
-          "actions" : ["log_bmv2l589"],
-          "base_default_next" : "node_31",
+          "actions" : ["log_bmv2l600"],
+          "base_default_next" : "node_37",
           "next_tables" : {
-            "log_bmv2l589" : "node_31"
+            "log_bmv2l600" : "node_37"
           },
           "default_entry" : {
             "action_id" : 29,
@@ -3800,11 +4229,172 @@
           }
         },
         {
-          "name" : "MyIngress.process_tail",
+          "name" : "tbl_log_bmv2l608",
+          "id" : 11,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 608,
+            "column" : 20,
+            "source_fragment" : "hash(hdr.read.switch_id, HashAlgorithm.identity, base, {hdr.read.g_idx}, (bit<32>)4)"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [31],
+          "actions" : ["log_bmv2l608"],
+          "base_default_next" : "MyIngress.get_read_switch",
+          "next_tables" : {
+            "log_bmv2l608" : "MyIngress.get_read_switch"
+          },
+          "default_entry" : {
+            "action_id" : 31,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "MyIngress.get_read_switch",
+          "id" : 12,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 476,
+            "column" : 10,
+            "source_fragment" : "get_read_switch"
+          },
+          "key" : [
+            {
+              "match_type" : "exact",
+              "name" : "hdr.read.switch_id",
+              "target" : ["read", "switch_id"],
+              "mask" : null
+            }
+          ],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [19, 9],
+          "actions" : ["MyIngress.read_switch", "MyIngress.drop"],
+          "base_default_next" : "node_24",
+          "next_tables" : {
+            "MyIngress.read_switch" : "node_24",
+            "MyIngress.drop" : "node_24"
+          },
+          "default_entry" : {
+            "action_id" : 9,
+            "action_const" : false,
+            "action_data" : [],
+            "action_entry_const" : false
+          }
+        },
+        {
+          "name" : "tbl_log_bmv2l615",
           "id" : 13,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 482,
+            "line" : 615,
+            "column" : 16,
+            "source_fragment" : "hash(hdr.read.shard_id, HashAlgorithm.identity, base, {hdr.read.g_idx}, (bit<32>)3)"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [32],
+          "actions" : ["log_bmv2l615"],
+          "base_default_next" : "MyIngress.get_read_shard_id",
+          "next_tables" : {
+            "log_bmv2l615" : "MyIngress.get_read_shard_id"
+          },
+          "default_entry" : {
+            "action_id" : 32,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "MyIngress.get_read_shard_id",
+          "id" : 14,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 456,
+            "column" : 10,
+            "source_fragment" : "get_read_shard_id"
+          },
+          "key" : [
+            {
+              "match_type" : "exact",
+              "name" : "hdr.read.shard_id",
+              "target" : ["read", "shard_id"],
+              "mask" : null
+            }
+          ],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [18, 8],
+          "actions" : ["MyIngress.read_request", "MyIngress.drop"],
+          "base_default_next" : "node_27",
+          "next_tables" : {
+            "MyIngress.read_request" : "node_27",
+            "MyIngress.drop" : "node_27"
+          },
+          "default_entry" : {
+            "action_id" : 8,
+            "action_const" : false,
+            "action_data" : [],
+            "action_entry_const" : false
+          }
+        },
+        {
+          "name" : "tbl_log_bmv2l620",
+          "id" : 15,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 620,
+            "column" : 31,
+            "source_fragment" : "="
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [33],
+          "actions" : ["log_bmv2l620"],
+          "base_default_next" : "node_37",
+          "next_tables" : {
+            "log_bmv2l620" : "node_37"
+          },
+          "default_entry" : {
+            "action_id" : 33,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "MyIngress.process_tail",
+          "id" : 16,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 505,
             "column" : 10,
             "source_fragment" : "process_tail"
           },
@@ -3822,27 +4412,27 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [19, 20, 9],
+          "action_ids" : [20, 21, 10],
           "actions" : ["MyIngress.update_tail", "MyIngress.return_tail", "MyIngress.drop"],
-          "base_default_next" : "node_31",
+          "base_default_next" : "node_37",
           "next_tables" : {
-            "MyIngress.update_tail" : "node_31",
-            "MyIngress.return_tail" : "node_31",
-            "MyIngress.drop" : "node_31"
+            "MyIngress.update_tail" : "node_37",
+            "MyIngress.return_tail" : "node_37",
+            "MyIngress.drop" : "node_37"
           },
           "default_entry" : {
-            "action_id" : 9,
+            "action_id" : 10,
             "action_const" : false,
             "action_data" : [],
             "action_entry_const" : false
           }
         },
         {
-          "name" : "tbl_log_bmv2l595",
-          "id" : 14,
+          "name" : "tbl_log_bmv2l626",
+          "id" : 17,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 595,
+            "line" : 626,
             "column" : 12,
             "source_fragment" : "highest_contiguous_seq_no.read(hc_seq_no, 0); ..."
           },
@@ -3853,35 +4443,66 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [30],
-          "actions" : ["log_bmv2l595"],
-          "base_default_next" : "MyIngress.ipv4_ack",
+          "action_ids" : [34],
+          "actions" : ["log_bmv2l626"],
+          "base_default_next" : "node_33",
           "next_tables" : {
-            "log_bmv2l595" : "MyIngress.ipv4_ack"
+            "log_bmv2l626" : "node_33"
           },
           "default_entry" : {
-            "action_id" : 30,
+            "action_id" : 34,
             "action_const" : true,
             "action_data" : [],
             "action_entry_const" : true
           }
         },
         {
-          "name" : "MyIngress.ipv4_ack",
-          "id" : 15,
+          "name" : "MyIngress.get_ack_switch_id",
+          "id" : 18,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 374,
+            "line" : 417,
             "column" : 10,
-            "source_fragment" : "ipv4_ack"
+            "source_fragment" : "get_ack_switch_id"
           },
           "key" : [
             {
               "match_type" : "exact",
-              "name" : "hdr.ack.seq_no",
-              "target" : ["ack", "seq_no"],
+              "name" : "hdr.ack.switch_id",
+              "target" : ["ack", "switch_id"],
               "mask" : null
-            },
+            }
+          ],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [17, 7],
+          "actions" : ["MyIngress.ack_request", "MyIngress.drop"],
+          "base_default_next" : "node_37",
+          "next_tables" : {
+            "MyIngress.ack_request" : "node_37",
+            "MyIngress.drop" : "node_37"
+          },
+          "default_entry" : {
+            "action_id" : 7,
+            "action_const" : false,
+            "action_data" : [],
+            "action_entry_const" : false
+          }
+        },
+        {
+          "name" : "MyIngress.ipv4_ack",
+          "id" : 19,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 378,
+            "column" : 10,
+            "source_fragment" : "ipv4_ack"
+          },
+          "key" : [
             {
               "match_type" : "exact",
               "name" : "hdr.ipv4.srcAddr",
@@ -3895,11 +4516,10 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [14, 15, 5],
-          "actions" : ["MyIngress.forward_ack_pkt", "MyIngress.collect_acks", "MyIngress.drop"],
+          "action_ids" : [15, 5],
+          "actions" : ["MyIngress.collect_acks", "MyIngress.drop"],
           "base_default_next" : "MyIngress.update_contiguous_seq_no",
           "next_tables" : {
-            "MyIngress.forward_ack_pkt" : "MyIngress.update_contiguous_seq_no",
             "MyIngress.collect_acks" : "MyIngress.update_contiguous_seq_no",
             "MyIngress.drop" : "MyIngress.update_contiguous_seq_no"
           },
@@ -3912,36 +4532,36 @@
         },
         {
           "name" : "MyIngress.update_contiguous_seq_no",
-          "id" : 16,
+          "id" : 20,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 515,
+            "line" : 542,
             "column" : 10,
             "source_fragment" : "update_contiguous_seq_no"
           },
           "key" : [
             {
-              "match_type" : "lpm",
+              "match_type" : "range",
               "name" : "meta.highest_contiguous_seq_no",
               "target" : ["scalars", "hc_seq_no_1"],
               "mask" : null
             }
           ],
-          "match_type" : "lpm",
+          "match_type" : "range",
           "type" : "simple",
           "max_size" : 1024,
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [22, 10],
+          "action_ids" : [23, 11],
           "actions" : ["MyIngress.new_contiguous_value", "MyIngress.drop"],
-          "base_default_next" : "node_31",
+          "base_default_next" : "node_37",
           "next_tables" : {
-            "MyIngress.new_contiguous_value" : "node_31",
-            "MyIngress.drop" : "node_31"
+            "MyIngress.new_contiguous_value" : "node_37",
+            "MyIngress.drop" : "node_37"
           },
           "default_entry" : {
-            "action_id" : 10,
+            "action_id" : 11,
             "action_const" : false,
             "action_data" : [],
             "action_entry_const" : false
@@ -3949,10 +4569,10 @@
         },
         {
           "name" : "MyIngress.circulate_table",
-          "id" : 17,
+          "id" : 21,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 499,
+            "line" : 522,
             "column" : 10,
             "source_fragment" : "circulate_table"
           },
@@ -3970,12 +4590,12 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [21, 2],
+          "action_ids" : [22, 2],
           "actions" : ["MyIngress.circulate_port", "NoAction"],
-          "base_default_next" : "node_33",
+          "base_default_next" : "node_39",
           "next_tables" : {
-            "MyIngress.circulate_port" : "node_33",
-            "NoAction" : "node_33"
+            "MyIngress.circulate_port" : "node_39",
+            "NoAction" : "node_39"
           },
           "default_entry" : {
             "action_id" : 2,
@@ -3986,10 +4606,10 @@
         },
         {
           "name" : "MyIngress.ipv4_lpm",
-          "id" : 18,
+          "id" : 22,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 298,
+            "line" : 306,
             "column" : 10,
             "source_fragment" : "ipv4_lpm"
           },
@@ -4007,7 +4627,7 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [11, 3, 0],
+          "action_ids" : [12, 3, 0],
           "actions" : ["MyIngress.ipv4_forward", "MyIngress.drop", "NoAction"],
           "base_default_next" : null,
           "next_tables" : {
@@ -4030,7 +4650,7 @@
           "id" : 0,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 535,
+            "line" : 560,
             "column" : 12,
             "source_fragment" : "hdr.cntrl.isValid()"
           },
@@ -4046,14 +4666,14 @@
             }
           },
           "true_next" : "tbl_process_cntrl_pkt",
-          "false_next" : "node_6"
+          "false_next" : "node_7"
         },
         {
-          "name" : "node_6",
+          "name" : "node_7",
           "id" : 1,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 538,
+            "line" : 564,
             "column" : 19,
             "source_fragment" : "hdr.append.isValid()"
           },
@@ -4068,15 +4688,15 @@
               }
             }
           },
-          "true_next" : "node_7",
-          "false_next" : "node_18"
+          "true_next" : "node_8",
+          "false_next" : "node_19"
         },
         {
-          "name" : "node_7",
+          "name" : "node_8",
           "id" : 2,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 541,
+            "line" : 567,
             "column" : 16,
             "source_fragment" : "hdr.append.status == 1"
           },
@@ -4094,15 +4714,15 @@
               }
             }
           },
-          "true_next" : "tbl_log_bmv2l545",
-          "false_next" : "node_9"
+          "true_next" : "tbl_log_bmv2l571",
+          "false_next" : "node_10"
         },
         {
-          "name" : "node_9",
+          "name" : "node_10",
           "id" : 3,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 553,
+            "line" : 579,
             "column" : 23,
             "source_fragment" : "hdr.append.status == 2"
           },
@@ -4120,15 +4740,15 @@
               }
             }
           },
-          "true_next" : "tbl_log_bmv2l555",
-          "false_next" : "tbl_log_bmv2l568"
+          "true_next" : "tbl_log_bmv2l581",
+          "false_next" : "tbl_log_bmv2l594"
         },
         {
-          "name" : "node_11",
+          "name" : "node_12",
           "id" : 4,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 556,
+            "line" : 582,
             "column" : 20,
             "source_fragment" : "hdr.append.cntrl_pkt_it == (int<32>)cntrl_pkt_it_reg"
           },
@@ -4156,15 +4776,15 @@
               }
             }
           },
-          "false_next" : "tbl_log_bmv2l562",
-          "true_next" : "tbl_log_bmv2l568"
+          "false_next" : "tbl_log_bmv2l588",
+          "true_next" : "tbl_log_bmv2l594"
         },
         {
-          "name" : "node_14",
+          "name" : "node_15",
           "id" : 5,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 569,
+            "line" : 595,
             "column" : 16,
             "source_fragment" : "hdr.append.status == 3 && hdr.append.g_idx > (int<32>)h_seen_seq_no_reg"
           },
@@ -4212,15 +4832,15 @@
               }
             }
           },
-          "true_next" : "tbl_log_bmv2l570",
-          "false_next" : "tbl_log_bmv2l573"
+          "true_next" : "tbl_log_bmv2l596",
+          "false_next" : "tbl_log_bmv2l600"
         },
         {
-          "name" : "node_18",
+          "name" : "node_19",
           "id" : 6,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 575,
+            "line" : 602,
             "column" : 19,
             "source_fragment" : "hdr.read.isValid()"
           },
@@ -4235,15 +4855,15 @@
               }
             }
           },
-          "true_next" : "node_19",
-          "false_next" : "node_25"
+          "true_next" : "node_20",
+          "false_next" : "node_29"
         },
         {
-          "name" : "node_19",
+          "name" : "node_20",
           "id" : 7,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 579,
+            "line" : 606,
             "column" : 16,
             "source_fragment" : "hdr.read.status == 1"
           },
@@ -4261,15 +4881,41 @@
               }
             }
           },
-          "true_next" : "MyIngress.get_read_switch",
-          "false_next" : "node_21"
+          "true_next" : "node_21",
+          "false_next" : "node_24"
         },
         {
           "name" : "node_21",
           "id" : 8,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 584,
+            "line" : 607,
+            "column" : 20,
+            "source_fragment" : "hdr.read.switch_id == -1"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "==",
+              "left" : {
+                "type" : "field",
+                "value" : ["read", "switch_id"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "-0x00000001"
+              }
+            }
+          },
+          "true_next" : "tbl_log_bmv2l608",
+          "false_next" : "MyIngress.get_read_switch"
+        },
+        {
+          "name" : "node_24",
+          "id" : 9,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 614,
             "column" : 16,
             "source_fragment" : "hdr.read.status >= 2"
           },
@@ -4287,15 +4933,15 @@
               }
             }
           },
-          "true_next" : "MyIngress.get_read_shard_id",
-          "false_next" : "node_23"
+          "true_next" : "tbl_log_bmv2l615",
+          "false_next" : "node_27"
         },
         {
-          "name" : "node_23",
-          "id" : 9,
+          "name" : "node_27",
+          "id" : 10,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 588,
+            "line" : 619,
             "column" : 16,
             "source_fragment" : "hdr.read.status == 3"
           },
@@ -4313,15 +4959,15 @@
               }
             }
           },
-          "true_next" : "tbl_log_bmv2l589",
-          "false_next" : "node_31"
+          "true_next" : "tbl_log_bmv2l620",
+          "false_next" : "node_37"
         },
         {
-          "name" : "node_25",
-          "id" : 10,
+          "name" : "node_29",
+          "id" : 11,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 591,
+            "line" : 622,
             "column" : 19,
             "source_fragment" : "hdr.tail.isValid()"
           },
@@ -4337,14 +4983,14 @@
             }
           },
           "true_next" : "MyIngress.process_tail",
-          "false_next" : "node_27"
+          "false_next" : "node_31"
         },
         {
-          "name" : "node_27",
-          "id" : 11,
+          "name" : "node_31",
+          "id" : 12,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 593,
+            "line" : 624,
             "column" : 16,
             "source_fragment" : "hdr.ack.isValid()"
           },
@@ -4359,15 +5005,41 @@
               }
             }
           },
-          "true_next" : "tbl_log_bmv2l595",
-          "false_next" : "node_31"
+          "true_next" : "tbl_log_bmv2l626",
+          "false_next" : "node_37"
         },
         {
-          "name" : "node_31",
-          "id" : 12,
+          "name" : "node_33",
+          "id" : 13,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 601,
+            "line" : 628,
+            "column" : 16,
+            "source_fragment" : "(bit<32>)hdr.ack.status < 2"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "<",
+              "left" : {
+                "type" : "field",
+                "value" : ["ack", "status"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "0x00000002"
+              }
+            }
+          },
+          "true_next" : "MyIngress.get_ack_switch_id",
+          "false_next" : "MyIngress.ipv4_ack"
+        },
+        {
+          "name" : "node_37",
+          "id" : 14,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 636,
             "column" : 12,
             "source_fragment" : "meta.circulate == 1"
           },
@@ -4386,14 +5058,14 @@
             }
           },
           "true_next" : "MyIngress.circulate_table",
-          "false_next" : "node_33"
+          "false_next" : "node_39"
         },
         {
-          "name" : "node_33",
-          "id" : 13,
+          "name" : "node_39",
+          "id" : 15,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 606,
+            "line" : 641,
             "column" : 12,
             "source_fragment" : "hdr.ipv4.isValid()"
           },
@@ -4418,58 +5090,79 @@
       "id" : 1,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 616,
+        "line" : 651,
         "column" : 8,
         "source_fragment" : "MyEgress"
       },
-      "init_table" : "node_37",
+      "init_table" : "node_43",
       "tables" : [
         {
-          "name" : "MyEgress.check_unwritten",
-          "id" : 19,
+          "name" : "tbl_log_bmv2l677",
+          "id" : 23,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 627,
-            "column" : 10,
-            "source_fragment" : "check_unwritten"
+            "line" : 677,
+            "column" : 37,
+            "source_fragment" : "= hdr.ethernet.srcAddr; ..."
           },
-          "key" : [
-            {
-              "match_type" : "exact",
-              "name" : "hdr.read.unwritten",
-              "target" : ["read", "unwritten"],
-              "mask" : null
-            }
-          ],
+          "key" : [],
           "match_type" : "exact",
           "type" : "simple",
           "max_size" : 1024,
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [33, 32],
-          "actions" : ["MyEgress.return_read", "NoAction"],
+          "action_ids" : [36],
+          "actions" : ["log_bmv2l677"],
           "base_default_next" : null,
           "next_tables" : {
-            "MyEgress.return_read" : null,
-            "NoAction" : null
+            "log_bmv2l677" : null
           },
           "default_entry" : {
-            "action_id" : 32,
-            "action_const" : false,
+            "action_id" : 36,
+            "action_const" : true,
             "action_data" : [],
-            "action_entry_const" : false
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_log_bmv2l681",
+          "id" : 24,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 681,
+            "column" : 12,
+            "source_fragment" : "hdr.heartbeat.setValid(); ..."
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [37],
+          "actions" : ["log_bmv2l681"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "log_bmv2l681" : null
+          },
+          "default_entry" : {
+            "action_id" : 37,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
           }
         }
       ],
       "action_profiles" : [],
       "conditionals" : [
         {
-          "name" : "node_37",
-          "id" : 14,
+          "name" : "node_43",
+          "id" : 16,
           "source_info" : {
             "filename" : "log_bmv2.p4",
-            "line" : 640,
+            "line" : 675,
             "column" : 12,
             "source_fragment" : "hdr.read.isValid()"
           },
@@ -4484,8 +5177,77 @@
               }
             }
           },
+          "true_next" : "node_44",
+          "false_next" : "node_46"
+        },
+        {
+          "name" : "node_44",
+          "id" : 17,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 676,
+            "column" : 16,
+            "source_fragment" : "hdr.read.unwritten == 1"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "==",
+              "left" : {
+                "type" : "field",
+                "value" : ["read", "unwritten"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "0x00000001"
+              }
+            }
+          },
           "false_next" : null,
-          "true_next" : "MyEgress.check_unwritten"
+          "true_next" : "tbl_log_bmv2l677"
+        },
+        {
+          "name" : "node_46",
+          "id" : 18,
+          "source_info" : {
+            "filename" : "log_bmv2.p4",
+            "line" : 680,
+            "column" : 19,
+            "source_fragment" : "hdr.cntrl.isValid() && standard_metadata.instance_type == 1"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "and",
+              "left" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "d2b",
+                  "left" : null,
+                  "right" : {
+                    "type" : "field",
+                    "value" : ["cntrl", "$valid$"]
+                  }
+                }
+              },
+              "right" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "==",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["standard_metadata", "instance_type"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0x00000001"
+                  }
+                }
+              }
+            }
+          },
+          "false_next" : null,
+          "true_next" : "tbl_log_bmv2l681"
         }
       ]
     }
@@ -4496,13 +5258,13 @@
       "id" : 0,
       "source_info" : {
         "filename" : "log_bmv2.p4",
-        "line" : 652,
+        "line" : 696,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
       },
       "target" : ["ipv4", "hdrChecksum"],
       "type" : "generic",
-      "calculation" : "calc",
+      "calculation" : "calc_3",
       "verify" : false,
       "update" : true,
       "if_cond" : {
