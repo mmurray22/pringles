@@ -4,7 +4,6 @@ package corfuclient;
 
 message Payload {
     string packet_type = 1;
-    int64 nonce = 2;
     optional AppendEntry append = 3;
     optional ReadEntry read = 4;
     optional Trim trim = 5;
