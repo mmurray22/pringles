@@ -2,8 +2,9 @@
 #include <string>
 #include <mutex>
 
-class BaseSequencer {
+class CorfuSequencer {
     public:
+        CorfuSequencer();
         // Assigns the next sequence number
         uint64_t assign_next_idx();
 

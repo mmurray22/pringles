@@ -30,6 +30,17 @@ std::unique_ptr<std::string> Trace<T>::serialize_str_entry(std::string entry, ui
         ringclient::LogEntry ringEntry;
         ringEntry.set_allocated_entry(&entry);
         ringEntry.SerializeToString(output.get());
+    } else if (proto_type == 2) { // Corfu
+        // 1. Initialize packet obj
+        corfuclient::Payload corfuEntry;
+        // 2. Fill in fields
+        corfuEntry.set_packet_type(proto_type); // pretend int type
+        corfuclient::Append appendPkt;
+        appendPkt.set_allocated_entry(&entry);
+        corfuEntry.set_allocated_append(&appendPkt); // check
+        // 3. Serialize and get pointer
+        corfuEntry.SerializeToString(output.get());
+
     }
     return output;
 }

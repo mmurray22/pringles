@@ -1,0 +1,35 @@
+syntax="proto3";
+
+package corfuclient;
+
+message Payload {
+    string packet_type = 1;
+    int64 nonce = 2;
+    optional AppendEntry append = 3;
+    optional ReadEntry read = 4;
+    optional Trim trim = 5;
+    optional Fill fill = 6;
+}
+
+message AppendEntry {
+   int64 idx = 1;
+   string entry = 2;
+   int64 currEpoch = 3;
+}
+
+message ReadEntry {
+    int64 idx = 1;
+    string entry = 2;
+    int64 currEpoch = 3;
+}
+
+message Trim {
+    int64 idx = 1;
+}
+
+message Fill {
+    int64 currEpoch = 1;
+    bool junk = 2;
+    int64 idx = 3;
+}
+ 
