@@ -1,10 +1,13 @@
 // Corfu client
 #include <vector>
+#include <algorithm>
 #include <map>
 #include <cstdint>
 #include <cstddef>
+#include <chrono>
 #include "base_client.h"
 #include "flash_id.h"
+#include "corfu_sequencer.h"
 
 /*
  * CorfuClient
@@ -19,7 +22,7 @@ class CorfuClient : public BaseClient {
     public:
         CorfuClient(YAML::Node config);
 
-        std::byte read();
+        std::string read();
         uint64_t append();
         uint64_t fill();
         uint64_t trim();
@@ -35,6 +38,12 @@ class CorfuClient : public BaseClient {
         std::vector<std::map<std::pair<uint64_t, uint64_t>, std::vector<FlashID>>> auxiliary;
         uint64_t curr_epoch = 0;
         bool projection_sealed = false;
+        CorfuSequencer::CorfuSequencer sequencer;
+
+        std::chrono::duration<double> reconfigure_time;
+        std::chrono::duration<double> read_time;
+        std::chrono::duration<double> append_time;
+        std::chrono::duration<double> trim_time;
 
         /*** Timeouts ***/
         static constexpr uint64_t RECONFIGURATION_TIMEOUT 10

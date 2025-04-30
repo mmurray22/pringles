@@ -16,8 +16,19 @@ class CorfuSequencer {
 */
 #include "corfu_client.h"
 
-/*
- * Corfu Sequencer
- This is a sequencer class used when handling appends to the log.
- Clients request the sequencer for
- */
+
+
+CorfuSequencer::CorfuSequencer(YAML::Node config) {
+    configObj = std::make_unqiue<Config>();
+}
+
+uint64_t CorfuSequencer::assign_next_idx() {
+    lock_guard<mutex> lock(sequencer_lock);
+    this->next_idx++;
+    return this->next_idx - 1;
+}
+
+uint64_t CorfuSequencer::get_current_idx() {
+    lock_guard<mutex> lock(sequencer_lock);
+    return this->next_idx - 1;
+}
