@@ -151,11 +151,11 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
     for (const auto& curr_range : auxiliary[curr_epoch].keySet()) {
         if (curr_range.contains(log_idx)) {
             sm = __
-            // MUST FIX how packet creation works in protobuf file or something!
-            Packet write_packet = create_packet("write", curr_epoch, sm.IP, entry);
+
+            std::unique_ptr<std::string> write_packet = serialize_str_entry(entry, CORFU_PROTO_TYPE);
             net->add_to_send_queue(write_packet, sm.IP);
 
-            std::string msg = net->read_from_recv_queue(sm.IP);
+            std::string msg;
             // get curr time
             while (time < TIMEOUT && msg == NULL) {
                 msg = net->read_from_recv_queue(sm.IP);
@@ -195,10 +195,10 @@ uint64_t CorfuClient::trim(uint64_t idx) {
         if (idx in curr_range) {
             sm = __
 
-            Packet delete_packet = create_packet("delete", idx);
+            std::unique_ptr<std::string> delete_packet = serialize_str_entry(entry, CORFU_PROTO_TYPE);
             net->add_to_send_queue(delete_packet, sm.IP);
 
-            std::string msg = net->read_from_recv_queue(sm.IP);
+            std::string msg;
             // get curr time
             while (time < TIMEOUT && msg == NULL) {
                 msg = net->read_from_recv_queue(sm.IP);
@@ -208,5 +208,26 @@ uint64_t CorfuClient::trim(uint64_t idx) {
 }
 
 int main(int argc, char* argv[]) {
-    
+    if (argc < 2) {
+        spdlog::critical("Not enough arguments provided! Need YAML file");
+    }
+    std::string input_file = std::string(argv[1]);
+    YAML::Node config = YAML::LoadFile(input_file);
+
+    std::shared_ptr<Network> custom_net = std::make_shared<Network>(get_threads(config), 
+                                                                    get_ips(config), 
+                                                                    get_port(config), 
+                                                                    get_protocol(config), 
+                                                                    get_log_level(config));
+    set_spdlog_level(get_log_level(config));
+    spdlog::info("Simple Network! Sending on localhost 127.0.0.1");
+    std::shared_ptr<Trace<std::string>> trace = std::make_shared<Trace<std::string>>(get_trace_file(config));
+
+    std::thread server_thread(custom_server, custom_net, trace);
+    std::thread client_thread(custom_client, custom_net, trace);
+    client_thread.join();
+    server_thread.join();
+    custom_net->done();
+
+    return 0;
 }

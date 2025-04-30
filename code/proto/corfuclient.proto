@@ -4,10 +4,10 @@ package corfuclient;
 
 message Payload {
     string packet_type = 1;
-    optional AppendEntry append = 3;
-    optional ReadEntry read = 4;
-    optional Trim trim = 5;
-    optional Fill fill = 6;
+    optional AppendEntry append = 2;
+    optional ReadEntry read = 3;
+    optional Trim trim = 4;
+    optional Fill fill = 5;
 }
 
 message AppendEntry {

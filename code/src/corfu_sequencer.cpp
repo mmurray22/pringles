@@ -6,6 +6,7 @@ CorfuSequencer::CorfuSequencer() {
 
 uint64_t CorfuSequencer::assign_next_idx() {
     {
+        // maybe change this to atomic?
         std::lock_guard<std::mutex> lock(this.curr_idx_lock);
         uint64_t new_token = this.curr_idx;
         this.curr_idx += 1;
