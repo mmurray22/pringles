@@ -389,7 +389,7 @@ void Network::run_recv(int s_fd) {
             offset += sizeof(size_t);
             size_t size_of_pkt = *((size_t*)(buf.get() + offset));
             offset += size_of_pkt;
-            std::unique_ptr<char[]> sample_pkt = std::make_unique<char[]>(size_of_pkt));
+            std::unique_ptr<char[]> sample_pkt = std::make_unique<char[]>(size_of_pkt);
             struct ethhdr* eth = (struct ethhdr*)sample_pkt.get();
             size_t custom_hdr_size = get_size_of_hdr_int(eth->h_proto, protocol_type);
             spdlog::debug("Ethernet protocol with size {}", custom_hdr_size);
