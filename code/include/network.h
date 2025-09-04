@@ -12,8 +12,31 @@
 #include <map>
 #include "structs.h"
 
+/*
+ * Networking library which implements the low-level connectivity
+ * necessary for the log to function
+ *
+ * It is designed to have multiple senders and one receiver.
+ */
 class Network {
     public:
+        /*
+         * Network object constructor
+         *
+         * Arguments
+         * ---------
+         * maxThreads - Size of the threadpool for sending threads TODO might be deprecated
+         * seq_ip - IP address of the sequencer
+         * storage_multicast_addr - address to allow for multicast to all storage nodes
+         * send_port - single send port TODO only one?
+         * recv_port - single receive port
+         * socket_type - indicates whether we want the OS to create a UDP pkt or we create a RAW pkt
+         * log_level - indicates how many logging statements should be printed to console
+         * batch_size - maximum size of  the a batch in bytes 
+         * send_interface - the network device the network instance will use 
+         * src_ip - the IP of the machine this network object currently lives on
+         * pkt_types - these are the classes that packets will be sorted into when sent/received
+         */
         Network(uint64_t maxThreads,
                 std::string seq_ip,
                 std::string storage_multicast_addr,
@@ -26,27 +49,55 @@ class Network {
                 std::string src_ip,
                 std::vector<std::string> pkt_types);
         ~Network();
+
+        /*
+         * Appends buf, a pointer to the payload, to the queue
+         *
+         * Arguments
+         * ---------
+         * buf - A pointer to a protobuf message which will be the payload of the outgoing pkt
+         * packet_type - Packet classifier label which will determine how the packet is 
+         *               stored in the queue
+         */
         void add_to_send_queue(std::unique_ptr<std::string> buf, std::string packet_type);
+
+        /*
+         * TODO Need to review how the receive queue works
+         */
         std::unique_ptr<std::string> read_from_recv_queue();
+
+        /*
+         * Artificially indicates to Network object that no more requests will be issued
+         */
         void done();
-        //std::string update_ip_addrs();
+
+        /*
+         * Update the packet classifiers
+         * Useful if the classifiers are receiver IPs and some receivers fail/are changed
+         */
         void add_pkt_type(std::string pkt_type);
         bool remove_pkt_type(std::string pkt_type);
         
     private:
-        const int64_t CUSTOM_IP_PROTOCOL = 4;          
+        // Logging protocol the network object is being used for
         ClientType protocol_type;
-        // Headers
         
-        unsigned short checksum(unsigned short *buf, int nwords); // checksum for IP packet header construction
-        
-        // Thread
-        const uint64_t BUF_SIZE = 1000;
+        // checksum for IP packet header construction
+        unsigned short checksum(unsigned short *buf, int nwords);         
+
+        // Lock to serialize access to terminate boolean
         std::mutex lock_terminate;
+        // Boolean which indicates to sending and receiving threads to cease operation
         bool terminate = false;
+        
         uint64_t total_num_threads;
+
+        // Goes through the steps of stopping and cleaning up all the threads
         void stop_threads();
+
+        // Sender thread function, parameterized by the packet type the sender is responsible for
         void run_send(std::string pkt_type);
+        // Receiver thread 
         void run_recv(int s_fd);
 
         // Send Thread pool
@@ -73,23 +124,20 @@ class Network {
         
         bool pkts_in_queue();
         
-        // IP Address + Socket Management
+        /** IP Address + Socket Management **/
         std::string send_interface;
         std::string src_ip;
         std::shared_ptr<struct addrinfo> seq_it; 
         std::string seq_ip;
         std::string storage_multicast_addr;
-        //std::vector<std::string> storage_ip_addrs;
         std::shared_ptr<struct addrinfo> storage_it;
         int storage_socket;
         int storage_recv_socket;
-        //std::vector<int> storage_sockets;
         int seq_socket;
         int seq_recv_socket;
         bool validate_ip_address(const std::string &ip_addr);
-        //std::mutex ip_addrs_idx_mutex;
          
-        // Socket handling
+        /** Socket handling **/
         std::string socket_type; // Networking protocol you are running
         bool check_socket_type(std::string socket_type);
         const uint64_t BACKLOG = 5;
@@ -105,6 +153,6 @@ class Network {
         std::unique_ptr<struct ethhdr> create_eth_hdr(int s_fd, std::string pkt_type);
         std::unique_ptr<struct iphdr> create_ip_hdr(std::string dst_ip, size_t size_of_hdr, unsigned short* pkt);
 
-        // Batching
+        /** Batching **/
         uint64_t batch_size;
 };

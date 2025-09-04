@@ -1,4 +1,3 @@
-#include "network.h"
 #include <netinet/if_ether.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -15,14 +14,12 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdexcept>
+
+#include "network.h"
 #include "yaml-cpp/yaml.h"
 #include "utils.h"
 #include "spdlog/spdlog.h"
 
-/*
- * Assumption: Assumes the ip_file is a YAML file that has an entry called
- * "ip_addrs" that indexes to a list of IP address strings
- */
 Network::Network(uint64_t maxThreads, 
                  std::string seq_ip,
                  std::string storage_multicast_addr,
@@ -35,25 +32,34 @@ Network::Network(uint64_t maxThreads,
                  std::string send_interface,
                  std::string src_ip,
                  std::vector<std::string> pkt_types) {
-    // automated check to see if program is being run with sudo TODO
-   
+    
+    if (geteuid() != 0) { // Check if we are running as root
+        throw std::runtime_error("Not running as root!");
+    }
     if(!check_socket_type(socket_type)) { 
         throw std::runtime_error("Invalid socket type!");
     }
+    
     this->socket_type = socket_type;
     this->send_interface = send_interface;
     this->batch_size = batch_size;
     this->src_ip = src_ip;
     total_num_threads = maxThreads;
-    set_spdlog_level(log_level);
 
-    /* Initialize sockets */
     SEND_PORT = send_port;
     RECV_PORT = recv_port;
     this->storage_multicast_addr = storage_multicast_addr;
 
+    this->seq_ip = seq_ip;
+    seq_socket = -1;
+    seq_recv_socket = -1;
+    seq_it = NULL;
+
+    set_spdlog_level(log_level);
+
+    /* Initialize sockets */
     if (storage_multicast_addr != "") {
-        /* Create storage and sequence sockets */ 
+        /* Create storage sockets */ 
         std::shared_ptr<struct addrinfo> storage_it = std::make_shared<struct addrinfo>();
         storage_socket = socket_type == "UDP" ? setup_talker_socket(storage_multicast_addr, storage_it) : setup_raw_talker_socket();
         if (storage_socket < 0) {
@@ -68,10 +74,6 @@ Network::Network(uint64_t maxThreads,
     }
     
     // If this protocol requires a seq_ip
-    this->seq_ip = seq_ip;
-    seq_socket = -1;
-    seq_recv_socket = -1;
-    seq_it = NULL;
     if (seq_ip != "") {
         seq_it = std::make_shared<struct addrinfo>();
         seq_socket = socket_type == "UDP" ? setup_talker_socket(seq_ip, seq_it) : setup_raw_talker_socket();
@@ -85,15 +87,15 @@ Network::Network(uint64_t maxThreads,
             throw std::runtime_error("Can't create receiving socket");
         }
     }
+
     /*Initialize queues*/
-    //std::queue<std::unique_ptr<std::string>> q = {};
     for (std::string pkt_type : pkt_types) {
         send_pkt_qs.insert(std::pair<std::string, std::queue<std::unique_ptr<std::string>>>(pkt_type, std::queue<std::unique_ptr<std::string>>()));
     }
 
     /*Initialize threads*/
     //total_num_threads = maxThreads == 0 ? std::thread::hardware_concurrency()-1 : maxThreads;   
-    // Create sending threadpools
+    // Create sending threadpools - 1 thread per packet type
     for (uint64_t i = 0; i < pkt_types.size(); i++) {
         send_threads.emplace_back(std::thread(&Network::run_send, this, pkt_types[i])); 
     }
@@ -101,7 +103,7 @@ Network::Network(uint64_t maxThreads,
     // Create receiving threadpool (only 1 thread for now since it's Network I/O bound)
     recv_threads.emplace_back(std::thread(&Network::run_recv, this, seq_recv_socket));
     if (seq_recv_socket > 0)
-        recv_threads.emplace_back(std::thread(&Network::run_recv, this, seq_recv_socket));
+        recv_threads.emplace_back(std::thread(&Network::run_recv, this, seq_recv_socket)); // TODO why 2x?
 
 }
     
