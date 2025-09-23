@@ -141,16 +141,14 @@ void Network::run_send(std::string pkt_type) {
                 return !send_pkt_qs[pkt_type].empty() || terminate;        
             });
             if (terminate) {
-		spdlog::debug("Terminate the send loop!");
                 return;
             }
             send_pkt = std::move(send_pkt_qs[pkt_type].front()); // TODO: drops packets??
 	    if (send_pkt.get() == NULL) { // TODO should this ever be NUL?
-		spdlog::debug("The received packet is NULL?");
 	    	return;
 	    }
 	    spdlog::debug("Packet has been found! {}", *send_pkt.get());
-            if ((*send_pkt.get()).length() < (batch_size-batch_bytes)) { // TODO: This check isn't great
+            if ((*send_pkt.get()).length() < (batch_size - batch_bytes)) { // TODO: This check isn't great
                 memcpy(send_packet.get() + offset, std::to_string((*send_pkt.get()).length()).c_str(), sizeof(size_t));
                 offset += sizeof(size_t);
                 memcpy(send_packet.get() + offset, (*send_pkt.get()).c_str(), (*send_pkt.get()).length());
@@ -159,17 +157,11 @@ void Network::run_send(std::string pkt_type) {
                 send_pkt_qs[pkt_type].pop();
                 lock.release();
                 continue;
-            } else if ((*send_pkt.get()).length() == (batch_size - batch_bytes) && socket_type == "UDP") { 
-		spdlog::debug("Debug: {}", (*send_pkt.get()).c_str());
-                memcpy(send_packet.get(), (*send_pkt.get()).c_str(), (*send_pkt.get()).length());
-		send_packet.get()[batch_size] = '\0';
-                //batch_bytes += (*send_pkt.get()).length();
-                //offset += (*send_pkt.get()).length();
-                send_pkt_qs[pkt_type].pop();
+            } else if ((*send_pkt.get()).length() == (batch_size - batch_bytes)) { 
 	    }
 	    batch_bytes += (*send_pkt.get()).length();
         }
-        spdlog::debug("Past preprocessing! The packet value is still: {}", send_packet.get()); 
+        spdlog::debug("Past preprocessing! The packet value is still: {}", *send_packet.get()); 
 	// If the packet type is IP addresses AND socket_type UDP
         // There is no support for custom headers + IP addresses
         if (validate_ip_address(pkt_type) && socket_type == "UDP") {
@@ -188,7 +180,7 @@ void Network::run_send(std::string pkt_type) {
                 offset = 0;
                 continue;
             }
-            spdlog::info("Successfully sent {} bytes to the receiver with packet value {}", std::to_string(num_bytes), send_packet.get());
+            spdlog::info("Successfully sent {} bytes to the receiver with packet value {}", std::to_string(num_bytes), *send_packet.get());
             memset(send_packet.get(), 0, batch_size);
             batch_bytes = 0;
             offset = 0;
@@ -400,8 +392,8 @@ void Network::run_recv(int s_fd) {
 	}
         
         std::unique_ptr<char[]> buf = std::make_unique<char[]>(batch_size + batch_size*sizeof(int));  
-	//char test[5];
-        if ((numbytes = recvfrom(s_fd, buf.get(), batch_size + batch_size*sizeof(int), 0, (struct sockaddr *)&src_addr, &addr_len)) == -1) {
+	char test[5];
+        if ((numbytes = recvfrom(s_fd, test /*buf.get()*/, 5 /*batch_size + batch_size*sizeof(int)*/, 0, (struct sockaddr *)&src_addr, &addr_len)) == -1) {
             //spdlog::warn("Receive Error {} occurred: {}", std::to_string(errno), strerror(errno));
             continue;
         }
@@ -469,8 +461,7 @@ std::unique_ptr<std::string> Network::read_from_recv_queue() {
 
 // To only be called by the sender
 void Network::done() {
-    //sleep(100);
-    std::unique_lock<std::mutex> lock(lock_terminate);
+    std::unique_lock<std::mutex> lock(send_pkt_qs_mutex);
     terminate = true;
     // TODO send termiating message to receiver
 }

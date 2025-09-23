@@ -52,6 +52,10 @@ std::string get_seq_ip(YAML::Node config) {
     return "";
 }
 
+std::string get_src_ip(YAML::Node config) {
+    return config["src_ip"].as<std::string>();
+}
+
 std::string get_storage_multicast_addr(YAML::Node config) {
     return config["storage_multicast_addr"].as<std::string>();
 }
@@ -63,6 +67,10 @@ std::vector<std::string> get_storage_ips(YAML::Node config) {
         ret.emplace_back(ip_list["ip"].as<std::string>());
     }
     return ret;
+}
+
+std::string get_protocol_type(YAML::Node config) {
+    return config["protocol_type"].as<std::string>();
 }
 
 std::vector<std::string> get_packet_types(YAML::Node config) {

@@ -14,3 +14,6 @@ sudo apt install meson
 sudo apt install pkg-config
 sudo apt install openssl # New
 sudo apt-get install libssl-dev
+
+# utilities
+sudo apt install ripgrep

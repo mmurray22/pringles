@@ -2,6 +2,7 @@
 #include "trace.h"
 #include "spdlog/spdlog.h"
 #include "ringclient.pb.h"
+#include "structs.h"
 // #include "simple_client.h"
 
 /*
@@ -11,6 +12,7 @@ template <typename T>
 Trace<T>::Trace(std::string filename) {
     // read in text file line by line and parse
     std::ifstream txt(filename, std::ios::in);
+    spdlog::debug("Filename: {}", filename); // TODO: ADD DEBUGGING
     std::string op;
     T val;
     while (txt >> op >> val) {
@@ -25,7 +27,7 @@ Trace<T>::~Trace() {
 }
 
 template <typename T>
-std::unique_ptr<std::string> Trace<T>::serialize_str_entry(std::string entry, ClientType cli_type, std::string api_call, uint64_t idx) {
+std::unique_ptr<std::string> Trace<T>::serialize_str_entry(std::string entry, std::string cli_type, std::string api_call, uint64_t idx) {
     std::unique_ptr<std::string> output = NULL;
     /*if (cli_type == ClientType::SIMPLE) {
         simpleclient::Payload p;
@@ -46,7 +48,7 @@ std::unique_ptr<std::string> Trace<T>::serialize_str_entry(std::string entry, Cl
 }
 
 template <typename T>
-auto Trace<T>::deserialize_str_entry(std::unique_ptr<std::string> entry, ClientType cli_type) {
+auto Trace<T>::deserialize_str_entry(std::unique_ptr<std::string> entry, std::string cli_type) {
     std::string output = "";
     /*if (cli_type == ClientType::SIMPLE) { 
         simpleclient::Payload p;

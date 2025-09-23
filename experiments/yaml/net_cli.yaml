@@ -1,0 +1,16 @@
+---
+loglevel: 1
+seq_ip: ""
+storage_multicast_addr: "128.110.218.152"
+send_port: "9405"
+recv_port: "4950"
+threads: 1
+socket_type: "UDP"
+src_ip: "128.110.218.121"
+interface: "eno49np0"
+batch_size: 5
+packet_types:
+  - type: "128.110.218.152"
+protocol_type: "SIMPLE"
+trace_file: "/proj/ove-PG0/murray/pringles/experiments/traces/unit_test_datagram.txt"
+...
