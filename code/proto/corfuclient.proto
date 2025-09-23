@@ -8,25 +8,25 @@ message Payload {
     optional ReadEntry read = 3;
     optional Trim trim = 4;
     optional Fill fill = 5;
+    optional GetToken token_req = 6;
+    int64 clientID = 7;
+    optional Seal seal = 8;
 }
 
 message AppendEntry {
    int64 idx = 1;
    string entry = 2;
    int64 currEpoch = 3;
-   int64 clientID = 4;
 }
 
 message ReadEntry {
     int64 idx = 1;
     string entry = 2;
     int64 currEpoch = 3;
-    int64 clientID = 4;
 }
 
 message Trim {
     int64 idx = 1;
-    int64 clientID = 2;
 }
 
 message Fill {
@@ -35,7 +35,10 @@ message Fill {
     int64 idx = 3;
 }
 
-message GetToken {
-    int64 clientID = 1;
+message Seal {
+    int64 currEpoch = 1;
 }
- 
+
+message GetToken {
+    bool req_token = 1;
+}

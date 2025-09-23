@@ -1,0 +1,42 @@
+syntax="proto3";
+
+package corfustorage;
+
+message Payload {
+    string packet_type = 1;
+    optional ackMsg ack = 2;
+    optional errSealed err_sealed = 3;
+    optional errUnwritten err_unwritten = 4;
+    optional errWritten err_written = 5;
+    optional readReply reply = 6;
+    optional sealReply seal = 7;
+}
+
+// i think ive set these messages up to be more specific... should i try to be more generic instead
+// of making a new kind of packet for each possible response from the server?
+
+message ackMsg {
+    int64 ack_code = 1;
+}
+
+message errSealed {
+    int64 err_code = 1;
+}
+
+message errUnwritten {
+    int64 err_code = 1;
+}
+
+message errWritten {
+    int64 err_code = 1;
+    string content = 2;
+}
+
+message readReply {
+    string content = 2;
+}
+
+message sealReply {
+    bool sealed = 1;
+    int64 highaddr = 2;
+}

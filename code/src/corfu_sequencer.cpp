@@ -29,7 +29,7 @@ void CorfuSequencer::run_sequencer_thread() {
             uint64_t idx = assign_next_idx();
 
             std::unique_ptr<std::string> token_packet = serialize_str_entry(std::to_string(idx), CORFU_PROTO_TYPE);
-            uint64_t client_ip = packet_contents->clientIP; // each packet comes with a client ip, but better solution should be found
+            uint64_t client_ip = packet_contents->clientID; // each packet comes with a client ip, but better solution should be found
 
             net->add_to_send_queue(token_packet, client_ip);
         }
