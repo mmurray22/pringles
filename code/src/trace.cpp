@@ -54,7 +54,7 @@ std::string Trace<T>::deserialize_str_entry(std::unique_ptr<std::string> entry, 
         output = ringEntry.entry();
     } else if (proto_type == 2) { // Corfu
         corfuclient::Payload corfuEntry;
-        corfuEntry.ParseFromString(*(entry.get()));
+        corfuEntry.ParseFromString(*(entry.get())); // TODO: fix deserialization
         output = corfuEntry.entry();
     }
     return output;

@@ -14,21 +14,28 @@ message AppendEntry {
    int64 idx = 1;
    string entry = 2;
    int64 currEpoch = 3;
+   int64 clientID = 4;
 }
 
 message ReadEntry {
     int64 idx = 1;
     string entry = 2;
     int64 currEpoch = 3;
+    int64 clientID = 4;
 }
 
 message Trim {
     int64 idx = 1;
+    int64 clientID = 2;
 }
 
 message Fill {
     int64 currEpoch = 1;
     bool junk = 2;
     int64 idx = 3;
+}
+
+message GetToken {
+    int64 clientID = 1;
 }
  

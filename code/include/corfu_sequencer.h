@@ -1,17 +1,15 @@
 #include <cstdint>
 #include <string>
 #include <mutex>
+#include <atomic>
 
 class CorfuSequencer {
     public:
         CorfuSequencer();
-        // Assigns the next sequence number
-        uint64_t assign_next_idx();
-
-        // Gets the current max assigned sequence number
-        uint64_t get_current_idx();
+        
+        uint64_t assign_next_idx(); // Assigns the next sequence number
+        uint64_t get_current_idx(); // gets the current sequencer index
 
     private:
-        std::mutex curr_idx_lock;
-        uint64_t curr_idx;
+        std::atomic<uint64_t> curr_idx{0};
 }

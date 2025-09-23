@@ -7,7 +7,7 @@ const uint64_t MAX_WAIT_TIME = 100;
 #define DELETE 2
 #define SEAL 3
 
-
+// CTODO: need to finish this up
 void CorfuStorage::write() {
     
 }
@@ -49,6 +49,12 @@ void CorfuStorage::server(std::shared_ptr<Network> net) {
             storage_delete();
         } else if (msg->type == SEAL) {
             seal();
+        }
+        if (msg->type == WRITE || msg->type == DELETE) {
+            std::unique_ptr<std::string> ack_packet = serialize_str_entry("ack", CORFU_PROTO_TYPE);
+            uint64_t client_ip = msg->clientIP; // each packet comes with a client ip, but better solution should be found
+
+            net->add_to_send_queue(token_packet, client_ip);
         }
         wait_time = 10;
     }

@@ -5,8 +5,15 @@
 
 class CorfuStorage : public BaseStorage {
     public:
-        uint64_t ssid;
-        void read();
+        CorfuStorage(uint64_t ssid);
+        ~CorfuStorage() override;
+
+        bool sync_store(uint64_t idx, std::string entry) override;
+        bool lazy_store(uint64_t idx, std::string entry) override;
+        std::string get(uint64_t idx) override;
+
+        // corfu storage specific functions
+         read();
         void write();
         void storage_delete();
         void seal();
