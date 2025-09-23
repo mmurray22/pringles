@@ -21,7 +21,7 @@ class CorfuClient : public BaseClient {
 
     public:
         CorfuClient(YAML::Node config);
-        ~CorfuClient() override = default;
+        ~CorfuClient();
 
         uint64_t append(std::unique_ptr<std::string> entry) override;
         std::unique_ptr<std::string> read(uint64_t log_idx) override;

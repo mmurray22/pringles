@@ -6,17 +6,20 @@
 class CorfuStorage : public BaseStorage {
     public:
         CorfuStorage(uint64_t ssid);
-        ~CorfuStorage() override;
+        ~CorfuStorage();
 
         bool sync_store(uint64_t idx, std::string entry) override;
         bool lazy_store(uint64_t idx, std::string entry) override;
         std::string get(uint64_t idx) override;
 
-        // corfu storage specific functions
-         read();
-        void write();
-        void storage_delete();
-        void seal();
+        // response functions for when the server receives certain packets over the network
+        // used as helpers in the server function
+        void read(std::string msg);
+        void write(std::string msg);
+        void storage_delete(std::string msg);
+        void seal(std::string msg);
+
+        void server(std::shared_ptr<Network> net);
 
     protected:
         struct map_entry {

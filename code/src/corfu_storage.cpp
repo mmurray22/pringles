@@ -7,7 +7,7 @@ const uint64_t MAX_WAIT_TIME = 100;
 #define DELETE 2
 #define SEAL 3
 
-CorfuStorage::CorfuStorage() {
+CorfuStorage::CorfuStorage(uint64_t ssid) {
     server_thread = std::thread(&CorfuServer::server, this);
 }
 
