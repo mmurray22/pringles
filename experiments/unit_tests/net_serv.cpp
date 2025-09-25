@@ -20,8 +20,10 @@
 #include "network.h"
 
 const uint64_t MAX_WAIT_TIME = 100;
+std::string sequence_pkt_type = "sequencer";
+std::string storage_pkt_type = "storage";
 
-void custom_server(std::unique_ptr<Network> net, std::string pkt_type) {
+void custom_server(std::unique_ptr<Network> net) {
     spdlog::info("Simple Net Server!");
     std::unique_ptr<std::string> rcv_str = NULL;
     uint64_t wait_time = 1;
@@ -46,7 +48,6 @@ void custom_server(std::unique_ptr<Network> net, std::string pkt_type) {
 		continue;
 	}
 	recv_strs.push_back(recvd_str);
-        //spdlog::info("SUCCESS: Strings match! Received string was {}", );
     }
 
     // Send back data
@@ -54,11 +55,9 @@ void custom_server(std::unique_ptr<Network> net, std::string pkt_type) {
     for (uint64_t i = 0; i < recv_strs.size(); i++) {
         spdlog::debug("Message to queue: {}", recv_strs[i]);
         std::unique_ptr<std::string> buf = std::make_unique<std::string>(recv_strs[i]);
-        net->add_to_send_queue(std::move(buf), pkt_type);
+        net->add_to_send_queue(std::move(buf), sequence_pkt_type);
     }
-    while (true) {
-	    /*nothing*/
-    }
+    net->done();
 }
 
 int main(int argc, char* argv[]) {
@@ -69,23 +68,21 @@ int main(int argc, char* argv[]) {
     YAML::Node config = YAML::LoadFile(input_file);
 
     std::unique_ptr<Network> custom_net = std::make_unique<Network>(get_threads(config), 
-		    						    get_seq_ip(config),
-                                                                    get_storage_multicast_addr(config), 
                                                                     get_send_port(config), 
                                                                     get_recv_port(config),
 								    get_socket_type(config),
                                                                     get_log_level(config),
 								    get_batch_size(config),
+								    get_batch_on(config),
 								    get_interface(config),
-								    get_src_ip(config),
+								    get_self_ip(config),
 								    get_packet_types(config));
     set_spdlog_level(get_log_level(config));
     spdlog::info("Simple Network! Sending remote!");
     //std::shared_ptr<Trace<std::string>> trace = std::make_shared<Trace<std::string>>(get_trace_file(config));
-    std::string pkt_type = get_packet_types(config)[0];
-    std::thread server_thread(custom_server, std::move(custom_net), pkt_type);
+    std::thread server_thread(custom_server, std::move(custom_net));
     server_thread.join();
-    custom_net->done();
+    spdlog::debug("Calling custom net done!");
     return 0;
 }
 

@@ -102,3 +102,5 @@ Thumbs.db
 *.mov
 *.wmv
 
+# Vim files
+*.swp
