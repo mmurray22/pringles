@@ -3,12 +3,22 @@
 #include "spdlog/spdlog.h"
 #include "ringclient.pb.h"
 
+// CTODO: figure out best place to move these so i dont have to repeat them in individual files
 #define CORFU_APPEND_PROTO_TYPE 1
 #define CORFU_READ_PROTO_TYPE 2
 #define CORFU_TRIM_PROTO_TYPE 3
 #define CORFU_FILL_PROTO_TYPE 4
 #define CORFU_SEAL_PROTO_TYPE 5
 #define CORFU_GETTOKEN_PROTO_TYPE 6
+
+#define CORFU_ACK_PROTO_TYPE 7
+#define CORFU_SEALED_PROTO_TYPE 8
+#define CORFU_UNWRITTEN_PROTO_TYPE 9
+#define CORFU_WRITTEN_PROTO_TYPE 10
+#define CORFU_STORE_READ_PROTO_TYPE 11
+#define CORFU_STORE_SEAL_PROTO_TYPE 12
+
+#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 13
 
 /*
  * Reads in a txt file trace of the format "operation: payload"
@@ -132,7 +142,7 @@ std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry,
     return output;
 }
 
-std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t client_id, uint64_t log_idx, uint64_t curr_epoch) {
+std::unique_ptr<std::string> corfu_storage_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t highest_addr) {
     std::unique_ptr<std::string> output = NULL;
 
     corfustorage::Payload corfu_payload;
@@ -157,13 +167,50 @@ std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry,
         err_unwritten_packet.set_err_code(true);
 
         corfu_payload.set_allocated_err_unwritten(&err_unwritten_packet);
-
     } else if (proto_type == CORFU_WRITTEN_PROTO_TYPE) { // errWritten
+        corfustorage::errWritten err_written_packet;
 
+        err_written_packet.set_err_code(true);
+        err_written_packet.set_allocated_content(&entry);
+        
+        corfu_payload.set_allocated_err_written(&err_written_packet);
     } else if (proto_type == CORFU_STORE_READ_PROTO_TYPE) { // read
+        corfustorage::Read return_read_packet;
 
+        return_read_packet.set_allocated_content(&entry);
+
+        corfu_payload.set_allocated_read(&return_read_packet);
     } else if (proto_type == CORFU_STORE_SEAL_PROTO_TYPE) { // seal
+        corfustorage::Seal return_seal_packet;
 
+        // note: i dont think we actually need to return a boolean here since we already
+        // know it's a seal packet based on its proto_type, but this is part of the bigger
+        // issue of whether or not there is a better way to frame all of this since a lot of
+        // this is just a big repeat
+        return_seal_packet.set_sealed(true);
+        return_seal_packet.set_highaddr(highest_addr);
+
+        corfu_payload.set_allocated_seal(&return_seal_packet);
+    }
+
+    corfu_payload.SerializeToString(output.get());
+
+    return output;
+}
+
+std::unique_ptr<std::string> corfu_sequencer_serialize_str_entry(uint64_t proto_type, uint64_t log_idx) {
+    std::unique_ptr<std::string> output = NULL;
+
+    corfusequencer::Payload corfu_payload;
+
+    corfu_payload.set_packet_type(proto_type);
+
+    if (proto_type == CORFU_GETTOKEN_REPLY_PROTO_TYPE) {
+        corfusequencer::SendToken token_packet;
+
+        token_packet.set_token(log_idx);
+
+        corfu_payload.set_allocated_send_token(&token_packet);
     }
 
     corfu_payload.SerializeToString(output.get());
