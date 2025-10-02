@@ -224,3 +224,70 @@ std::unique_ptr<std::string> corfu_sequencer_serialize_str_entry(uint64_t proto_
 
     return output;
 }
+
+std::string corfu_client_deserialize_str_entry(std::unique_ptr<std::string> entry) {
+    std::string output = "";
+
+    corfuclient::Payload corfu_payload;
+
+    corfu_payload.ParseFromString(*(entry.get()));
+    uint64_t proto_type = corfu_payload.packet_type();
+
+    if (proto_type == CORFU_APPEND_PROTO_TYPE) { // append
+        output = corfu_payload.append();
+    } else if (proto_type == CORFU_READ_PROTO_TYPE) { // read
+        output = corfu_payloard.read();
+    } else if (proto_type == CORFU_TRIM_PROTO_TYPE) { // trim
+        output = corfu_payload.trim();
+    } else if (proto_type == CORFU_FILL_PROTO_TYPE) { // fill
+        output = corfu_payload.fill();
+    } else if (proto_type == CORFU_SEAL_PROTO_TYPE) { // seal
+        output = corfu_payload.seal();
+    } else if (proto_type == CORFU_GETTOKEN_PROTO_TYPE) { // get token
+        output = corfu_payload.token_req();
+    }
+
+    return output;
+}
+
+std::string corfu_storage_deserialize_str_entry(std::unique_ptr<std::string> entry) {
+    std::string output = "";
+
+    corfustorage::Payload corfu_payload;
+
+    corfu_payload.ParseFromString(*(entry.get()));
+    uint64_t proto_type = corfu_payload.packet_type();
+
+    if (proto_type == CORFU_ACK_PROTO_TYPE) { // ack
+        output = corfu_payload.ack();
+    } else if (proto_type == CORFU_SEALED_PROTO_TYPE) { // errSealed
+        output = corfu_payload.err_sealed();
+    } else if (proto_type == CORFU_UNWRITTEN_PROTO_TYPE) { // errUnwritten
+        output = corfu_payload.err_unwritten();
+    } else if (proto_type == CORFU_WRITTEN_PROTO_TYPE) { // errWritten
+        output = corfu_payloard.err_written();
+    } else if (proto_type == CORFU_STORE_READ_PROTO_TYPE) { // read
+        output = corfu_payload.read();
+    } else if (proto_type == CORFU_STORE_SEAL_PROTO_TYPE) { // seal
+        output = corfu_payload.seal();
+    } else if (proto_type == CORFU_DELETED_PROTO_TYPE) {
+        output = corfu_payload.err_deleted();
+    }
+
+    return output;
+}
+
+std::string corfu_sequencer_deserialize_str_entry(std::unique_ptr<std::string> entry) {
+    std::string output = "";
+
+    corfusequencer::Payload corfu_payload;
+
+    corfu_payload.ParseFromString(*(entry.get()));
+    uint64_t proto_type = corfu_payload.packet_type();
+        
+    if (proto_type == CORFU_GETTOKEN_REPLY_PROTO_TYPE) {
+        output = corfu_payloard.send_token();
+    }
+
+    return output;
+}

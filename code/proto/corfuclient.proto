@@ -2,6 +2,9 @@ syntax="proto3";
 
 package corfuclient;
 
+// CTODO: need to change it so that clientID is only used in places where it needs to be used
+// bc currently with deserialize there's no way to give back the client id with the way ive written it
+
 message Payload {
     int64 packet_type = 1;
     optional Append append = 2;
