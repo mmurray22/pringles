@@ -12,9 +12,6 @@ message Payload {
     optional sealReply seal = 7;
 }
 
-// i think ive set these messages up to be more specific... should i try to be more generic instead
-// of making a new kind of packet for each possible response from the server?
-
 message ackMsg {
     int64 ack_code = 1;
 }

@@ -39,7 +39,7 @@ uint64_t CorfuClient::get_tail() {
 
 uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
     // we use the network object to send a request to the sequencer for the next log position
-    std::unique_ptr<std::string> sequencing_packet = serialize_str_entry("gettoken", CORFU_PROTO_TYPE);
+    std::unique_ptr<std::string> sequencing_packet = corfu_client_serialize_str_entry("", CORFU_GETTOKEN_PROTO_TYPE, client_id, 0, 0);
     net->add_to_send_queue(sequencing_packet, sequencer.IP); // request a log position
 
     std::string msg;
@@ -57,9 +57,9 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
         return 1; // failure
     }
 
+    // CTODO: figure out deserializing
     std::string packet_contents = deserialize_str_entry(msg, CORFU_PROTO_TYPE);
-    // Question: do I need to check if we've received the correct data type or not?
-    // currently incorrect, micah is working on it
+
     uint64_t log_idx = std::stoull(packet_contents);
 
     // loop through all of the replicas that have this log position
@@ -81,7 +81,7 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
     }
 
     for (CorfuStorage sm : send_machines) {
-        std::unique_ptr<std::string> write_packet = serialize_str_entry(entry, CORFU_PROTO_TYPE);
+        std::unique_ptr<std::string> write_packet = corfu_client_serialize_str_entry(entry, CORFU_APPEND_PROTO_TYPE, client_id, log_idx, curr_epoch);
         net->add_to_send_queue(write_packet, sm.IP);
 
         std::string msg;
@@ -103,7 +103,10 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
             return 1; // return error
         }
 
+        // CTODO: figure out deserialize
         std::string packet_contents = deserialize_str_entry(msg, CORFU_PROTO_TYPE);
+
+        // CTODO: this whole section below will change once deserialize is figured out
 
         if (packet_contents == "err_sealed") {
             spdlog::info("Must reconfigure because the current epoch was sealed");
@@ -163,7 +166,7 @@ uint64_t CorfuClient::trim(uint64_t log_idx) {
     }
 
     for (CorfuStorage sm : send_machines) {
-        std::unique_ptr<std::string> delete_packet = serialize_str_entry("delete", CORFU_PROTO_TYPE);
+        std::unique_ptr<std::string> delete_packet = corfu_client_serialize_str_entry("", CORFU_TRIM_PROTO_TYPE, client_id, log_idx, 0);
         net->add_to_send_queue(delete_packet, sm.IP);
 
         std::unique_ptr<std::string> msg;
@@ -181,6 +184,7 @@ uint64_t CorfuClient::trim(uint64_t log_idx) {
             return 1; // failure
         }
 
+        // CTODO: figure out deserialize
         std::string packet_contents = deserialize_str_entry(msg, CORFU_PROTO_TYPE);
         if (packet_contents == "ack") {
             // corfu paper does not say to trim anything from local log representation, so this is a possible optimization

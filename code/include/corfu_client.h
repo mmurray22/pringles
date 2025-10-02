@@ -8,6 +8,13 @@
 #include "base_client.h"
 #include "corfu_storage.h"
 
+#define CORFU_APPEND_PROTO_TYPE 1
+#define CORFU_READ_PROTO_TYPE 2
+#define CORFU_TRIM_PROTO_TYPE 3
+#define CORFU_FILL_PROTO_TYPE 4
+#define CORFU_SEAL_PROTO_TYPE 5
+#define CORFU_GETTOKEN_PROTO_TYPE 6
+
 #define TIMEOUT 10
 #define CORFU_PROTO_TYPE 2
 

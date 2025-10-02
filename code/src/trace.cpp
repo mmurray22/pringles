@@ -3,6 +3,13 @@
 #include "spdlog/spdlog.h"
 #include "ringclient.pb.h"
 
+#define CORFU_APPEND_PROTO_TYPE 1
+#define CORFU_READ_PROTO_TYPE 2
+#define CORFU_TRIM_PROTO_TYPE 3
+#define CORFU_FILL_PROTO_TYPE 4
+#define CORFU_SEAL_PROTO_TYPE 5
+#define CORFU_GETTOKEN_PROTO_TYPE 6
+
 /*
  * Reads in a txt file trace of the format "operation: payload"
  */
@@ -23,6 +30,7 @@ template <typename T>
 Trace<T>::~Trace() {
 }
 
+// CTODO: can copy this function for different corfu packets, private corfu helper func
 template <typename T>
 std::unique_ptr<std::string> Trace<T>::serialize_str_entry(std::string entry, uint64_t proto_type) {
     std::unique_ptr<std::string> output = NULL;
@@ -55,7 +63,7 @@ std::string Trace<T>::deserialize_str_entry(std::unique_ptr<std::string> entry, 
     } else if (proto_type == 2) { // Corfu
         corfuclient::Payload corfuEntry;
         corfuEntry.ParseFromString(*(entry.get())); // TODO: fix deserialization
-        output = corfuEntry.entry();
+        output = corfuEntry.append().entry();
     }
     return output;
 }
@@ -66,4 +74,60 @@ void TemporaryFunction ()
 {
     Trace<std::string> TempObj("default.yaml");
     (void)TempObj;
+}
+
+
+std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t client_id, uint64_t log_idx, uint64_t curr_epoch) {
+    std::unique_ptr<std::string> output = NULL;
+
+    corfuclient::Payload corfu_payload;
+    corfu_payload.set_packet_type(proto_type);
+    corfu_payload.set_clientID(client_id);
+
+    if (proto_type == CORFU_APPEND_PROTO_TYPE) { // append
+        corfuclient::Append append_packet;
+
+        append_packet.set_idx(log_idx);
+        append_packet.set_allocated_entry(&entry);
+        append_packet.set_currEpoch(curr_epoch);
+
+        corfu_payload.set_allocated_append(&append_packet);
+    } else if (proto_type == CORFU_READ_PROTO_TYPE) { // read
+        corfuclient::Read read_packet;
+
+        read_packet.set_idx(log_idx);
+        read_packet.set_currEpoch(curr_epoch);
+
+        corfu_payload.set_allocated_read(&read_packet);
+    } else if (proto_type == CORFU_TRIM_PROTO_TYPE) { // trim
+        corfuclient::Trim trim_packet;
+
+        trim_packet.set_idx(log_idx);
+        
+        corfu_payload.set_allocated_trim(&trim_packet);
+    } else if (proto_type == CORFU_FILL_PROTO_TYPE) { // fill
+        corfuclient::Fill fill_packet;
+
+        fill_packet.set_currEpoch(curr_epoch);
+        fill_packet.set_junk(true);
+        fill_packet.set_idx(log_idx);
+
+        corfu_payload.set_allocated_fill(&fill_packet);
+    } else if (proto_type == CORFU_SEAL_PROTO_TYPE) { // seal
+        corfuclient::Seal seal_packet;
+
+        seal_packet.set_currEpoch(curr_epoch);
+
+        corfu_payload.set_allocated_seal(&seal_packet);
+    } else if (proto_type == CORFU_GETTOKEN_PROTO_TYPE) { // get token
+        corfuclient::GetToken token_packet;
+
+        token_packet.set_reqToken(true);
+
+        corfu_payload.set_allocated_token_req(&token_packet);
+    }
+
+    corfu_payload.SerializeToString(output.get());
+
+    return output;
 }

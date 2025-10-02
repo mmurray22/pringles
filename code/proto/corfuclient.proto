@@ -4,8 +4,8 @@ package corfuclient;
 
 message Payload {
     string packet_type = 1;
-    optional AppendEntry append = 2;
-    optional ReadEntry read = 3;
+    optional Append append = 2;
+    optional Read read = 3;
     optional Trim trim = 4;
     optional Fill fill = 5;
     optional GetToken token_req = 6;
@@ -13,16 +13,15 @@ message Payload {
     optional Seal seal = 8;
 }
 
-message AppendEntry {
+message Append {
    int64 idx = 1;
    string entry = 2;
    int64 currEpoch = 3;
 }
 
-message ReadEntry {
+message Read {
     int64 idx = 1;
-    string entry = 2;
-    int64 currEpoch = 3;
+    int64 currEpoch = 2;
 }
 
 message Trim {
@@ -40,5 +39,5 @@ message Seal {
 }
 
 message GetToken {
-    bool req_token = 1;
+    bool reqToken = 1;
 }
