@@ -23,13 +23,13 @@ void CorfuSequencer::run_sequencer_thread() {
         if (!rcv_str) {
             continue;
         }
-        std::string packet_contents = deserialize_str_entry(rcv_str, CORFU_PROTO_TYPE);
-        if (packet_contents == "gettoken") {
+        std::string packet_contents = corfu_client_deserialize_str_entry(rcv_str);
+        if (packet_contents.token_req().reqToken()) {
             spdlog::info("sequencer received a token request");
             uint64_t idx = assign_next_idx();
 
             std::unique_ptr<std::string> token_packet = corfu_sequencer_serialize_str_entry(CORFU_GETTOKEN_REPLY_PROTO_TYPE, idx);
-            uint64_t client_ip = packet_contents->clientID; // each packet comes with a client ip, but better solution should be found
+            uint64_t client_ip = packet_contents.clientID(); // each packet comes with a client ip, but better solution should be found
 
             net->add_to_send_queue(token_packet, client_ip);
         }

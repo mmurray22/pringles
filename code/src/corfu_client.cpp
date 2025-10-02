@@ -33,8 +33,8 @@ CorfuClient::~CorfuClient() {
     recv.join();
 }
 
-uint64_t CorfuClient::get_tail() {
-    return this->sequencer.get_current_idx() + 1;
+void reconfigure(uint64_t log_idx, CorfuStorage failing_unit) {
+    return;
 }
 
 uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
@@ -57,10 +57,10 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
         return 1; // failure
     }
 
-    // CTODO: figure out deserializing
-    std::string packet_contents = deserialize_str_entry(msg, CORFU_PROTO_TYPE);
+    // recv packet from the sequencer
+    std::string packet_contents = corfu_sequencer_deserialize_str_entry(msg);
 
-    uint64_t log_idx = std::stoull(packet_contents);
+    uint64_t log_idx = packet_contents.send_token().token();
 
     // loop through all of the replicas that have this log position
     std::vector<CorfuStorage> send_machines;
@@ -103,31 +103,24 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
             return 1; // return error
         }
 
-        // CTODO: figure out deserialize
-        std::string packet_contents = deserialize_str_entry(msg, CORFU_PROTO_TYPE);
+        std::string packet_contents = corfu_storage_deserialize_str_entry(msg);
 
-        // CTODO: this whole section below will change once deserialize is figured out
-
-        if (packet_contents == "err_sealed") {
+        if (packet_contents.packet_type() == CORFU_SEALED_PROTO_TYPE) {
             spdlog::info("Must reconfigure because the current epoch was sealed");
             CorfuStorage failing_unit = auxiliary[curr_epoch][log_idx][0];
             reconfigure(log_idx, failing_unit);
             spdlog::info("Just reconfigured, you should attempt to append again");
             return 1; // return error
-        }
-
-        if (packet_contents == "err_deleted") {
+        } else if (packet_contents.packet_type() == CORFU_DELETED_PROTO_TYPE) {
             spdlog::critical("We got an err_deleted and now we're returning the error code");
-            return err_deleted;
-        }
-
-        if (packet_contents == "err_unwritten") {
+            return 1;
+        } else if (packet_contents.packet_type() == CORFU_UNWRITTEN_PROTO_TYPE) {
             spdlog::critical("We got an err_unwritten and now we're returning the error code");
-            return err_unwritten;
+            return 1;
         }
 
         // check to make sure that we've received an ack
-        if (packet_contents == "ack") {
+        if (packet_contents.packet_type() == CORFU_ACK_PROTO_TYPE) {
             spdlog::info("Append: received an ack, continuing to write to next server");
             continue;
         } else {
@@ -184,11 +177,10 @@ uint64_t CorfuClient::trim(uint64_t log_idx) {
             return 1; // failure
         }
 
-        // CTODO: figure out deserialize
-        std::string packet_contents = deserialize_str_entry(msg, CORFU_PROTO_TYPE);
-        if (packet_contents == "ack") {
-            // corfu paper does not say to trim anything from local log representation, so this is a possible optimization
-            // to add later :)
+        std::string packet_contents = corfu_storage_deserialize_str_entry(msg);
+        if (packet_contents.packet_type() == CORFU_ACK_PROTO_TYPE) {
+            // Note: corfu paper does not say to trim anything from local log representation,
+            // so this is a possible optimization to add later :)
             continue;
         } else {
             spdlog::critical("Trim: We did not receive an ack :(");

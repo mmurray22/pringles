@@ -7,19 +7,18 @@
 #define CORFU_APPEND_PROTO_TYPE 1
 #define CORFU_READ_PROTO_TYPE 2
 #define CORFU_TRIM_PROTO_TYPE 3
-#define CORFU_FILL_PROTO_TYPE 4
-#define CORFU_SEAL_PROTO_TYPE 5
-#define CORFU_GETTOKEN_PROTO_TYPE 6
+#define CORFU_SEAL_PROTO_TYPE 4
+#define CORFU_GETTOKEN_PROTO_TYPE 5
 
-#define CORFU_ACK_PROTO_TYPE 7
-#define CORFU_SEALED_PROTO_TYPE 8
-#define CORFU_UNWRITTEN_PROTO_TYPE 9
-#define CORFU_WRITTEN_PROTO_TYPE 10
-#define CORFU_STORE_READ_PROTO_TYPE 11
-#define CORFU_STORE_SEAL_PROTO_TYPE 12
-#define CORFU_DELETED_PROTO_TYPE 13
+#define CORFU_ACK_PROTO_TYPE 6
+#define CORFU_SEALED_PROTO_TYPE 7
+#define CORFU_UNWRITTEN_PROTO_TYPE 8
+#define CORFU_WRITTEN_PROTO_TYPE 9
+#define CORFU_STORE_READ_PROTO_TYPE 10
+#define CORFU_STORE_SEAL_PROTO_TYPE 11
+#define CORFU_DELETED_PROTO_TYPE 12
 
-#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 14
+#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 13
 
 /*
  * Reads in a txt file trace of the format "operation: payload"
@@ -116,14 +115,6 @@ std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry,
         trim_packet.set_idx(log_idx);
         
         corfu_payload.set_allocated_trim(&trim_packet);
-    } else if (proto_type == CORFU_FILL_PROTO_TYPE) { // fill
-        corfuclient::Fill fill_packet;
-
-        fill_packet.set_currEpoch(curr_epoch);
-        fill_packet.set_junk(true);
-        fill_packet.set_idx(log_idx);
-
-        corfu_payload.set_allocated_fill(&fill_packet);
     } else if (proto_type == CORFU_SEAL_PROTO_TYPE) { // seal
         corfuclient::Seal seal_packet;
 
@@ -229,23 +220,7 @@ std::string corfu_client_deserialize_str_entry(std::unique_ptr<std::string> entr
     std::string output = "";
 
     corfuclient::Payload corfu_payload;
-
-    corfu_payload.ParseFromString(*(entry.get()));
-    uint64_t proto_type = corfu_payload.packet_type();
-
-    if (proto_type == CORFU_APPEND_PROTO_TYPE) { // append
-        output = corfu_payload.append();
-    } else if (proto_type == CORFU_READ_PROTO_TYPE) { // read
-        output = corfu_payloard.read();
-    } else if (proto_type == CORFU_TRIM_PROTO_TYPE) { // trim
-        output = corfu_payload.trim();
-    } else if (proto_type == CORFU_FILL_PROTO_TYPE) { // fill
-        output = corfu_payload.fill();
-    } else if (proto_type == CORFU_SEAL_PROTO_TYPE) { // seal
-        output = corfu_payload.seal();
-    } else if (proto_type == CORFU_GETTOKEN_PROTO_TYPE) { // get token
-        output = corfu_payload.token_req();
-    }
+    output = corfu_payload.ParseFromString(*(entry.get()));
 
     return output;
 }
@@ -254,26 +229,8 @@ std::string corfu_storage_deserialize_str_entry(std::unique_ptr<std::string> ent
     std::string output = "";
 
     corfustorage::Payload corfu_payload;
-
-    corfu_payload.ParseFromString(*(entry.get()));
-    uint64_t proto_type = corfu_payload.packet_type();
-
-    if (proto_type == CORFU_ACK_PROTO_TYPE) { // ack
-        output = corfu_payload.ack();
-    } else if (proto_type == CORFU_SEALED_PROTO_TYPE) { // errSealed
-        output = corfu_payload.err_sealed();
-    } else if (proto_type == CORFU_UNWRITTEN_PROTO_TYPE) { // errUnwritten
-        output = corfu_payload.err_unwritten();
-    } else if (proto_type == CORFU_WRITTEN_PROTO_TYPE) { // errWritten
-        output = corfu_payloard.err_written();
-    } else if (proto_type == CORFU_STORE_READ_PROTO_TYPE) { // read
-        output = corfu_payload.read();
-    } else if (proto_type == CORFU_STORE_SEAL_PROTO_TYPE) { // seal
-        output = corfu_payload.seal();
-    } else if (proto_type == CORFU_DELETED_PROTO_TYPE) {
-        output = corfu_payload.err_deleted();
-    }
-
+    output = corfu_payload.ParseFromString(*(entry.get()));
+    
     return output;
 }
 
@@ -281,13 +238,7 @@ std::string corfu_sequencer_deserialize_str_entry(std::unique_ptr<std::string> e
     std::string output = "";
 
     corfusequencer::Payload corfu_payload;
-
-    corfu_payload.ParseFromString(*(entry.get()));
-    uint64_t proto_type = corfu_payload.packet_type();
-        
-    if (proto_type == CORFU_GETTOKEN_REPLY_PROTO_TYPE) {
-        output = corfu_payloard.send_token();
-    }
+    output = corfu_payload.ParseFromString(*(entry.get()));
 
     return output;
 }
