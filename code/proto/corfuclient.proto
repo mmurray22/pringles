@@ -3,7 +3,7 @@ syntax="proto3";
 package corfuclient;
 
 message Payload {
-    string packet_type = 1;
+    int64 packet_type = 1;
     optional Append append = 2;
     optional Read read = 3;
     optional Trim trim = 4;

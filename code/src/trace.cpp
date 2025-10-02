@@ -131,3 +131,42 @@ std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry,
 
     return output;
 }
+
+std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t client_id, uint64_t log_idx, uint64_t curr_epoch) {
+    std::unique_ptr<std::string> output = NULL;
+
+    corfustorage::Payload corfu_payload;
+
+    corfu_payload.set_packet_type(proto_type);
+
+    if (proto_type == CORFU_ACK_PROTO_TYPE) { // ack
+        corfustorage::Ack ack_packet;
+
+        ack_packet.set_ack_code(true);
+
+        corfu_payload.set_allocated_ack(&ack_packet);
+    } else if (proto_type == CORFU_SEALED_PROTO_TYPE) { // errSealed
+        corfustorage::errSealed err_sealed_packet;
+
+        err_sealed_packet.set_err_code(true);
+
+        corfu_payload.set_allocated_err_sealed(&err_sealed_packet);
+    } else if (proto_type == CORFU_UNWRITTEN_PROTO_TYPE) { // errUnwritten
+        corfustorage::errUnwritten err_unwritten_packet;
+
+        err_unwritten_packet.set_err_code(true);
+
+        corfu_payload.set_allocated_err_unwritten(&err_unwritten_packet);
+
+    } else if (proto_type == CORFU_WRITTEN_PROTO_TYPE) { // errWritten
+
+    } else if (proto_type == CORFU_STORE_READ_PROTO_TYPE) { // read
+
+    } else if (proto_type == CORFU_STORE_SEAL_PROTO_TYPE) { // seal
+
+    }
+
+    corfu_payload.SerializeToString(output.get());
+
+    return output;
+}
