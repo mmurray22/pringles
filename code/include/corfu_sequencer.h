@@ -4,7 +4,7 @@
 #include <atomic>
 
 #define CORFU_GETTOKEN_PROTO_TYPE 6
-#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 13
+#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 14
 
 class CorfuSequencer {
     public:

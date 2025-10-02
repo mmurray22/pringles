@@ -10,6 +10,7 @@ message Payload {
     optional errWritten err_written = 5;
     optional Read read = 6;
     optional Seal seal = 7;
+    optional errDeleted err_deleted = 8;
 }
 
 message Ack {
@@ -36,4 +37,8 @@ message Read {
 message Seal {
     bool sealed = 1;
     int64 highaddr = 2;
+}
+
+message errDeleted {
+    bool err_code = 1;
 }

@@ -17,8 +17,9 @@
 #define CORFU_WRITTEN_PROTO_TYPE 10
 #define CORFU_STORE_READ_PROTO_TYPE 11
 #define CORFU_STORE_SEAL_PROTO_TYPE 12
+#define CORFU_DELETED_PROTO_TYPE 13
 
-#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 13
+#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 14
 
 /*
  * Reads in a txt file trace of the format "operation: payload"
@@ -191,6 +192,12 @@ std::unique_ptr<std::string> corfu_storage_serialize_str_entry(std::string entry
         return_seal_packet.set_highaddr(highest_addr);
 
         corfu_payload.set_allocated_seal(&return_seal_packet);
+    } else if (proto_type == CORFU_DELETED_PROTO_TYPE) {
+        corfustorage::errDeleted err_deleted_packet;
+
+        err_deleted_packet.set_err_code(true);
+
+        corfu_payload.set_allocated_err_deleted(&err_deleted_packet);
     }
 
     corfu_payload.SerializeToString(output.get());

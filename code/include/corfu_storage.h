@@ -15,6 +15,7 @@
 #define CORFU_WRITTEN_PROTO_TYPE 10
 #define CORFU_STORE_READ_PROTO_TYPE 11
 #define CORFU_STORE_SEAL_PROTO_TYPE 12
+#define CORFU_DELETED_PROTO_TYPE 13
 
 
 class CorfuStorage : public BaseStorage {
