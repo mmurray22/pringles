@@ -14,7 +14,14 @@ add_project_link_arguments(['-lprotobuf','-lssl','-lcrypto'], language: ['cpp'])
 gen = generator(protoc,
   output : ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=../code/proto', '--cpp_out=@BUILD_DIR@', '@INPUT@']) # Generalize path?
-generated = gen.process(['code/proto/ringclient.proto'])
+generated = gen.process([
+  'code/proto/ringclient.proto',
+  'code/proto/corfuclient.proto',
+  'code/proto/corfustorage.proto',
+  'code/proto/corfusequencer.proto',
+  'code/proto/simpleclient.proto',
+  'code/proto/ringstorage.proto'
+])
 
 inc = include_directories('code/include/')
 subdir('code/include')

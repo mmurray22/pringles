@@ -3,6 +3,9 @@
 #include "spdlog/spdlog.h"
 #include "ringclient.pb.h"
 #include "structs.h"
+#include "corfuclient.pb.h"
+#include "corfustorage.pb.h"
+#include "corfusequencer.pb.h"
 // #include "simple_client.h"
 
 #define CORFU_APPEND_PROTO_TYPE 1
@@ -92,21 +95,21 @@ std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry,
 
     corfuclient::Payload corfu_payload;
     corfu_payload.set_packet_type(proto_type);
-    corfu_payload.set_clientID(client_id);
+    corfu_payload.set_clientid(client_id);
 
     if (proto_type == CORFU_APPEND_PROTO_TYPE) { // append
         corfuclient::Append append_packet;
 
         append_packet.set_idx(log_idx);
         append_packet.set_allocated_entry(&entry);
-        append_packet.set_currEpoch(curr_epoch);
+        append_packet.set_currepoch(curr_epoch);
 
         corfu_payload.set_allocated_append(&append_packet);
     } else if (proto_type == CORFU_READ_PROTO_TYPE) { // read
         corfuclient::Read read_packet;
 
         read_packet.set_idx(log_idx);
-        read_packet.set_currEpoch(curr_epoch);
+        read_packet.set_currepoch(curr_epoch);
 
         corfu_payload.set_allocated_read(&read_packet);
     } else if (proto_type == CORFU_TRIM_PROTO_TYPE) { // trim
@@ -118,13 +121,13 @@ std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry,
     } else if (proto_type == CORFU_SEAL_PROTO_TYPE) { // seal
         corfuclient::Seal seal_packet;
 
-        seal_packet.set_currEpoch(curr_epoch);
+        seal_packet.set_currepoch(curr_epoch);
 
         corfu_payload.set_allocated_seal(&seal_packet);
     } else if (proto_type == CORFU_GETTOKEN_PROTO_TYPE) { // get token
         corfuclient::GetToken token_packet;
 
-        token_packet.set_reqToken(true);
+        token_packet.set_reqtoken(true);
 
         corfu_payload.set_allocated_token_req(&token_packet);
     }
