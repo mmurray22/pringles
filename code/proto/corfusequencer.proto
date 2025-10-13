@@ -1,0 +1,12 @@
+syntax="proto3";
+
+package corfusequencer;
+
+message Payload {
+    int64 packet_type = 1;
+    optional SendToken send_token = 2;
+}
+
+message SendToken {
+    int64 token = 1;
+}

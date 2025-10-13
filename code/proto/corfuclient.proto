@@ -1,0 +1,36 @@
+syntax="proto3";
+
+package corfuclient;
+
+message Payload {
+    int64  packet_type = 1;
+    optional Append append = 2;
+    optional Read read = 3;
+    optional Trim trim = 4;
+    optional GetToken token_req = 5;
+    int64 clientID = 6;
+    optional Seal seal = 7;
+}
+
+message Append {
+   int64 idx = 1;
+   string entry = 2;
+   int64 currEpoch = 3;
+}
+
+message Read {
+    int64 idx = 1;
+    int64 currEpoch = 2;
+}
+
+message Trim {
+    int64 idx = 1;
+}
+
+message Seal {
+    int64 currEpoch = 1;
+}
+
+message GetToken {
+    bool reqToken = 1;
+}

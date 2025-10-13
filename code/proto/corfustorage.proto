@@ -1,0 +1,44 @@
+syntax="proto3";
+
+package corfustorage;
+
+message Payload {
+    int64 packet_type = 1;
+    optional Ack ack = 2;
+    optional errSealed err_sealed = 3;
+    optional errUnwritten err_unwritten = 4;
+    optional errWritten err_written = 5;
+    optional Read read = 6;
+    optional Seal seal = 7;
+    optional errDeleted err_deleted = 8;
+}
+
+message Ack {
+    bool ack_code = 1;
+}
+
+message errSealed {
+    bool err_code = 1;
+}
+
+message errUnwritten {
+    bool err_code = 1;
+}
+
+message errWritten {
+    bool err_code = 1;
+    string content = 2;
+}
+
+message Read {
+    string content = 2;
+}
+
+message Seal {
+    bool sealed = 1;
+    int64 highaddr = 2;
+}
+
+message errDeleted {
+    bool err_code = 1;
+}
