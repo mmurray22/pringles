@@ -3,7 +3,14 @@
 // - Base code come from p4 tutorial exercises
 // - CPU port code inspiration comes from https://github.com/nsg-ethz/p4-learning/tree/master/examples/copy_to_cpu
 #include <core.p4>
-#include <v1model.p4>
+#if __TARGET_TOFINO__ == 2
+#include <t2na.p4>
+#else
+#include <tna.p4>
+#endif
+
+#include "common/headers.p4"
+#include "common/util.p4"
 
 const bit<16> TYPE_IPV4  = 0x0800;
 const bit<16> TYPE_CONTROL = 0x0820; // only for the switches
@@ -78,7 +85,7 @@ header control_pkt_t {
    bit<32> ring_view;
 
    // ID of last sending switch
-   bit<32> id;
+   bit<32> pkt_id;
 }
 
 // AppendEntry header
@@ -160,17 +167,22 @@ struct headers {
 
 parser MyParser(packet_in packet,
                 out headers hdr,
-                inout metadata meta,
-                inout standard_metadata_t standard_metadata) {
+                out metadata meta,
+                out ingress_intrinsic_metadata_t standard_metadata) {
+    
+    TofinoIngressParser() tofino_parser;
 
     state start {
+        tofino_parser.apply(packet, standard_metadata);
         transition parse_ethernet;
     }
 
     state parse_ethernet {
         packet.extract(hdr.ethernet);
-        transition parse_ipv4;
-        
+	transition select(hdr.ethernet.etherType) {
+            TYPE_CONTROL: parse_control;
+	    default: parse_ipv4;
+        }
     }
 
     state parse_control {
@@ -195,12 +207,11 @@ parser MyParser(packet_in packet,
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
-	    transition select(hdr.ethernet.etherType) {
-            TYPE_CONTROL: parse_control;
+	transition select(hdr.ethernet.etherType) {
             TYPE_CONTROL_CHECK: parse_control_check;
             TYPE_APPEND: parse_append;
             TYPE_TAIL: parse_tail;
-	        default: accept;
+	    default: accept;
         }
     }
 }
@@ -217,33 +228,98 @@ control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
 /*************************************************************************
 **************  I N G R E S S   P R O C E S S I N G   *******************
 *************************************************************************/
-
 control MyIngress(inout headers hdr,
                   inout metadata meta,
-		  inout standard_metadata_t standard_metadata) {
+		  in ingress_intrinsic_metadata_t standard_metadata,
+		  in ingress_intrinsic_metadata_from_parser_t ig_prsr_md,
+		  inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
+		  inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
    
     /** Registers **/
     
-    /// Ring State
-    register<bit<32>>(1) ring_view; // Current ring view number TODO will need to be written to from the control plane
+    /// Ring State ///
 
-    /// Sequencing state
-    register<bit<32>>(1) highest_seen_seq_no; // Largest global sequence number known to the switch Updated every time control packet is received.
-    register<bit<32>>(1) local_seq_no; // Local seq no batch counter 
-    register<bit<32>>(1) cntrl_pkt_it; // Number of total times the switch has seen the control packet TODO potential to overflow?
+    DirectRegister<bit<32>>(0) ring_view; // Current ring view number TODO will need to be written to from the control plane
+    /*DirectRegisterAction<bit<32>, bit<32>>(ring_view) view_update = {
+        void apply(inout bit<32> view) {
+            view = view + 1;
+        }
+    };*/ // TODO: Update view
+    DirectRegisterAction<bit<32>, bit<32>>(ring_view) get_curr_view = {
+        void apply(inout bit<32> view, out bit<32> read_view) {
+            read_view = view;
+        }
+    };
 
-    /// Replication state
-    register<bit<32>>(1) highest_replicated_seq_no; // Largest global sequence number corresponding to a successfully replicated entry.
-    
+    /// Sequencing state ///
+
+    // Largest global sequence number known to the switch Updated every time control packet is received.
+    Register<bit<32>, bit<32>>(1, 0) highest_seen_seq_no;
+    RegisterAction<bit<32>, bit<32>, bit<32>>(highest_seen_seq_no) write_seen_seq_no = {
+        void apply(inout bit<32> cur_seen_seq_no) {
+            cur_seen_seq_no = (bit<32>)hdr.cntrl.global_seq_no;
+        }
+    };
+    RegisterAction<bit<32>, bit<32>, bit<32>>(highest_seen_seq_no) read_seen_seq_no = {
+        void apply(inout bit<32> new_seen_seq_no, out bit<32> old_seen_seq_no) { // inout = register, out = output 
+            old_seen_seq_no = new_seen_seq_no;
+        }
+    };
+
+    // Largest replicated global sequence number known to the switch
+    DirectRegister<bit<32>>(0) highest_replicated_seq_no;
+
+    // TODO: Not sure why you need the second bit<32>
+    DirectRegisterAction<bit<32>, bit<32>>(highest_replicated_seq_no) write_replicate_seq_no = {
+        void apply(inout bit<32> cur_replicate_seq_no, out bit<32> new_replicate_seq_no) {
+            // TODO: CANNOT READ NEW VAR cur_replicate_seq_no = new_replicate_seq_no;
+        }
+    };
+    DirectRegisterAction<bit<32>, bit<32>>(highest_replicated_seq_no) read_replicate_seq_no = {
+        void apply(inout bit<32> new_replicate_seq_no, out bit<32> old_replicate_seq_no) {
+            old_replicate_seq_no = new_replicate_seq_no;
+        }
+    };
+
+
+    // Local seq no batch counter 
+    DirectRegister<bit<32>>(0) local_seq_no;
+    DirectRegisterAction<bit<32>, bit<32>>(local_seq_no) write_local_seq_no = {
+        void apply(inout bit<32> cur_local_seq_no, out bit<32> pkt_local_seq_no) {
+            cur_local_seq_no = cur_local_seq_no + 1;
+	    pkt_local_seq_no = cur_local_seq_no;
+        }
+    };
+    DirectRegisterAction<bit<32>, bit<32>>(local_seq_no) read_local_seq_no = {
+        void apply(inout bit<32> cur_local_seq_no, out bit<32> final_local_seq_no) {
+            final_local_seq_no = cur_local_seq_no;
+	    cur_local_seq_no = 0;
+        }
+    };
+
+    // Number of total times the switch has seen the control packet TODO potential to overflow?
+    DirectRegister<bit<32>>() cntrl_pkt_it; 
+    DirectRegisterAction<bit<32>, bit<32>>(cntrl_pkt_it) update_cntrl_pkt_it = {
+        void apply(inout bit<32> cur_cntrl_pkt_it) {
+            cur_cntrl_pkt_it = cur_cntrl_pkt_it + 1;
+        }
+    };
+    DirectRegisterAction<bit<32>, bit<32>>(cntrl_pkt_it) read_cntrl_pkt_it = {
+        void apply(inout bit<32> cur_cntrl_pkt_it, out bit<32> output_cntrl_pkt_it) {
+	    output_cntrl_pkt_it = cur_cntrl_pkt_it;
+        }
+    };
+
+
     /** ACTIONS **/
 
     /* Standard IPv4 routing */
     action drop() {
-        mark_to_drop(standard_metadata);
+        ig_dprsr_md.drop_ctl = 1;
     }
 
     action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
-        standard_metadata.egress_spec = port;
+        ig_tm_md.ucast_egress_port = port;
         hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
         hdr.ethernet.dstAddr = dstAddr;
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
@@ -264,13 +340,13 @@ control MyIngress(inout headers hdr,
 
     /* Control Packet */
     action cntrl_forward(egressSpec_t port, bit<32> id) {
-        standard_metadata.egress_spec = port;
-        hdr.cntrl.id = id;
+        ig_tm_md.ucast_egress_port = port;
+        hdr.cntrl.pkt_id = id;
     }
 
     table cntrl_id_to_ip {
         key = {
-            hdr.cntrl.id: exact;
+            hdr.cntrl.pkt_id: exact;
         }
         actions = {
             cntrl_forward;
@@ -278,40 +354,37 @@ control MyIngress(inout headers hdr,
             NoAction;
         }
         size = 1024;
+        default_action = drop();
+    }
+
+    /* Ring View */
+    table check_view {
+        key = {
+            hdr.cntrl.ring_view: exact;
+        }
+        actions = {
+            drop;
+            NoAction;
+        }
+        size = 1024;
         default_action = NoAction();
     }
 
-
-    /* Read */
-    action multicast_append(bit<16> mcast_grp_num) {
-        standard_metadata.mcast_grp = mcast_grp_num;
-    }
-    
-    table get_append_shard_id {
-        key = { 
-            hdr.append.shard_id: exact;
-        }
-        actions = {
-            multicast_append;
-            drop;
-        }
-        size = 1024;
-        default_action = drop;
-    }
-    
     /* Tail */
     action update_tail(egressSpec_t port) {
         bit<32> hr_seq_no;
-        highest_replicated_seq_no.read(hr_seq_no, 0);
+	read_replicate_seq_no.execute(hr_seq_no);
         if (hdr.tail.tail_seq_no < (int<32>)hr_seq_no) {
             hdr.tail.tail_seq_no = (int<32>)hr_seq_no;
         }
-        standard_metadata.egress_spec = port;
+        ig_tm_md.ucast_egress_port = port;
     }
     
     action return_tail(macAddr_t dstAddr, egressSpec_t port) {
-        standard_metadata.egress_spec = port;
-        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        ig_tm_md.ucast_egress_port = port;
+        
+	// do you need this?
+	hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
         hdr.ethernet.dstAddr = dstAddr;
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
@@ -329,13 +402,14 @@ control MyIngress(inout headers hdr,
         default_action = drop;
     }
 
+    /* Circulate port */
     action circulate_port(egressSpec_t port) {
-        standard_metadata.egress_spec = port;
+        ig_tm_md.ucast_egress_port = port;
     }
 
     table circulate_table {
         key = {
-            meta.default_bit: exact;
+            meta.default_bit: exact; // what is going on here?
         }
         actions = {
             circulate_port;
@@ -344,10 +418,9 @@ control MyIngress(inout headers hdr,
         default_action = NoAction;
     }
 
-    apply { // Parcel all header state changes into actions TODO 
-        meta.circulate = 0;
-        bit<32> base = 0; // Used to calculate the shard ID from the sequence number
 
+    apply {
+        meta.circulate = 0; // TODO
         /* 
          * Process Control packets 
          * 
@@ -355,45 +428,30 @@ control MyIngress(inout headers hdr,
          * Number of write actions done: 3
          */
         if (hdr.cntrl.isValid()) {
-            bit<32> ring_view_reg;
-            bit<32> local_seq_no_reg;
-            int<32> highest_seen_seq_no_reg;
-            bit<32> cntrl_pkt_it_reg;
-            
-            // Step 0: Check if the control packet's view is outdated
-            ring_view.read(ring_view_reg, 0);
-            if (hdr.cntrl.ring_view < ring_view_reg) {
-                drop();
-                return;
-            }
+            // Step 0: Check if the control packet's view is outdated TODO
+	    check_view.apply();
         
-            // Step 1: Update control packet global sequence number
-            local_seq_no.read(local_seq_no_reg, 0);
+            // Step 1: Update control packet global sequence number and zero local sequence counter
+            bit<32> local_seq_no_reg;
+            read_local_seq_no.execute(local_seq_no_reg);
             hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + (int<32>)local_seq_no_reg;
 
             // Step 2: Update control packet + local highest seen seq no
-            highest_seen_seq_no.write(0, (bit<32>)(hdr.cntrl.global_seq_no));
+	    write_seen_seq_no.execute(0);
 
-            // Step 3: Update local sequence counter
-            local_seq_no.write(0, 0);
-
-            // Step 4: Control packet iteration increase
-            cntrl_pkt_it.read(cntrl_pkt_it_reg, 0);
-            cntrl_pkt_it.write(0, (bit<32>)((int<32>)cntrl_pkt_it_reg + 1));
+            // Step 3: Control packet iteration increase
+	    update_cntrl_pkt_it.execute();
             
-            // Step 5: Send to next switch
+            // Step 4: Send to next switch
             cntrl_id_to_ip.apply();
-            clone(CloneType.I2E,100);
-        /** Process Control Check packets**/
+	/** Process Control Check packets**/
         } else if (hdr.cntrl_check.isValid()) {
-            bit<32> highest_seq_no_reg;
-            highest_seen_seq_no.read(highest_seq_no_reg, 0);
-            hdr.cntrl_check.switch_global_seq_no = highest_seq_no_reg;
-        /** Process Append packets **/
-        } else if (hdr.append.isValid()) { /** Process AppendEntry packets **/
+	    read_seen_seq_no.execute(hdr.cntrl_check.switch_global_seq_no); // TODO: Understand why  this couldn't be direct
+	/** Process Append packets **/
+        } /* else if (hdr.append.isValid()) {*/
             // Change processing of append based on the status of the packet
             // Status 1: First time the packet has been seen
-            if (hdr.append.status == 1) {
+            /*if (hdr.append.status == 1) {
 
                 // 1) Assign local seq no TODO check how you initialize variables???
                 bit<32> local_seq_no_reg;
@@ -434,7 +492,7 @@ control MyIngress(inout headers hdr,
 
         if (meta.circulate == 1) {
             circulate_table.apply();
-        }
+        }*/
 
         /* Process IP hdr */
         if (hdr.ipv4.isValid()) {
@@ -443,39 +501,78 @@ control MyIngress(inout headers hdr,
     }
 }
 
+control MyIngressDeparser(
+ packet_out packet,
+ inout headers hdr,
+ in metadata ig_md,
+ in ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md)
+{
+	apply {
+	        packet.emit(hdr);
+ 	}
+}
+
 /*************************************************************************
 ****************  E G R E S S   P R O C E S S I N G   ********************
 *************************************************************************/
+parser MyEgressParser(packet_in packet,
+ 		      out headers hdr,
+ 		      out metadata eg_md,
+ 		      out egress_intrinsic_metadata_t eg_intr_md) {
+ 	
+	TofinoEgressParser() tofino_parser;
+   	
+	state start {
+        	tofino_parser.apply(packet, eg_intr_md);
+        	transition parse_ethernet;
+    	}
+
+    	state parse_ethernet {
+    	    packet.extract(hdr.ethernet);
+    	    transition select(hdr.ethernet.etherType) {
+    	        TYPE_CONTROL: parse_control;
+    	        default: parse_ipv4;
+    	    }
+    	}
+
+    	state parse_control {
+    	    packet.extract(hdr.cntrl);
+    	    transition accept;
+    	}
+    	
+    	state parse_control_check {
+    	    packet.extract(hdr.cntrl_check);
+    	    transition accept;
+    	}
+
+    	state parse_append {
+    	    packet.extract(hdr.append);
+    	    transition accept;
+    	}
+    	
+    	state parse_tail {
+    	    packet.extract(hdr.tail);
+    	    transition accept;
+    	}
+
+    	state parse_ipv4 {
+    	    packet.extract(hdr.ipv4);
+    	    transition select(hdr.ethernet.etherType) {
+    	        TYPE_CONTROL_CHECK: parse_control_check;
+    	        TYPE_APPEND: parse_append;
+    	        TYPE_TAIL: parse_tail;
+    	        default: accept;
+    	    }
+    	}
+}
 
 control MyEgress(inout headers hdr,
                  inout metadata meta,
-                 inout standard_metadata_t standard_metadata) {
-	
-    /*action return_read(macAddr_t dstAddr, egressSpec_t port) {
-        standard_metadata.egress_spec = port;
-        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
-        hdr.ethernet.dstAddr = dstAddr;
-        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
-    }
-
-    table check_unwritten {
-        key = {
-            hdr.read.unwritten: exact;
-        }
-        actions = {
-            return_read;
-            NoAction;
-        }
-        size = 1024;
-        default_action = NoAction(); //drop();
-    }*/
-
+                 in egress_intrinsic_metadata_t standard_metadata,
+		 in egress_intrinsic_metadata_from_parser_t eg_prsr_md,
+		 inout egress_intrinsic_metadata_for_deparser_t eg_dprsr_md,
+		 inout egress_intrinsic_metadata_for_output_port_t eg_oport_md) {
     apply { 
-        if (hdr.cntrl.isValid() && standard_metadata.instance_type == 1) {
-            hdr.ethernet.setInvalid();
-            hdr.ipv4.setInvalid();
-            hdr.cntrl.setInvalid();
-        }
     }
 }
 
@@ -483,7 +580,7 @@ control MyEgress(inout headers hdr,
 *************   C H E C K S U M    C O M P U T A T I O N   ***************
 *************************************************************************/
 
-control MyComputeChecksum(inout headers hdr, inout metadata meta) {
+/*control MyComputeChecksum(inout headers hdr, inout metadata meta) {
      apply {
         update_checksum(
             hdr.ipv4.isValid(),
@@ -501,19 +598,17 @@ control MyComputeChecksum(inout headers hdr, inout metadata meta) {
             hdr.ipv4.hdrChecksum,
             HashAlgorithm.csum16);
     }
-}
+}*/
 
 /*************************************************************************
 ***********************  D E P A R S E R  *******************************
 *************************************************************************/
-
-control MyDeparser(packet_out packet, in headers hdr) {
+control MyDeparser(packet_out packet, 
+		   inout headers hdr,
+		   in metadata meta,
+		   in egress_intrinsic_metadata_for_deparser_t eg_dprsr_md) {
     apply {
-        packet.emit(hdr.ethernet);
-        packet.emit(hdr.ipv4);
-	    packet.emit(hdr.cntrl);
-        packet.emit(hdr.append);
-	    packet.emit(hdr.tail);
+        packet.emit(hdr);
     }
 }
 
@@ -521,11 +616,13 @@ control MyDeparser(packet_out packet, in headers hdr) {
 ***********************  S W I T C H  *******************************
 *************************************************************************/
 
-V1Switch(
-MyParser(),
-MyVerifyChecksum(),
-MyIngress(),
-MyEgress(),
-MyComputeChecksum(),
-MyDeparser()
-) main;
+Pipeline(
+	MyParser(),
+	MyIngress(),
+	MyIngressDeparser(),
+	MyEgressParser(),
+	MyEgress(),
+	MyDeparser()
+) pipe;
+
+Switch(pipe) main;
