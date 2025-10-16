@@ -29,7 +29,8 @@ class Tail(Packet):
                     IntField("hops", 0),
                     IntField("tail_seq_no", 0)]
 
-bind_layers(Ether, IP, Tail, type=TYPE_TAIL)
-bind_layers(Ether, IP, Append, type=TYPE_APPEND)
+bind_layers(Ether, IP)
+bind_layers(IP, Tail, type=TYPE_TAIL)
+bind_layers(IP, Append, type=TYPE_APPEND)
 bind_layers(Ether, Cntrl, type=TYPE_CONTROL)
-bind_layers(Ether, IP, Cntrl_Check, type=TYPE_CNTRL_CHECK)
+bind_layers(IP, Cntrl_Check, type=TYPE_CONTROL_CHECK)
