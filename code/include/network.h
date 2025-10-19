@@ -130,9 +130,9 @@ class Network {
         std::mutex rcv_queue_mutex;
 
 	std::map<std::string, std::vector<std::string>> pkt_type_to_ip;
-	std::map<std::string, std::vector<uint64_t>> pkt_type_to_skt;
+	std::map<std::string, std::vector<uint64_t>> pkt_type_to_fd;
 
-        	uint64_t num_pkts_type = 0;
+        uint64_t num_pkts_type = 0;
 	
 	std::map<int, std::shared_ptr<struct addrinfo>> fd_to_it;
         
@@ -141,13 +141,11 @@ class Network {
         /** IP Address + Socket Management **/
         std::string send_interface;
         std::string self_ip;
-        std::shared_ptr<struct addrinfo> seq_it; 
-        std::string seq_ip;
+        
+	std::string seq_ip;
         std::string storage_multicast_addr;
-        std::shared_ptr<struct addrinfo> storage_it;
-        int storage_socket; // TODO delete?
+        
         int recv_socket;
-        int seq_socket; // TODO delete?
         bool validate_ip_address(const std::string &ip_addr);
          
         /** Socket handling **/

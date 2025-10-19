@@ -49,19 +49,18 @@ Network::Network(uint64_t maxThreads,
     RECV_PORT = recv_port;
 
     seq_socket = -1;
-    seq_it = NULL;
 
     set_spdlog_level(log_level);
 
     /* Initialize sockets */
     this->pkt_type_to_ip = pkt_type_to_ip;
-    this->pkt_type_to_skt = {};
+    this->pkt_type_to_fd = {};
     for (auto it =  pkt_type_to_ip.begin(); it != pkt_type_to_ip.end(); it++) {
 	if (it->second.size() < 1) {
 		spdlog::debug("Packet type {} has NO IP addresses!", it->first);
 		continue;
 	}
-	pkt_type_to_skt.insert({it->first, {}});
+	pkt_type_to_fd.insert({it->first, {}});
         for (uint64_t i = 0; i < it->second.size(); i++) {
 		std::shared_ptr<struct addrinfo> socket_it = std::make_shared<struct addrinfo>();
         	int socket = socket_type == "UDP" ? setup_talker_socket(it->second[i], socket_it) : setup_raw_talker_socket();
@@ -69,7 +68,7 @@ Network::Network(uint64_t maxThreads,
             		spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", it->second[i]);
             		throw std::runtime_error("Can't create sending socket");
 		}
-		pkt_type_to_skt[it->first].push_back(socket);
+		pkt_type_to_fd[it->first].push_back(socket);
 		fd_to_it.insert({socket, socket_it});
     	}
 	num_pkts_type += 1;
@@ -178,24 +177,26 @@ void Network::run_send(std::string pkt_type) {
         // There is no support for custom headers + IP addresses
         if (socket_type == "UDP") {
 	    spdlog::debug("Sending a UDP packet!");
-	    std::shared_ptr<struct addrinfo> it = std::make_shared<struct addrinfo>();
-            int s_fd = setup_talker_socket(pkt_type_to_ip[pkt_type][0], it); // TODO: Send to all entries!
-            if (s_fd < 0) {
-                spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", pkt_type);
-                throw std::runtime_error("Can't create sending socket");
-            } 
-            ssize_t num_bytes = sendto(s_fd, send_packet.get(), batch_bytes, 0, it->ai_addr, it->ai_addrlen);
-            if (num_bytes < 0 || ((uint64_t)num_bytes != batch_bytes)) {
-                spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-                memset(send_packet.get(), 0, batch_size);
-                batch_bytes = 0;
-                offset = 0;
-                continue;
-            }
-            spdlog::info("Successfully sent {} bytes to the receiver with packet value {}", std::to_string(num_bytes), send_packet.get());
-            memset(send_packet.get(), 0, batch_size);
-            batch_bytes = 0;
-            offset = 0;
+	    for (int i = 0; i < pkt_type_to_ip[pkt_type].size(); i++) {
+	    	//std::shared_ptr<struct addrinfo> it = std::make_shared<struct addrinfo>();
+            	int s_fd = pkt_type_to_fd[pkt_type][i]; //setup_talker_socket(pkt_type_to_ip[pkt_type][0], it); // TODO: Send to all entries!
+            	if (s_fd < 0) {
+                    spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", pkt_type);
+                    throw std::runtime_error("Can't create sending socket");
+                } 
+            	ssize_t num_bytes = sendto(s_fd, send_packet.get(), batch_bytes, 0, fd_to_it[s_fd]->ai_addr, fd_to_it[s_fd]->ai_addrlen);
+            	if (num_bytes < 0 || ((uint64_t)num_bytes != batch_bytes)) {
+                    spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
+                    memset(send_packet.get(), 0, batch_size);
+                    batch_bytes = 0;
+                    offset = 0;
+                    continue;
+            	}
+            	spdlog::info("Successfully sent {} bytes to the receiver with packet value {}", std::to_string(num_bytes), send_packet.get());
+            	memset(send_packet.get(), 0, batch_size);
+            	batch_bytes = 0;
+            	offset = 0;
+	    }
             continue;
         }
 
@@ -206,23 +207,6 @@ void Network::run_send(std::string pkt_type) {
             continue;
         }
         
-        if (socket_type == "UDP") { // If we are running UDP
-            std::shared_ptr<struct addrinfo> it = get_it(s_fd);
-            ssize_t num_bytes = sendto(s_fd, send_packet.get(), batch_bytes, 0, it->ai_addr, it->ai_addrlen);
-            if (num_bytes < 0 || ((uint64_t)num_bytes != batch_bytes)) {
-                spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
-                memset(send_packet.get(), 0, batch_size);
-                batch_bytes = 0;
-                offset = 0;
-                continue;
-            }
-            spdlog::info("Successfully sent {} bytes to the receiver.", std::to_string(num_bytes));
-            memset(send_packet.get(), 0, batch_size);
-            batch_bytes = 0;
-            offset = 0;
-            continue;
-        }
-
         /* Running a raw socket based protocol */
         size_t size_of_hdr = get_size_of_hdr(pkt_type, protocol_type);
         std::string ip_addr = get_ip(s_fd);
@@ -231,7 +215,6 @@ void Network::run_send(std::string pkt_type) {
             continue;
         }
 
-        
         size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + size_of_hdr + batch_bytes;
         spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr: {}, Send packet: {}", sizeof(struct ethhdr), sizeof(struct iphdr), size_of_hdr, batch_bytes);
         std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size);
@@ -421,9 +404,12 @@ void Network::run_recv(int s_fd) {
 	    continue;
 	} else if (socket_type == "UDP" && batch_on) {
 		spdlog::critical("Batching w/ UDP not supported!");
+		continue;
+	} else { 
+	    rcv_pkt.emplace(std::move(buf));
 	}
 
-	if (!batch_on) { // Custom headers with no batching
+	/*if (!batch_on) { // Custom headers with no batching
 	    size_t size_of_pkt = *((size_t*)(buf.get()));
             std::unique_ptr<char[]> sample_pkt = std::make_unique<char[]>(size_of_pkt);
             struct ethhdr* eth = (struct ethhdr*)sample_pkt.get();
@@ -465,7 +451,7 @@ void Network::run_recv(int s_fd) {
                 std::unique_ptr<std::string> str_ptr = std::make_unique<std::string>(str);
                 rcv_pkt.emplace(std::move(str_ptr));
             }
-        }
+        }*/
     }
     std::unique_lock<std::mutex> lock(lock_num_recv_done);
     num_recv_done = 1;

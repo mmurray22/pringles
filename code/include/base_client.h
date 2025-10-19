@@ -24,6 +24,8 @@ class BaseClient {
 	private:
 	    /*** Variables ***/
         uint64_t cid;
+	std::thread subscribe_thread;
+	std::thread recv_thread;
         std::unique_ptr<Network> net;
         //std::unique_ptr<Trace<T>> trace;
         ClientType cli_type;
