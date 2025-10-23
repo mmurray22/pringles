@@ -7,6 +7,7 @@
 #include "base_sequencer.h"
 #include "base_storage.h"
 #include "corfu_sequencer.h"
+#include "../include/FlashUnit.h"
 
 // Example registry for flash units
 // Maps flash unit IDs to FlashUnit pointers for lookup during reconfiguration.
@@ -22,15 +23,7 @@ FlashUnit* get_flash_unit(const std::string& id) {
     return nullptr;
 }
 
-// Dummy FlashUnit
-class FlashUnit {
-public:
-    bool write(uint64_t page, const std::vector<uint8_t>& data, uint64_t epoch, int timeout_ms = 100);
-    std::vector<uint8_t> read(uint64_t page, uint64_t epoch, int timeout_ms = 100);
-    void trim(uint64_t page, uint64_t epoch, int timeout_ms = 100);
-    void fill_junk(uint64_t page, uint64_t epoch, int timeout_ms = 100);
-    void seal(uint64_t epoch, int timeout_ms = 100);
-};
+// FlashUnit implementation moved to include/FlashUnit.h and src/FlashUnit.cpp
 
 
 // Constructs a CorfuClient with a given sequencer, projection mapping, and auxiliary log.
