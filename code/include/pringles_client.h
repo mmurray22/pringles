@@ -5,12 +5,31 @@
 #include <queue>
 #include <map>
 #include <mutex>
+#include <optional>
+#include <chrono>
 
 #include "base_client.h"
-#include "ringclient.h"
-#include "ring_headers.h"
 
-#define MAX_WAIT_TIME 5
+#include "measure.h"
+
+const std::chrono::milliseconds MAX_WAIT_TIME(500);
+
+enum SequencerType {
+	DUMMY,
+	NETWORK,
+	MACHINE
+};
+
+enum PacketType {
+    	dummyappend,
+    	append,
+    	readentry,
+    	gettail,
+	trim,
+	dummyappendstream,
+	appendstream,
+	subscribe
+};
 
 /* Client class */
 class LogClient : public BaseClient {
@@ -28,17 +47,13 @@ class LogClient : public BaseClient {
         void subscribe(uint64_t idx);
         // Garbage collect all log entries up to some index
         bool trim(uint64_t idx);
-
-
+	
     private:
-	uint64_t wait_for_append(std::unique_ptr<std::string> entry);       
-        void log_updates(uint64_t idx);
-	std::unique_ptr<std::string> create_pkt();
-	ringclient::Payload deser_pkt(std::unique_ptr<std::string> pkt);
-	void read_pringles_recv_queue();
+	/**** Variables ****/
 
+	uint64_t num_pkt_types = 0; 
 	/* Receive queue which slots messages */
-	std::map<PacketType, std::queue<ringclient::Payload>> pkt_q;
+	std::map<PacketType, std::queue<char*>> pkt_q;
 	std::vector<std::string> pkt_types;
 	bool end_thread = false;
 
@@ -47,7 +62,30 @@ class LogClient : public BaseClient {
         std::vector<uint64_t> pending_read_entries;
 
         /* Local list of appended and read log entries and corresponding lock*/
-	std::vector<LogEntry> cached_log_entries;
+	std::map<uint64_t, std::string> cached_log_entries;
 	std::mutex cached_log_lock;
 
-}
+	/* Protocol types */
+	SequencerType seq;
+	//StorageType stor;
+
+	std::thread recv_thread;
+	std::thread duration_thread;
+
+	Stats stat;
+	uint64_t max_duration;
+	
+	/**** Functions ****/
+	int64_t wait_for_append(PacketType pkt_type, uint32_t nonce);       
+        void wait_for_subscribe(uint64_t idx, uint64_t pkt_type);
+        void wait_for_finish();
+	std::unique_ptr<char[]> create_pkt(PacketType pkt_type, 
+		                           uint32_t nonce,
+				           std::optional<std::string> entry = std::nullopt,
+			   	           std::optional<int64_t> idx = 0);
+	void pringles_recv_queue();
+		
+	std::vector<int> get_pkt_eth_types();
+	size_t get_size_of_hdr(uint64_t pkt_type);
+	int get_eth_type(uint64_t pkt_type);
+};

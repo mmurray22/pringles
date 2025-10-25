@@ -41,7 +41,7 @@ void custom_server(std::unique_ptr<Network> net) {
            // std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
             continue;
         }
- 	std::string recvd_str = *recvd_str_ptr.get();
+ 	std::string recvd_str = std::to_string(*recvd_str_ptr.get());
         spdlog::debug("Received string: {}", recvd_str);
 	if (recvd_str == "done!") {
 		waiting_for_pkt = false;

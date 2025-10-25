@@ -8,12 +8,11 @@ protoc = find_program('protoc')
 protobuf = dependency('protobuf')
 spdlog = dependency('spdlog')
 add_project_link_arguments(['-lprotobuf','-lssl','-lcrypto'], language: ['cpp'])
-# -lssl -lcrypto
 
 # Generate protobuf library
 gen = generator(protoc,
   output : ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
-  arguments : ['--proto_path=../code/proto', '--cpp_out=@BUILD_DIR@', '@INPUT@']) # Generalize path?
+  arguments : ['--proto_path=../code/proto', '--cpp_out=@BUILD_DIR@', '@INPUT@', '--experimental_allow_proto3_optional']) # Generalize path?
 generated = gen.process(['code/proto/ringclient.proto'])
 
 inc = include_directories('code/include/')

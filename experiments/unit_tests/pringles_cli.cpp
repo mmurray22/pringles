@@ -6,7 +6,6 @@
  * - Path to yaml file 
  */
 
-#include "network.h"
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -14,6 +13,7 @@
 #include <utility>
 #include <cassert>
 #include <fstream>
+#include <iostream>
 
 #include "spdlog/spdlog.h"
 #include "utils.h"
@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
         spdlog::critical("Not enough arguments provided! Need YAML file");
     }
     std::string input_file = std::string(argv[1]);
-    uint64_t cli_id = argv[2];
+    uint64_t cli_id = std::stoi(argv[2]);
     YAML::Node config = YAML::LoadFile(input_file);
     set_spdlog_level(get_log_level(config));
 

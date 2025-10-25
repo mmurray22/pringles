@@ -40,7 +40,7 @@ void custom_client(std::unique_ptr<Network> net, std::shared_ptr<Trace<std::stri
     spdlog::debug("Terminating message: {}", term);
 
     spdlog::info("Simple Net Server!");
-    std::unique_ptr<std::string> recvd_str_ptr = NULL;
+    std::unique_ptr<char[]> recvd_str_ptr = NULL;
     uint64_t wait_time = 1;
     uint64_t it_over_trace = 0;
     while (it_over_trace < trace->trace_vals.size()) {
@@ -56,8 +56,8 @@ void custom_client(std::unique_ptr<Network> net, std::shared_ptr<Trace<std::stri
             continue;
         }
 
-        spdlog::debug("Received string: {}", std::to_string((*recvd_str_ptr.get()).length()));
-        assert (trace->trace_vals.find(*recvd_str_ptr.get()) != trace->trace_vals.end()); // TODO: worry about duplicates??
+        spdlog::debug("Received string: {}", std::to_string(*recvd_str_ptr.get()));
+        assert (trace->trace_vals.find(std::to_string(*recvd_str_ptr.get())) != trace->trace_vals.end()); // TODO: worry about duplicates??
         spdlog::info("SUCCESS: Strings match! Received string was {}", *recvd_str_ptr.get());
         it_over_trace += 1;
     }

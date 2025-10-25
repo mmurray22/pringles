@@ -10,7 +10,6 @@
 #include <sys/types.h>
 #include <utility>
 #include <map>
-#include "structs.h"
 
 /*
  * Networking library which implements the low-level connectivity
@@ -49,7 +48,8 @@ class Network {
                 bool batch_on,
                 std::string send_interface,
                 std::string self_ip,
-		std::map<std::string, std::vector<std::string>> pkt_type_to_ip); 
+		std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
+		std::vector<int> pkt_type_to_eth_type); 
         ~Network();
 
         /*
@@ -61,12 +61,13 @@ class Network {
          * packet_type - Packet classifier label which will determine how the packet is 
          *               stored in the queue
          */
-        void add_to_send_queue(std::unique_ptr<std::string> buf, std::string packet_type);
+        void add_to_send_queue(std::unique_ptr<char[]> buf, uint64_t packet_type);
 
         /*
-         * TODO Need to review how the receive queue works
+         * Returns a unique pointer to the received packet at the front of the queue.
+	 * Further handling/queueing/manipulation needs to be done at the client/storage server/etc..
          */
-        std::unique_ptr<std::string> read_from_recv_queue();
+        std::unique_ptr<char[]> read_from_recv_queue();
 
         /*
          * Artificially indicates to Network object that no more requests will be issued
@@ -77,13 +78,10 @@ class Network {
          * Update the packet classifiers
          * Useful if the classifiers are receiver IPs and some receivers fail/are changed
          */
-        void add_pkt_type(std::string pkt_type);
-        bool remove_pkt_type(std::string pkt_type);
+        void add_pkt_type(uint64_t pkt_type);
+        bool remove_pkt_type(uint64_t pkt_type);
         
     private:
-        // Logging protocol the network object is being used for
-        ClientType protocol_type;
-        
         // checksum for IP packet header construction
         unsigned short checksum(unsigned short *buf, int nwords);         
 
@@ -103,7 +101,7 @@ class Network {
         void stop_threads();
 
         // Sender thread function, parameterized by the packet type the sender is responsible for
-        void run_send(std::string pkt_type);
+        void run_send(uint64_t pkt_type, int eth_type);
         // Receiver thread 
         void run_recv(int s_fd);
 
@@ -122,15 +120,15 @@ class Network {
         /* Send Packet queues
          * Assumption: All packets in the queue are of size > 0
          */
-        std::map<std::string, std::queue<std::unique_ptr<std::string>>> send_pkt_qs;
+        std::map<uint64_t, std::queue<std::unique_ptr<char[]>>> send_pkt_qs;
         std::mutex send_pkt_qs_mutex;
         
         
-        std::queue<std::unique_ptr<std::string>> rcv_pkt;
+        std::queue<std::unique_ptr<char[]>> rcv_pkt;
         std::mutex rcv_queue_mutex;
 
-	std::map<std::string, std::vector<std::string>> pkt_type_to_ip;
-	std::map<std::string, std::vector<uint64_t>> pkt_type_to_fd;
+	std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip;
+	std::map<uint64_t, std::vector<int>> pkt_type_to_fd;
 
         uint64_t num_pkts_type = 0;
 	
@@ -158,10 +156,10 @@ class Network {
         int setup_talker_socket(std::string curr_ip, std::shared_ptr<struct addrinfo>& it);
         int setup_raw_talker_socket();
         void destroy_socket(int s_fd);
-        int get_socket(std::string pkt_type, ClientType protocol_type);
+	std::vector<int> get_socket(uint64_t pkt_type);
         std::shared_ptr<struct addrinfo> get_it(int s_fd);
-        std::string get_ip(int s_fd);
-        std::unique_ptr<struct ethhdr> create_eth_hdr(int s_fd, std::string pkt_type);
+        std::string get_ip(uint64_t pkt_type, int idx);
+        std::unique_ptr<struct ethhdr> create_eth_hdr(int s_fd, int eth_type);
         std::unique_ptr<struct iphdr> create_ip_hdr(std::string dst_ip, size_t size_of_hdr, unsigned short* pkt);
 
         /** Batching **/

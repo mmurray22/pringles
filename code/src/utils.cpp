@@ -1,5 +1,6 @@
 #include "utils.h"
 #include "spdlog/spdlog.h"
+#include <random>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/conf.h>
@@ -34,13 +35,9 @@ uint64_t get_log_level(YAML::Node config) {
 }
 
 /* Nonce generation function */
-std::unique_ptr<unsigned char> generate_nonce() {
-    std::unique_ptr<unsigned char> nonce = std::make_unique<unsigned char>(16);
-    int rc = RAND_bytes(nonce.get(), sizeof(nonce));
-    if(rc != 1) {
-        spdlog::critical("Nonce failed to generate!!");
-        throw;
-    }
+uint32_t generate_nonce() {
+    std::random_device rd;
+    uint32_t nonce = rd();
     return nonce;
 }
 
@@ -59,33 +56,23 @@ std::string get_self_ip(YAML::Node config) {
     return config["self_ip"].as<std::string>();
 }
 
-std::map<std::string, std::vector<std::string>> get_packet_types(YAML::Node config) {
-    std::map<std::string, std::vector<std::string>> pkt_type_to_ips = {};
-    int i = 0;
-    std::string pkt_type = "";
+uint64_t get_num_pkt_types(YAML::Node config) {
+    return config["num_pkt_types"].as<uint64_t>();
+}
+
+std::map<uint64_t, std::vector<std::string>> get_packet_types(YAML::Node config) {
+    std::map<uint64_t, std::vector<std::string>> pkt_type_to_ips = {};
     std::vector<std::string> ips = {};
-    for (auto pkt_types : config["packet_types"]) {
-	if (i % 2 == 0) {
-		pkt_type = pkt_types["type"].as<std::string>();
-        	spdlog::debug("Packet type: {}", pkt_type);
-		i++;
-		continue;
-	} else if (i % 2 == 1) {
-		std::vector<std::string> ips = pkt_types["ips"].as<std::vector<std::string>>();
-		for (std::string ip : ips) {
-			spdlog::debug("IP addr: {}", ip);
-		}
-		pkt_type_to_ips.insert({pkt_type, ips});
-		i++;
+    uint64_t num_pkt_types = config["num_pkt_types"].as<uint64_t>();
+    for (uint64_t i = 0; i < num_pkt_types; i++) {
+	std::vector<std::string> ips = config["packet_types"][i]["ips"].as<std::vector<std::string>>();
+	for (std::string ip : ips) {
+		spdlog::debug("IP addr: {}", ip);
 	}
-    }
-    if (i % 2 == 1) {
-	    spdlog::error("Didn't have all the matching packet type: IP vector pairs!");
-	    return {};
+	pkt_type_to_ips.insert({i, ips});
     }
     return pkt_type_to_ips;
 }
-
 
 /* Batching */
 bool get_batch_on(YAML::Node config) {
@@ -132,6 +119,22 @@ std::string get_interface(YAML::Node config) {
     return config["interface"].as<std::string>();
 }
 
+uint64_t get_sequencer_type(YAML::Node config) {
+    return config["sequencer_type"].as<uint64_t>();
+}
+
+uint64_t get_storage_type(YAML::Node config) {
+    return config["storage_type"].as<uint64_t>();
+}
+
+uint64_t get_shard_id(YAML::Node config) {
+    return config["shard_id"].as<uint64_t>();
+}
+
+uint64_t get_shard_switch_id(YAML::Node config) {
+    return config["shard_switch_id"].as<uint64_t>();
+}
+
 /* Timeouts */
 uint64_t get_read_timeout(YAML::Node config) {
     return config["read_timeout"].as<uint64_t>();
@@ -139,4 +142,9 @@ uint64_t get_read_timeout(YAML::Node config) {
 
 uint64_t get_write_timeout(YAML::Node config) {
     return config["write_timeout"].as<uint64_t>();
+}
+
+/* Run Duration */
+uint64_t get_experiment_duration(YAML::Node config) {
+    return config["experiment_duration"].as<uint64_t>();
 }
