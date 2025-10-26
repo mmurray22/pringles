@@ -15,7 +15,7 @@ class BaseClient {
         // Append entries to the log
         virtual uint64_t append(std::string entry) = 0;
         // Read from idx in the log
-        virtual std::unique_ptr<std::string> read(uint64_t idx) = 0;
+        virtual std::string read(uint64_t idx) = 0;
         // Get latest committed entry
         virtual uint64_t getTail() = 0;
         // Subscribe to get all log updates after supplied index

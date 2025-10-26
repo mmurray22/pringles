@@ -1,0 +1,18 @@
+---
+log_level: 1
+send_port: "9405"
+recv_port: "4950"
+send_threads: 1
+socket_type: "RAW"
+self_ip: "128.110.217.176"
+interface: "eno1"
+batch_size: 5
+batch_on: false
+num_pkt_types: 1
+packet_types:
+  - ips: ["128.110.217.187"]
+sequencer_type: 0
+trace_file: "/proj/ove-PG0/murray/pringles/experiments/traces/unit_test_datagram.txt"
+experiment_duration: 30
+payload_size: 100
+...

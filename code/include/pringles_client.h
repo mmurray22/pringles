@@ -12,7 +12,7 @@
 
 #include "measure.h"
 
-const std::chrono::milliseconds MAX_WAIT_TIME(500);
+const std::chrono::seconds MAX_WAIT_TIME(5);
 
 enum SequencerType {
 	DUMMY,
@@ -21,7 +21,6 @@ enum SequencerType {
 };
 
 enum PacketType {
-    	dummyappend,
     	append,
     	readentry,
     	gettail,
@@ -40,7 +39,7 @@ class LogClient : public BaseClient {
 	// Append entries to the log
 	uint64_t append(std::string entry);
         // Read from idx in the log
-	std::unique_ptr<std::string> read(uint64_t idx);
+	std::string read(uint64_t idx);
         // Get latest committed entry
         uint64_t getTail();
         // Subscribe to get all log updates after supplied index
@@ -48,6 +47,7 @@ class LogClient : public BaseClient {
         // Garbage collect all log entries up to some index
         bool trim(uint64_t idx);
 	
+	bool experiment_status();
     private:
 	/**** Variables ****/
 
@@ -85,6 +85,7 @@ class LogClient : public BaseClient {
 			   	           std::optional<int64_t> idx = 0);
 	void pringles_recv_queue();
 		
+
 	std::vector<int> get_pkt_eth_types();
 	size_t get_size_of_hdr(uint64_t pkt_type);
 	int get_eth_type(uint64_t pkt_type);

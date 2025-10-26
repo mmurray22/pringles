@@ -69,16 +69,13 @@ LogClient::LogClient(std::string input_file, uint64_t cli_id) {
     // Updating the log 
     cached_log_entries = {};
     this->max_duration = get_experiment_duration(config);
-    //stat = new Stats(); //std::make_unique<Stats>();
-
-    // Optional: Include trace
-    //std::shared_ptr<Trace<std::string>> trace = std::make_shared<Trace<std::string>>(get_trace_file(config));
 }
 
 LogClient::~LogClient() {
-    end_thread = true;
     recv_thread.join();
-    subscribe_thread.join();
+    //TODO subscribe_thread.join();
+    duration_thread.join();
+    spdlog::debug("Joined the client threads!");
     net->done();
     stat.getAvgLatency();
     stat.getThroughput(max_duration);
@@ -87,43 +84,74 @@ LogClient::~LogClient() {
 
 /* Custom function */
 uint64_t LogClient::append(std::string entry) {
-    int64_t id = -1;	
-    switch (seq)
-    {
+     uint32_t nonce = generate_nonce();
+     spdlog::debug("Nonce: {}", nonce);
+     std::unique_ptr<ringclient::Payload> p = std::make_unique<ringclient::Payload>();
+     std::string output;
+     std::unique_ptr<char[]> packet;
+     size_t packet_size = 0;
+    
+     // General packet information
+     p->set_packet_type(static_cast<int>(PacketType::append));
+     p->set_nonce(nonce);
+
+     spdlog::debug("Creating append packet!");
+     
+     // Create packet payload
+     ringclient::AppendEntry* app = p->mutable_append();
+     switch (seq)
+     {
 	case SequencerType::DUMMY: 
 	{
-	    id = 1;
-	    uint32_t nonce = generate_nonce();
-            std::unique_ptr<char[]> pkt = create_pkt(PacketType::dummyappend, nonce, entry);
-	    stat.startLatTimer(nonce);
-            net->add_to_send_queue(std::move(pkt), static_cast<int>(PacketType::dummyappend));
-	    id = wait_for_append(PacketType::dummyappend, nonce);  
+	    app->set_idx(1);
 	    break;
 	};	    
-	case SequencerType::NETWORK:
-	{
-	    // TODO
- 	    uint32_t nonce = generate_nonce();
-            std::unique_ptr<char[]> pkt = create_pkt(PacketType::append, nonce, entry);
-            net->add_to_send_queue(std::move(pkt),  static_cast<int>(PacketType::append));
-	    id = wait_for_append(PacketType::append, nonce);  
-	    break;
-	};
 	default:
 	{
-	    spdlog::critical("Sequencer type is not supported!");
+            app->set_idx(-1); // To be filled in by the switch
 	};
-    }
+     }
 
-    if (id <= 0) {
-        spdlog::critical("Packet wasn't processed - id negative!");
-	return 0;
-    }
-    return id;
+     app->set_entry(entry);
+     //p->set_allocated_append(app);
+     p->SerializeToString(&output);
+     packet_size += output.length();
+     
+     // Create packet header
+     size_t size_of_hdr = get_size_of_hdr(PacketType::append);
+     packet_size += size_of_hdr;
+     std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(generate_nonce(), 1);
+     packet = std::make_unique<char[]>(packet_size+1);
+     
+     // Construct packet
+     memcpy(packet.get(), reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
+     memcpy(packet.get() + size_of_hdr, &output, output.length());
+     packet[packet_size] = '\0';
+     //std::unique_ptr<char[]> pkt = create_pkt(PacketType::append, nonce, entry);
+     spdlog::debug("Adding append packet to send queue of size {} with payload {} and header size {}", packet_size, output.length(), size_of_hdr);
+     net->add_to_send_queue(std::move(packet), static_cast<int>(PacketType::append), packet_size);
+     stat.startLatTimer(nonce);
+     /*uint64_t id = wait_for_append(PacketType::append, nonce);  
+     if (id <= 0) {
+         spdlog::critical("Packet wasn't processed - id negative!");
+	 return 0;
+     }
+     return id;*/
+     return 0;
 }
 
-std::unique_ptr<std::string> LogClient::read(uint64_t idx) {
-	// TODO
+std::string LogClient::read(uint64_t idx) {
+	/*std::string default_str = "";
+	uint32_t nonce = generate_nonce();
+        std::unique_ptr<char[]> pkt = create_pkt(PacketType::append, nonce, entry);
+        stat.startLatTimer(nonce);
+        net->add_to_send_queue(std::move(pkt), static_cast<int>(PacketType::append));
+        id = wait_for_append(PacketType::append, nonce);  
+        if (id <= 0) {
+            spdlog::critical("Packet wasn't processed - id negative!");
+	    return 0;
+        }
+        return id;*/
 	(void) idx;
 	return NULL;
 }
@@ -183,10 +211,10 @@ int64_t LogClient::wait_for_append(PacketType pkt_type, uint32_t nonce) {
     const auto start = std::chrono::steady_clock::now();
     while (true) {
         const std::chrono::duration<double, std::milli> elapsed = std::chrono::steady_clock::now() - start;
-        if (elapsed >= MAX_WAIT_TIME || end_thread) {
+        /*if (elapsed >= MAX_WAIT_TIME || end_thread) {
             spdlog::debug("!!!!!!!!!!!!!!TIMED OUT, packet with nonce {} never received", nonce);
             break;
-        }
+        }*/
 	
         char* recv_pkt_with_hdr = pkt_q[pkt_type].front();
 	if (recv_pkt_with_hdr == NULL) { // TODO: condition variable nothing in the receive queue, so we sleep
@@ -244,37 +272,38 @@ std::unique_ptr<char[]> LogClient::create_pkt(PacketType pkt_type,
 		                   uint32_t nonce,
 				   std::optional<std::string> entry,
 			   	   std::optional<int64_t> idx) {
-    ringclient::Payload p;
-    std::unique_ptr<std::string> output;
+    std::unique_ptr<ringclient::Payload> p = std::make_unique<ringclient::Payload>();
+    std::string output;
     std::unique_ptr<char[]> packet;
     size_t packet_size = 0;
     
     // General packet information
-    p.set_packet_type(static_cast<int>(pkt_type));
-    p.set_nonce(nonce);
+    p->set_packet_type(static_cast<int>(pkt_type));
+    p->set_nonce(nonce);
 
     if (pkt_type == PacketType::append) {
         spdlog::debug("Append packet!");
 	
 	// Create packet payload
-	ringclient::AppendEntry app;
-	app.set_idx(-1); // To be filled in by the switch
+	ringclient::AppendEntry* app = p->mutable_append();
+	app->set_idx(-1); // To be filled in by the switch
 	if (entry.has_value()) {
-	    app.set_allocated_entry(&entry.value());
+	    app->set_entry(entry.value());
 	}
-	p.set_allocated_append(&app);
-    	p.SerializeToString(output.get());
-	packet_size += (*output.get()).size();
+	//p->set_allocated_append(app);
+    	p->SerializeToString(&output);
+	packet_size += output.length();
 	
 	// Create packet header
 	size_t size_of_hdr = get_size_of_hdr(pkt_type);
         packet_size += size_of_hdr;
-	std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(generate_nonce(), 0);
-    	packet = std::make_unique<char[]>(packet_size);
+	std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(generate_nonce(), 1);
+    	packet = std::make_unique<char[]>(packet_size+1);
 	
 	// Construct packet
-	memcpy(packet.get(), hdr.get(), size_of_hdr);
-        memcpy(packet.get() + size_of_hdr, output.get(), (*output.get()).size());
+	memcpy(packet.get(), reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
+        memcpy(packet.get() + size_of_hdr, &output, output.length());
+	packet[packet_size] = '\0';
     } else if (pkt_type == PacketType::readentry) {
         /*spdlog::critical("Read packet!");
 	ringclient::ReadEntry read;
@@ -323,8 +352,13 @@ void LogClient::pringles_recv_queue() {
 void LogClient::wait_for_finish() {
     std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);
+    spdlog::debug("End thread: {}", end_thread);
     end_thread = true;
 } 
+
+bool LogClient::experiment_status() {
+    return !end_thread;
+}
 
 /* Header functions */
 std::vector<int> LogClient::get_pkt_eth_types() {
@@ -336,15 +370,17 @@ std::vector<int> LogClient::get_pkt_eth_types() {
 }
 
 size_t LogClient::get_size_of_hdr(uint64_t pkt_type) {
-    if (PacketType(pkt_type) == PacketType::append || PacketType(pkt_type) == PacketType::dummyappend) {
+    if (PacketType(pkt_type) == PacketType::append) {
         return sizeof(struct ring_append_entry);
     }
     return 0;
 }
 
 int LogClient::get_eth_type(uint64_t pkt_type) {
-    if (pkt_type == PacketType::append) {
+    if (PacketType(pkt_type) == PacketType::append) {
+	spdlog::debug("Eth type is ETH_APPEND_REQ.");
         return ETH_APPEND_REQ;
     }
+    spdlog::critical("No ethernet type found!");
     return -1; // no ethernet type found
 }

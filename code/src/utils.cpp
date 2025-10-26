@@ -31,7 +31,7 @@ void set_spdlog_level(uint64_t log_level) {
 }
 
 uint64_t get_log_level(YAML::Node config) {
-    return config["loglevel"].as<uint64_t>();
+    return config["log_level"].as<uint64_t>();
 }
 
 /* Nonce generation function */
@@ -147,4 +147,8 @@ uint64_t get_write_timeout(YAML::Node config) {
 /* Run Duration */
 uint64_t get_experiment_duration(YAML::Node config) {
     return config["experiment_duration"].as<uint64_t>();
+}
+
+uint64_t get_payload_size(YAML::Node config) {
+    return config["payload_size"].as<uint64_t>();
 }

@@ -1,0 +1,18 @@
+---
+log_level: 1
+send_port: "5904"
+recv_port: "5906"
+send_threads: 1
+socket_type: "RAW"
+self_ip: "128.110.217.187"
+interface: "eno1"
+batch_size: 5
+batch_on: false
+num_pkt_types: 1
+packet_types:
+  - ips: ["128.110.218.176"]
+storage_type: 1
+shard_id: 1
+shard_switch_id: 1
+experiment_duration: 30
+...

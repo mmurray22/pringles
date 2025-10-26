@@ -61,7 +61,7 @@ class Network {
          * packet_type - Packet classifier label which will determine how the packet is 
          *               stored in the queue
          */
-        void add_to_send_queue(std::unique_ptr<char[]> buf, uint64_t packet_type);
+        void add_to_send_queue(std::unique_ptr<char[]> buf, uint64_t packet_type, uint64_t packet_size);
 
         /*
          * Returns a unique pointer to the received packet at the front of the queue.
@@ -120,7 +120,7 @@ class Network {
         /* Send Packet queues
          * Assumption: All packets in the queue are of size > 0
          */
-        std::map<uint64_t, std::queue<std::unique_ptr<char[]>>> send_pkt_qs;
+        std::map<uint64_t, std::queue<std::pair<uint64_t, std::unique_ptr<char[]>>>> send_pkt_qs;
         std::mutex send_pkt_qs_mutex;
         
         
@@ -130,7 +130,7 @@ class Network {
 	std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip;
 	std::map<uint64_t, std::vector<int>> pkt_type_to_fd;
 
-        uint64_t num_pkts_type = 0;
+        uint64_t num_pkt_type = 0;
 	
 	std::map<int, std::shared_ptr<struct addrinfo>> fd_to_it;
         
@@ -156,7 +156,6 @@ class Network {
         int setup_talker_socket(std::string curr_ip, std::shared_ptr<struct addrinfo>& it);
         int setup_raw_talker_socket();
         void destroy_socket(int s_fd);
-	std::vector<int> get_socket(uint64_t pkt_type);
         std::shared_ptr<struct addrinfo> get_it(int s_fd);
         std::string get_ip(uint64_t pkt_type, int idx);
         std::unique_ptr<struct ethhdr> create_eth_hdr(int s_fd, int eth_type);

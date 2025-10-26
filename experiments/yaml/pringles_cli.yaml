@@ -1,5 +1,5 @@
 ---
-loglevel: 1
+log_level: 1
 send_port: "9405"
 recv_port: "4950"
 send_threads: 1
