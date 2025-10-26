@@ -1,11 +1,6 @@
 #include "utils.h"
 #include "spdlog/spdlog.h"
 #include <random>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-#include <openssl/conf.h>
-#include <openssl/evp.h>
-#include <openssl/rand.h>
 
 /*Log Level*/
 void set_spdlog_level(uint64_t log_level) {

@@ -17,3 +17,4 @@ sudo apt-get install libssl-dev
 
 # utilities
 sudo apt install ripgrep
+sudo apt install vim
