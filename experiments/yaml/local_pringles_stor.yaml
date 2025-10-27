@@ -4,16 +4,16 @@ send_port: "9405"
 recv_port: "4950"
 send_threads: 1
 socket_type: "RAW"
-self_ip: "10.10.0.9"
-interface: "ens4"
+self_ip: "128.110.217.187"
+interface: "eno1"
 batch_size: 5
 batch_on: false
 num_pkt_types: 1
 packet_types:
-  - ips: ["10.10.0.8"]
+  - ips: ["128.110.217.176"]
 storage_type: 1
 shard_id: 1
 shard_switch_id: 1
-experiment_duration: 30
-dst_mac: "42:01:0a:0a:00:08"
+experiment_duration: 60
+dst_mac: "ec:b1:d7:85:4a:f2"
 ...
