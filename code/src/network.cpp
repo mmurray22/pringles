@@ -250,7 +250,7 @@ std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd, int eth_type) {
     memcpy(eth.get()->h_source, ifr.get()->ifr_hwaddr.sa_data, 6 * sizeof (uint8_t));
 
     /*Set ethernet type*/
-    eth.get()->h_proto = eth_type; // Tells receiver how to parse packet
+    eth.get()->h_proto = htons(eth_type); // Tells receiver how to parse packet
     return eth;
 }
 
@@ -261,7 +261,7 @@ std::unique_ptr<struct iphdr> Network::create_ip_hdr(std::string dst_ip, size_t 
     ip.get()->ihl      = 5; //version length
     ip.get()->version  = 4; // version; should we allow for ipv6?
     ip.get()->tos      = 0; // type of service - set to normal, could change in future
-    ip.get()->tot_len  = sizeof(struct iphdr) + size_of_pkt; // total length of packet header
+    ip.get()->tot_len  = htons(sizeof(struct iphdr) + size_of_pkt); // TODO check total length of packet header
     ip.get()->id       = htons(54321); // default ID number for ip packet
     ip.get()->ttl      = 64; // default hops; circle back in case of change
     ip.get()->protocol = IPPROTO_RAW; // Raw IP
@@ -353,29 +353,29 @@ int Network::setup_listener_socket(std::string curr_ip) {
     int s_fd;
     int yes = 1;
     if (socket_type != "UDP") {
-        if ((s_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) { // TODO TODO: INCORRECT CHANGE TO AF_PACKET AS PER MAN 7 packet
+        if ((s_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
             spdlog::critical("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), std::to_string(errno), strerror(errno));
             return -1;
         }
         spdlog::debug("Created raw receive socket of fd {}", s_fd);
-	struct ifreq ifr;
+	/*struct ifreq ifr;
 	memset(&ifr, 0, sizeof(ifr));
 	strncpy(ifr.ifr_name, send_interface.c_str(), IFNAMSIZ - 1);
 	if (setsockopt(s_fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
 	    perror("Error binding socket to device. Interface name wrong or permissions failed.");
 	    close(s_fd);
 	    return -1;
-	}
+	}*/
         /*if (setsockopt(s_fd, IPPROTO_IP, SO_REUSEADDR | IP_HDRINCL, &yes, sizeof(int)) == -1) {
             spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
             return -1;
         }*/
-        int flags = fcntl(s_fd, F_GETFL, 0);
+        /*int flags = fcntl(s_fd, F_GETFL, 0);
         if (flags == -1) return false;
         flags = flags | O_NONBLOCK;
         if (fcntl(s_fd, F_SETFL, flags) != 0) {
             spdlog::critical("UNABLE TO SET FCNTL FLAGS");
-        }
+        }*/
         return s_fd;
     }
     memset(&hints, 0, sizeof hints);

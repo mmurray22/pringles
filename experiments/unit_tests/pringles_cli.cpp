@@ -36,10 +36,10 @@ int main(int argc, char* argv[]) {
     std::string payload(payload_size, 'X');
     // TODO generate string of size payload
     spdlog::debug("Experiment status to start: {}", pringles_client.experiment_status());
-    //while (!pringles_client.experiment_status()) {	    
-    uint64_t idx = pringles_client.append(payload);
-    spdlog::debug("The entry was given index: {}", idx);
-    //}
+    while (pringles_client.experiment_status()) {	    
+        uint64_t idx = pringles_client.append(payload);
+        spdlog::debug("The entry was given index: {}", idx);
+    }
 
     // Trace 
     /*std::shared_ptr<Trace<std::string>> trace = std::make_shared<Trace<std::string>>(get_trace_file(config));

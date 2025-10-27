@@ -122,7 +122,8 @@ void LogStorage::pringles_recv_queue() {
 	uint64_t size_of_pkt = std::strlen(recv_ptr.get());
         std::unique_ptr<char[]> sample_pkt = std::make_unique<char[]>(size_of_pkt);
         struct ethhdr* eth = (struct ethhdr*)recv_ptr.get();
-	if (eth->h_proto == ETH_APPEND_REQ) {
+	spdlog::debug("The ethernet type is {}", ntohs(eth->h_proto));
+	if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
             size_t hdr_size = get_size_of_hdr(PacketType::append);
 	    if (hdr_size == 0) {
                 spdlog::debug("Improper header type!! Packet being discarded");

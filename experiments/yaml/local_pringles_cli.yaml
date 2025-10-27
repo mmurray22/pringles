@@ -1,7 +1,7 @@
 ---
 log_level: 1
-send_port: "9405"
-recv_port: "4950"
+send_port: "4444"
+recv_port: "5555"
 send_threads: 1
 socket_type: "RAW"
 self_ip: "10.10.0.8"
@@ -13,7 +13,7 @@ packet_types:
   - ips: ["10.10.0.9"]
 sequencer_type: 0
 trace_file: "/proj/ove-PG0/murray/pringles/experiments/traces/unit_test_datagram.txt"
-experiment_duration: 30
+experiment_duration: 15
 payload_size: 100
 dst_mac: "42:01:0a:0a:00:09"
 ...
