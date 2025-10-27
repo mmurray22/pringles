@@ -5,6 +5,7 @@
 #include <queue>
 #include <map>
 #include <mutex>
+#include <condition_variable>
 #include <optional>
 #include <chrono>
 
@@ -37,7 +38,7 @@ class LogClient : public BaseClient {
 	~LogClient();
         
 	// Append entries to the log
-	uint64_t append(std::string entry);
+	uint32_t append(std::string entry);
         // Read from idx in the log
 	std::string read(uint64_t idx);
         // Get latest committed entry
@@ -53,9 +54,16 @@ class LogClient : public BaseClient {
 
 	uint64_t num_pkt_types = 0; 
 	/* Receive queue which slots messages */
-	std::map<PacketType, std::queue<char*>> pkt_q;
+	std::mutex pkt_q_lock;
+	std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
 	std::vector<std::string> pkt_types;
 	bool end_thread = false;
+	std::mutex next_nonce_lock;
+	std::mutex next_idx_lock;
+	uint32_t next_nonce = 0;
+	uint32_t next_idx = 0;
+	bool message_available = false;
+	std::condition_variable message_cond;
 
 	/* Hash/ID of pending append entries */
         std::vector<uint64_t> pending_append_entries;
@@ -76,7 +84,7 @@ class LogClient : public BaseClient {
 	uint64_t max_duration;
 	
 	/**** Functions ****/
-	int64_t wait_for_append(PacketType pkt_type, uint32_t nonce);       
+	uint32_t wait_for_append(PacketType pkt_type, uint32_t nonce);       
         void wait_for_subscribe(uint64_t idx, uint64_t pkt_type);
         void wait_for_finish();
 	std::unique_ptr<char[]> create_pkt(PacketType pkt_type, 

@@ -171,3 +171,18 @@ bool get_dst_mac_addr(YAML::Node config, uint8_t mac_array[6]) {
 
     return false;
 }
+
+
+uint64_t get_num_client_threads(YAML::Node config) {
+    return config["num_client_threads"].as<uint64_t>();
+}
+
+uint64_t get_cli_id(YAML::Node config) {
+    return config["cli_id"].as<uint64_t>();
+}
+
+uint64_t get_stor_id(YAML::Node config) {
+    return config["stor_id"].as<uint64_t>();
+}
+
+

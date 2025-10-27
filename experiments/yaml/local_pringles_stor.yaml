@@ -11,7 +11,7 @@ batch_on: false
 num_pkt_types: 1
 packet_types:
   - ips: ["128.110.217.176"]
-storage_type: 1
+storage_type: 0
 shard_id: 1
 shard_switch_id: 1
 experiment_duration: 60

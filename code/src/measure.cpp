@@ -32,24 +32,24 @@ bool Stats::endLatTimer(uint64_t nonce) {
 
 double Stats::getAvgLatency() {
     double avgLat = std::accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
-    spdlog::debug("Average latency: {}", avgLat);
+    spdlog::critical("Average latency: {}s", avgLat);
     return avgLat;
 }
 
 //Throughput
 void Stats::addOp() {
-    std::lock_guard<std::mutex> guard(numOps_lock);
+    //std::lock_guard<std::mutex> guard(numOps_lock);
     numOps += 1;
 }
 
 uint64_t Stats::getTotalOps() {
-    spdlog::debug("Number of ops: {}", numOps);
+    spdlog::critical("Number of ops: {}", numOps);
     return numOps;
 }
 
-double Stats::getThroughput(uint64_t elapsed) {
-    double tput = numOps / elapsed;
-    spdlog::debug("Throughput: {}", tput);
+float Stats::getThroughput(uint64_t elapsed) {
+    float tput = numOps / elapsed;
+    spdlog::critical("Throughput: {}", tput);
     return tput;
 }
 

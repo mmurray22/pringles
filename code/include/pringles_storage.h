@@ -12,7 +12,6 @@ enum StorageType {
 };
 
 enum PacketType {
-    	dummyappend,
     	append,
 	dummyread,
     	readentry,
@@ -61,7 +60,7 @@ class LogStorage : public BaseStorage {
 	uint64_t index_project(uint64_t idx);
 	void pringles_recv_queue();
 	std::unique_ptr<char[]> create_pkt(PacketType pkt_type, 
-		                           int64_t nonce,
+		                           uint32_t nonce,
 				           std::optional<std::string> entry = std::nullopt,
 			   	           std::optional<int64_t> idx = 0);
 	std::vector<int> get_pkt_eth_types();

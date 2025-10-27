@@ -166,7 +166,6 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
 
         // If the packet type is a descriptive string to indicate header type
 	std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
-	spdlog::debug("!!!!!We found {} number of file descriptors for packet type {}", send_fds.size(), pkt_type);
 	for (size_t i = 0; i < send_fds.size(); i++) {
 	    int s_fd = send_fds[i];
             if (s_fd < 0) {
@@ -324,7 +323,7 @@ std::unique_ptr<char[]> Network::read_from_recv_queue() {
     if (rcv_pkt.empty()) {
         return NULL;
     }
-    spdlog::debug("Number of packets received: {}", rcv_pkt.size());
+    //spdlog::debug("Number of packets received: {}", rcv_pkt.size());
     std::unique_ptr<char[]> receive_pkt = std::move(rcv_pkt.front());
     rcv_pkt.pop();
     return receive_pkt;

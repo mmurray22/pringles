@@ -13,7 +13,7 @@ class BaseClient {
         
 	/** API Functions **/
         // Append entries to the log
-        virtual uint64_t append(std::string entry) = 0;
+        virtual uint32_t append(std::string entry) = 0;
         // Read from idx in the log
         virtual std::string read(uint64_t idx) = 0;
         // Get latest committed entry

@@ -16,7 +16,7 @@ class Stats {
 	    //Throughput
 	    void addOp();
 	    uint64_t getTotalOps();
-	    double getThroughput(uint64_t elapsed);
+	    float getThroughput(uint64_t elapsed);
 	    double getAvgLatency();
 
 	    // Write to external file TODO

@@ -118,11 +118,8 @@ void LogStorage::pringles_recv_queue() {
 	if (!recv_ptr) {
 	    continue;
 	}
-
-	uint64_t size_of_pkt = std::strlen(recv_ptr.get());
-        std::unique_ptr<char[]> sample_pkt = std::make_unique<char[]>(size_of_pkt);
         struct ethhdr* eth = (struct ethhdr*)recv_ptr.get();
-	spdlog::debug("The ethernet type is {}", ntohs(eth->h_proto));
+	//spdlog::debug("The ethernet type is {}", ntohs(eth->h_proto));
 	if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
             size_t hdr_size = get_size_of_hdr(PacketType::append);
 	    if (hdr_size == 0) {
@@ -130,24 +127,25 @@ void LogStorage::pringles_recv_queue() {
             	continue;
             }
             spdlog::debug("Ethernet protocol with size {}", hdr_size);
-	    spdlog::debug("Received a packet of suspected size {}!", size_of_pkt);
-            char* rcv_str = (char*)(sample_pkt.get() + sizeof(struct ethhdr) + sizeof(struct iphdr));
-	    struct ring_append_entry* append_entry = (struct ring_append_entry*)rcv_str;
-            char* inner_pkt = (char*)(sample_pkt.get() + sizeof(struct ethhdr) + sizeof(struct iphdr) + get_size_of_hdr(PacketType::append));
+	    //struct iphdr * ip = (struct iphdr *)(sample_pkt.get() + sizeof(struct ethhdr));
+            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr.get() + sizeof(struct ethhdr) + sizeof(struct iphdr));
+            char* inner_pkt = (char*)(recv_ptr.get() + sizeof(struct ethhdr) + sizeof(struct iphdr) + get_size_of_hdr(PacketType::append));
 	    std::string str(inner_pkt);
-	    spdlog::debug("Payload size: {}", str.length());
-	    ringclient::Payload payload;
-	    payload.ParseFromString(str);
+	    spdlog::debug("Payload size: {} and index {} and cid {} and nonce {}", append_entry->payload_size, append_entry->g_idx, append_entry->cid, append_entry->nonce);
 	    if (append_entry->g_idx > 0) {
+	        ringclient::Payload payload;
+	        payload.ParseFromString(str);
 	        store(append_entry->g_idx, payload.mutable_append()->entry());
-		std::unique_ptr<char[]> unique_rcv_str(rcv_str);
-		uint64_t pkt_size = get_size_of_hdr(PacketType::append) + str.length();
-	        net->add_to_send_queue(std::move(unique_rcv_str), static_cast<uint64_t>(PacketType::append), pkt_size);
+		uint64_t size_of_hdr = get_size_of_hdr(PacketType::append);
+     		std::unique_ptr<char[]> packet = std::make_unique<char[]>(size_of_hdr);
+     		// Construct packet - only need the header this time
+     		memcpy(packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
+	        net->add_to_send_queue(std::move(packet), static_cast<uint64_t>(PacketType::append), size_of_hdr);
 	    } else {
 	        spdlog::debug("Index is invalid! Not reply sent.");
 	    }
 	} else {
-	    spdlog::debug("No parsing support for this packet at this time!");
+	    //spdlog::debug("No parsing support for this packet at this time!");
 	}
     }
 }
@@ -168,7 +166,7 @@ std::vector<int> LogStorage::get_pkt_eth_types() {
 }
 
 size_t LogStorage::get_size_of_hdr(uint64_t pkt_type) {
-    if (PacketType(pkt_type) == PacketType::append || PacketType(pkt_type) == PacketType::dummyappend) {
+    if (PacketType(pkt_type) == PacketType::append) {
         return sizeof(struct ring_append_entry);
     }
     return 0;
