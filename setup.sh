@@ -18,3 +18,8 @@ sudo apt-get install libssl-dev
 # utilities
 sudo apt install ripgrep
 sudo apt install vim
+sudo apt install net-tools
+sudo apt install iputils-ping
+sudo apt install gdb
+sudo apt install tmux
+sudo apt install tcpdump

@@ -1,6 +1,9 @@
 #include "utils.h"
 #include "spdlog/spdlog.h"
 #include <random>
+#include <sstream>
+#include <cstdint>
+#include <cstdio>
 
 /*Log Level*/
 void set_spdlog_level(uint64_t log_level) {
@@ -146,4 +149,25 @@ uint64_t get_experiment_duration(YAML::Node config) {
 
 uint64_t get_payload_size(YAML::Node config) {
     return config["payload_size"].as<uint64_t>();
+}
+
+bool get_dst_mac_addr(YAML::Node config, uint8_t mac_array[6]) {
+    std::string mac_str = config["dst_mac"].as<std::string>();
+    unsigned int bytes[6];
+
+    // Use sscanf to parse the hex values separated by colons.
+    // %x reads a hexadecimal integer.
+    int result = sscanf(mac_str.c_str(), "%x:%x:%x:%x:%x:%x",
+                        &bytes[0], &bytes[1], &bytes[2],
+                        &bytes[3], &bytes[4], &bytes[5]);
+
+    if (result == 6) {
+        // Cast the parsed unsigned ints back to uint8_t
+        for (int i = 0; i < 6; ++i) {
+            mac_array[i] = static_cast<uint8_t>(bytes[i]);
+        }
+        return true;
+    }
+
+    return false;
 }

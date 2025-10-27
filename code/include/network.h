@@ -49,7 +49,8 @@ class Network {
                 std::string send_interface,
                 std::string self_ip,
 		std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
-		std::vector<int> pkt_type_to_eth_type); 
+		std::vector<int> pkt_type_to_eth_type,
+		uint8_t mac_array[6]);
         ~Network();
 
         /*
@@ -129,6 +130,8 @@ class Network {
 
 	std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip;
 	std::map<uint64_t, std::vector<int>> pkt_type_to_fd;
+
+	uint8_t mac_array[6]; // TODO add vector of these
 
         uint64_t num_pkt_type = 0;
 	

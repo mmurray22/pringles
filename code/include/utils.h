@@ -37,6 +37,7 @@ uint64_t get_experiment_duration(YAML::Node config);
 
 uint64_t get_payload_size(YAML::Node config);
 
+bool get_dst_mac_addr(YAML::Node config, uint8_t mac_array[6]);
 /*INACTIVE*/
 std::string get_string_entry_payload(YAML::Node config);
 uint64_t get_read_timeout(YAML::Node config);

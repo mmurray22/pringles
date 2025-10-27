@@ -104,3 +104,6 @@ Thumbs.db
 
 # Vim files
 *.swp
+
+# Packet captures
+*.pcap

@@ -30,7 +30,8 @@ Network::Network(uint64_t maxThreads,
                  std::string send_interface,
                  std::string self_ip,
 		 std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
-		 std::vector<int> pkt_type_to_eth_type) {
+		 std::vector<int> pkt_type_to_eth_type,
+		 uint8_t mac_array[6]) {
     
     if (geteuid() != 0) { // Check if we are running as root
         throw std::runtime_error("Not running as root!");
@@ -44,6 +45,7 @@ Network::Network(uint64_t maxThreads,
     this->batch_size = batch_size;
     this->self_ip = self_ip;
     this->batch_on = batch_on;
+    memcpy(this->mac_array, mac_array, 6);
     total_num_threads = maxThreads;
 
     SEND_PORT = send_port;
@@ -232,7 +234,7 @@ std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd, int eth_type) {
     } 
     std::unique_ptr<struct ethhdr> eth = std::make_unique<struct ethhdr>();
     for (int i = 0; i < 6; i++) { // 48 bit mac address - local broadcast
-        eth.get()->h_dest[i] = 0xff;
+        eth.get()->h_dest[i] = mac_array[i];
     }
         
     /*Get src address*/
