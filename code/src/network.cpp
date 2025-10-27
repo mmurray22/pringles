@@ -358,14 +358,28 @@ int Network::setup_listener_socket(std::string curr_ip) {
             return -1;
         }
         spdlog::debug("Created raw receive socket of fd {}", s_fd);
-	/*struct ifreq ifr;
+	struct ifreq ifr;
+	static struct ifreq if_flags_old;
 	memset(&ifr, 0, sizeof(ifr));
 	strncpy(ifr.ifr_name, send_interface.c_str(), IFNAMSIZ - 1);
-	if (setsockopt(s_fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
+	// a. Get original flags
+    	if (ioctl(s_fd, SIOCGIFFLAGS, &if_flags_old) < 0) {
+            perror("SIOCGIFFLAGS error");
+            return 1;
+        }
+
+        // b. Set new flags including IFF_PROMISC
+        ifr.ifr_flags = if_flags_old.ifr_flags | IFF_PROMISC;
+        if (ioctl(s_fd, SIOCSIFFLAGS, &ifr) < 0) {
+            perror("SIOCSIFFLAGS (setting PROMISC) error");
+            return 1;
+        }
+	spdlog::debug("Now setting the interface into promiscuous mode!!!");
+	if (setsockopt(s_fd, SOL_SOCKET, SO_BINDTODEVICE, send_interface.c_str(), strlen(send_interface.c_str())) < 0) {
 	    perror("Error binding socket to device. Interface name wrong or permissions failed.");
 	    close(s_fd);
 	    return -1;
-	}*/
+	}
         /*if (setsockopt(s_fd, IPPROTO_IP, SO_REUSEADDR | IP_HDRINCL, &yes, sizeof(int)) == -1) {
             spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
             return -1;
