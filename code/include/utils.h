@@ -37,11 +37,13 @@ uint64_t get_experiment_duration(YAML::Node config);
 
 uint64_t get_payload_size(YAML::Node config);
 
-bool get_dst_mac_addr(YAML::Node config, uint8_t mac_array[6]);
+std::vector<std::array<uint8_t, 6>> get_dst_mac_addrs(YAML::Node config);
 
 uint64_t get_num_client_threads(YAML::Node config);
 uint64_t get_cli_id(YAML::Node config);
 uint64_t get_stor_id(YAML::Node config);
+
+std::string get_json_name(YAML::Node config);
 
 /*INACTIVE*/
 std::string get_string_entry_payload(YAML::Node config);

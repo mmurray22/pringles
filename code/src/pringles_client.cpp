@@ -30,14 +30,14 @@
 #define RECEIVE_PORT 3149
 
 // TODO make multithreaded???
-LogClient::LogClient(std::string input_file, uint64_t cli_id) {
+LogClient::LogClient(std::string input_file, uint64_t cli_id, uint64_t thread_id) {
 
    // Get packet types for sending/receiving
 
    YAML::Node config = YAML::LoadFile(input_file);
    num_pkt_types = get_num_pkt_types(config);
-   uint8_t mac_bytes[6];
-   if(!get_dst_mac_addr(config, mac_bytes)) {
+   std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
+   if (mac_addrs.size() < 1) {
        spdlog::critical("Unable to parse mac address!");
        throw;
    }
@@ -54,7 +54,7 @@ LogClient::LogClient(std::string input_file, uint64_t cli_id) {
 				   get_self_ip(config),
 				   get_packet_types(config),
 				   get_pkt_eth_types(),
-				   mac_bytes);
+				   mac_addrs);
     cid = cli_id;
     set_spdlog_level(get_log_level(config));
     spdlog::info("Pringles Client: Only Append being tested");
@@ -65,7 +65,6 @@ LogClient::LogClient(std::string input_file, uint64_t cli_id) {
     }
     this->recv_thread = std::thread(&LogClient::pringles_recv_queue, this);
 
-
     // Protocol types
     this->seq = SequencerType(get_sequencer_type(config));
     //this->stor = StorageType(get_storage_type(config));
@@ -74,6 +73,8 @@ LogClient::LogClient(std::string input_file, uint64_t cli_id) {
     cached_log_entries = {};
     this->max_duration = get_experiment_duration(config);
     this->duration_thread = std::thread(&LogClient::wait_for_finish, this);
+
+    this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id);
 }
 
 LogClient::~LogClient() {
@@ -85,9 +86,10 @@ LogClient::~LogClient() {
 
     spdlog::debug("Joined the client threads!");
     net->done();
-    stat.getAvgLatency();
-    stat.getThroughput(max_duration);
-    stat.getTotalOps();
+    stat->getAvgLatency();
+    stat->getThroughput(max_duration);
+    stat->getTotalOps();
+    stat->exportResultsToJson();
 }
 
 /* Custom function */
@@ -137,7 +139,7 @@ uint32_t LogClient::append(std::string entry) {
      memcpy(packet.get() + size_of_hdr, &output, output.length());
      packet[packet_size] = '\0';
      spdlog::debug("Adding append packet to send queue of size {} with payload {} and header size {}", packet_size, output.length(), size_of_hdr);
-     stat.startLatTimer(hdr.get()->nonce);
+     stat->startLatTimer(hdr.get()->nonce);
      net->add_to_send_queue(std::move(packet), static_cast<int>(PacketType::append), packet_size);
      uint32_t idx = 0; 
      /*{
@@ -238,8 +240,8 @@ uint32_t LogClient::wait_for_append(PacketType pkt_type, uint32_t nonce) {
 	} else {
 	    idx = append_entry->g_idx;
 	}
-	stat.endLatTimer(nonce);
-	stat.addOp();
+	stat->endLatTimer(nonce);
+	stat->addOp();
 	spdlog::critical("!!!!!!!!!!!SUCCESSFULLY GOT THE INDEX: {}", append_entry->g_idx);
 	return idx; //append_entry->g_idx;
 
@@ -356,8 +358,8 @@ void LogClient::pringles_recv_queue() {
 		/*uint64_t size_of_hdr = get_size_of_hdr(PacketType::append);
 		std::unique_ptr<char[]> packet = std::make_unique<char[]>(size_of_hdr);*/
     		struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr.get() + sizeof(struct ethhdr) + sizeof(struct iphdr));
-		if(stat.endLatTimer(append_entry->nonce)) {
-			stat.addOp();
+		if(stat->endLatTimer(append_entry->nonce)) {
+			stat->addOp();
 		}
 
 		/*next_idx_lock.lock();

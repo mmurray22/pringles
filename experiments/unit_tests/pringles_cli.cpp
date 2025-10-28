@@ -21,8 +21,8 @@
 #include "pringles_client.h"
 
 
-void client_subroutine(std::string input_file, uint64_t cli_id, uint64_t payload_size) {
-    LogClient pringles_client = LogClient(input_file, cli_id);
+void client_subroutine(std::string input_file, uint64_t cli_id, uint64_t payload_size, uint64_t thread_id) {
+    LogClient pringles_client = LogClient(input_file, cli_id, thread_id);
     spdlog::debug("Pringles client created!");
 
     std::string payload(payload_size, 'X');
@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) {
     uint64_t payload_size = get_payload_size(config);
     std::vector<std::thread> cli_threads;
     for (uint64_t i = 0; i < num_threads; i++) {
-             cli_threads.emplace_back(std::thread(&client_subroutine, input_file, cli_id, payload_size));	
+             cli_threads.emplace_back(std::thread(&client_subroutine, input_file, cli_id, payload_size, i));	
     }
     for (uint64_t i = 0; i < num_threads; i++) {
 	    cli_threads[i].join();

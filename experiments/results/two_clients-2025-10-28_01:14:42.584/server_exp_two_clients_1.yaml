@@ -1,0 +1,23 @@
+batch_on: false
+batch_size: 8192
+client_dest_macs:
+  macs:
+  - "14:58:d0:58:ee:d2"
+  - "14:58:d0:58:8f:c2"
+  - "ec:b1:d7:85:3a:b2"
+dest_ips:
+- "128.110.217.172"
+experiment_duration: 65
+id: 1
+interface: "eno1"
+log_level: 6
+message_size: 100
+num_packet_types: 1
+packet_types_macs:
+  macs:
+  - "14:58:d0:58:2e:c2"
+self_ip: "128.110.217.208"
+sequencer_type: 0
+socket_type: "RAW"
+stor_id: 1
+storage_server_type: 0

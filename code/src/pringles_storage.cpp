@@ -31,12 +31,12 @@
 LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
    YAML::Node config = YAML::LoadFile(input_file);
    num_pkt_types = get_num_pkt_types(config);
-   uint8_t mac_bytes[6];
-   if(!get_dst_mac_addr(config, mac_bytes)) {
+   std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
+   if (mac_addrs.size() < 1) {
        spdlog::critical("Unable to parse mac address!");
        throw;
    }
- 
+
    // Create network
    net = std::make_unique<Network>(get_threads(config), 
                                    get_send_port(config), 
@@ -49,7 +49,7 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
 				   get_self_ip(config),
 				   get_packet_types(config),
 				   get_pkt_eth_types(),
-				   mac_bytes);
+				   mac_addrs);
     set_spdlog_level(get_log_level(config));
     spdlog::info("Pringles Client: Only Append being tested");
     this->shard_id = get_shard_id(config);

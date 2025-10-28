@@ -31,7 +31,7 @@ Network::Network(uint64_t maxThreads,
                  std::string self_ip,
 		 std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
 		 std::vector<int> pkt_type_to_eth_type,
-		 uint8_t mac_array[6]) {
+		 std::vector<std::array<uint8_t,6>> mac_addrs) {
     
     if (geteuid() != 0) { // Check if we are running as root
         throw std::runtime_error("Not running as root!");
@@ -45,7 +45,10 @@ Network::Network(uint64_t maxThreads,
     this->batch_size = batch_size;
     this->self_ip = self_ip;
     this->batch_on = batch_on;
-    memcpy(this->mac_array, mac_array, 6);
+
+    // Ingest the destination macs 
+    this->mac_addrs = mac_addrs;
+    //memcpy(this->mac_array, mac_array, 6);
     total_num_threads = maxThreads;
 
     SEND_PORT = send_port;
@@ -180,7 +183,7 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
             std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size);
        
             /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
-            std::unique_ptr<struct ethhdr> eth = create_eth_hdr(s_fd, eth_type); // TODO?????
+            std::unique_ptr<struct ethhdr> eth = create_eth_hdr(s_fd, eth_type, i);
             memcpy(packet.get(), eth.get(), sizeof(struct ethhdr));
             
             /*Create IP header*/
@@ -226,14 +229,14 @@ std::shared_ptr<struct addrinfo> Network::get_it(int s_fd) {
 }
 
 /*Create ethernet header*/
-std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd, int eth_type) {
+std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd, int eth_type, uint64_t idx) {
     if (eth_type < 0) {
         spdlog::warn("Unable to ethernet type for this packet type! No packets sent.");
         return NULL;
     } 
     std::unique_ptr<struct ethhdr> eth = std::make_unique<struct ethhdr>();
     for (int i = 0; i < 6; i++) { // 48 bit mac address - local broadcast
-        eth.get()->h_dest[i] = mac_array[i];
+        eth.get()->h_dest[i] = mac_addrs[idx][i];
     }
         
     /*Get src address*/

@@ -1,0 +1,7 @@
+{
+  "avg_latency": 29.270073,
+  "throughput": 2.283333,
+  "batch_size": 8192,
+  "batch_on": false,
+  "num_ops": 137
+}
