@@ -25,10 +25,10 @@ int main(int argc, char* argv[]) {
         spdlog::critical("Not enough arguments provided! Need YAML file");
     }
     std::string input_file = std::string(argv[1]);
-    uint64_t stor_id = std::stoi(argv[2]); // TODO put into yaml file
     YAML::Node config = YAML::LoadFile(input_file);
     set_spdlog_level(get_log_level(config));
 
+    uint64_t stor_id = get_stor_id(config); // move into LogClient TODO
     LogStorage pringles_store = LogStorage(input_file, stor_id);
     spdlog::debug("Pringles storage created and started!");
     pringles_store.wait_to_finish();

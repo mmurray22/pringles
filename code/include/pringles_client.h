@@ -34,7 +34,7 @@ enum PacketType {
 /* Client class */
 class LogClient : public BaseClient {
     public:
-	LogClient(std::string input_file, uint64_t cli_id);
+	LogClient(std::string input_file, uint64_t cli_id, uint64_t thread_id);
 	~LogClient();
         
 	// Append entries to the log
@@ -80,7 +80,7 @@ class LogClient : public BaseClient {
 	std::thread recv_thread;
 	std::thread duration_thread;
 
-	Stats stat;
+	std::unique_ptr<Stats> stat;
 	uint64_t max_duration;
 	
 	/**** Functions ****/

@@ -50,7 +50,7 @@ class Network {
                 std::string self_ip,
 		std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
 		std::vector<int> pkt_type_to_eth_type,
-		uint8_t mac_array[6]);
+		std::vector<std::array<uint8_t,6>> mac_addrs);
         ~Network();
 
         /*
@@ -131,7 +131,8 @@ class Network {
 	std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip;
 	std::map<uint64_t, std::vector<int>> pkt_type_to_fd;
 
-	uint8_t mac_array[6]; // TODO add vector of these
+	std::vector<std::array<uint8_t,6>> mac_addrs;
+	//uint8_t mac_array[6]; // TODO add vector of these
 
         uint64_t num_pkt_type = 0;
 	
@@ -161,7 +162,7 @@ class Network {
         void destroy_socket(int s_fd);
         std::shared_ptr<struct addrinfo> get_it(int s_fd);
         std::string get_ip(uint64_t pkt_type, int idx);
-        std::unique_ptr<struct ethhdr> create_eth_hdr(int s_fd, int eth_type);
+        std::unique_ptr<struct ethhdr> create_eth_hdr(int s_fd, int eth_type, uint64_t idx);
         std::unique_ptr<struct iphdr> create_ip_hdr(std::string dst_ip, size_t size_of_hdr, unsigned short* pkt);
 
         /** Batching **/

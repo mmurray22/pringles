@@ -151,25 +151,39 @@ uint64_t get_payload_size(YAML::Node config) {
     return config["payload_size"].as<uint64_t>();
 }
 
-bool get_dst_mac_addr(YAML::Node config, uint8_t mac_array[6]) {
-    std::string mac_str = config["dst_mac"].as<std::string>();
-    unsigned int bytes[6];
-
-    // Use sscanf to parse the hex values separated by colons.
-    // %x reads a hexadecimal integer.
-    int result = sscanf(mac_str.c_str(), "%x:%x:%x:%x:%x:%x",
-                        &bytes[0], &bytes[1], &bytes[2],
-                        &bytes[3], &bytes[4], &bytes[5]);
-
-    if (result == 6) {
-        // Cast the parsed unsigned ints back to uint8_t
-        for (int i = 0; i < 6; ++i) {
-            mac_array[i] = static_cast<uint8_t>(bytes[i]);
-        }
-        return true;
+std::vector<std::array<uint8_t, 6>> get_dst_mac_addrs(YAML::Node config) {
+    std::vector<std::array<uint8_t, 6>> ret = {};
+    uint64_t num_pkt_types = config["num_pkt_types"].as<uint64_t>();
+    for (uint64_t i = 0; i < num_pkt_types; i++) {
+        unsigned int bytes[6];
+	std::vector<std::string> macs = config["packet_types_macs"][i]["macs"].as<std::vector<std::string>>();
+	for (std::string mac : macs) {
+		spdlog::debug("MAC addr: {}", mac);
+		// Use sscanf to parse the hex values separated by colons.
+	    	// %x reads a hexadecimal integer.
+	    	int result = sscanf(mac.c_str(), "%x:%x:%x:%x:%x:%x",
+	                        &bytes[0], &bytes[1], &bytes[2],
+	                        &bytes[3], &bytes[4], &bytes[5]);
+		uint8_t mac_array[6];
+	    	if (result == 6) {
+	        	// Cast the parsed unsigned ints back to uint8_t
+	        	for (int i = 0; i < 6; ++i) {
+	            		mac_array[i] = static_cast<uint8_t>(bytes[i]);
+	        	}
+	    	}	
+		std::array<uint8_t, 6> mac_final_form;
+	
+	    	// Use std::copy to copy 6 elements from the source C-style array
+	    	// into the destination std::array.
+	    	std::copy(
+	        	std::begin(mac_array), // Start of source array
+	        	std::end(mac_array),   // End of source array
+	        	mac_final_form.begin()             // Start of destination std::array
+	    	);
+		ret.push_back(mac_final_form);
+	}
     }
-
-    return false;
+    return ret;    
 }
 
 
@@ -185,4 +199,6 @@ uint64_t get_stor_id(YAML::Node config) {
     return config["stor_id"].as<uint64_t>();
 }
 
-
+std::string get_json_name(YAML::Node config) {
+    return config["json_name"].as<std::string>();
+}
