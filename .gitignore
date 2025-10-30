@@ -44,7 +44,11 @@ code/tutorials/logs/
 experiments/personal.yaml
 experiments/testing/*
 experiments/workloads/ycsb-0.17.0/*
-experiments/scripts/*
+experiments/scripts/*.yaml
+experiments/scripts/old_scripts/*
+experiments/scripts/yamls/*
+experiments/scripts/old_tomls/*
+
 
 # Files we do want to keep
 !experiments/scripts/coordinator.py
