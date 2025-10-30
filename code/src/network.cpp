@@ -99,6 +99,7 @@ Network::Network(uint64_t maxThreads,
 
     // Create receiving threadpool (only 1 thread for now since it's Network I/O bound)
     recv_threads.emplace_back(std::thread(&Network::run_recv, this, recv_socket)); // TODO: Fix this jesus christ
+
 }
     
 Network::~Network() {
@@ -119,6 +120,21 @@ unsigned short Network::checksum(unsigned short *buf, int nwords) {
 // Send packets as they are queued
 void Network::run_send(uint64_t pkt_type, int eth_type) {
     spdlog::debug("RUNNING SEND THREAD for packet type: {}", pkt_type);
+    spdlog::critical("Network Send Thread starting with TID = {}", gettid());
+    uint64_t cnt = 0;
+    std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
+    std::vector<std::unique_ptr<struct ethhdr>> eth_hdr_vecs;
+    for (size_t i = 0; i < send_fds.size(); i++) {
+        /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
+	eth_hdr_vecs.push_back(create_eth_hdr(send_fds[i], eth_type, i));
+    }     
+    /*Create sockaddr_ll struct*/
+    struct sockaddr_ll sin; // TODO: This is for packets where I'm not maually putting the header on them I think, I need to use sockaddr_ll
+    /* Index of the network device */
+    sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
+    /* Address length*/
+    sin.sll_halen = ETH_ALEN;
+    std::unique_ptr<struct iphdr> ip = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
 
     while (!terminate) {
         std::unique_ptr<char[]> send_packet = std::make_unique<char[]>(MAX_PACKET_SIZE); 
@@ -183,11 +199,15 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
             std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size);
        
             /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
-            std::unique_ptr<struct ethhdr> eth = create_eth_hdr(s_fd, eth_type, i);
-            memcpy(packet.get(), eth.get(), sizeof(struct ethhdr));
+            memcpy(packet.get(), eth_hdr_vecs[i].get(), sizeof(struct ethhdr));
             
             /*Create IP header*/
-            std::unique_ptr<struct iphdr> ip = create_ip_hdr(ip_addr, pkt_len, (unsigned short *)packet.get()); 
+
+	    
+	    ip.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
+            ip.get()->daddr = inet_addr(ip_addr.c_str()); // destination address
+            ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header^
+
             memcpy(packet.get() + sizeof(struct ethhdr), ip.get(), sizeof(struct iphdr));
 
             /*Protocol specific code starts*/
@@ -196,30 +216,25 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
 
             memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet.get()), pkt_len);
             ssize_t num_bytes = 0;
+   	    for (int j = 0; j < 6; j++) { // 48 bit mac address - local broadcast
+       		sin.sll_addr[j] = eth_hdr_vecs[i].get()->h_dest[j];
+   	    }
+         
             
-            /*Create sockaddr_ll struct*/
-            struct sockaddr_ll sin; // TODO: This is for packets where I'm not maually putting the header on them I think, I need to use sockaddr_ll
-            /* Index of the network device */
-            sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
-            /* Address length*/
-            sin.sll_halen = ETH_ALEN;
-            for (int i = 0; i < 6; i++) { // 48 bit mac address - local broadcast
-                sin.sll_addr[i] = eth.get()->h_dest[i];
-            }
-
             if ((num_bytes = sendto(s_fd, packet.get(), packet_size, 0, (struct sockaddr*)(&sin), sizeof(sin))) < 0 || 
                     ((uint64_t)num_bytes != packet_size)) {
                 spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
                 spdlog::debug("Num bytes sent: {} vs. expected: {}", num_bytes, packet_size);
                 continue;
             }
-            spdlog::debug("Successfully sent {} bytes to the receiver", std::to_string(num_bytes));
+            spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
+	    cnt += 1;
 	}
     }
     spdlog::debug("Done with the send thread focused on {}", pkt_type);
+    spdlog::critical("Network send this many packets: {} for thread {}", cnt, gettid());
 }
 
-// TODO
 std::string Network::get_ip(uint64_t pkt_type, int idx) {
     return pkt_type_to_ip[pkt_type][idx];
 }
@@ -258,27 +273,30 @@ std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd, int eth_type, u
 
 
 /*Create IP header*/
-std::unique_ptr<struct iphdr> Network::create_ip_hdr(std::string dst_ip, size_t size_of_pkt, unsigned short* pkt) {
+//std::unique_ptr<struct iphdr> Network::create_ip_hdr(std::string dst_ip, size_t size_of_pkt, unsigned short* pkt) {
+std::unique_ptr<struct iphdr> Network::create_ip_hdr() {
     std::unique_ptr<struct iphdr> ip = std::make_unique<struct iphdr>();
     ip.get()->ihl      = 5; //version length
     ip.get()->version  = 4; // version; should we allow for ipv6?
     ip.get()->tos      = 0; // type of service - set to normal, could change in future
-    ip.get()->tot_len  = htons(sizeof(struct iphdr) + size_of_pkt); // TODO check total length of packet header
+    ip.get()->tot_len  = htons(sizeof(struct iphdr)); // TODO check total length of packet header
     ip.get()->id       = htons(54321); // default ID number for ip packet
     ip.get()->ttl      = 64; // default hops; circle back in case of change
     ip.get()->protocol = IPPROTO_RAW; // Raw IP
 
     ip.get()->saddr = inet_addr(self_ip.c_str()); // source address
-    ip.get()->daddr = inet_addr(dst_ip.c_str()); // destination address
-    ip.get()->check = checksum(pkt, sizeof(struct iphdr)); // checksum ONLY for the IPv4 header^
+    ip.get()->daddr = inet_addr(self_ip.c_str()); // destination address
+    //ip.get()->check = checksum(pkt, sizeof(struct iphdr)); // checksum ONLY for the IPv4 header^
     return ip;
 }
-
 
 // Queue packets as they are received
 void Network::run_recv(int s_fd) {
     spdlog::info("RUNNING RECV THREAD");
+    spdlog::critical("Network Recv Thread starting with TID = {}", gettid());
+
     std::string curr_ip = "";
+    uint64_t cnt = 0;
     int efd = epoll_create(s_fd);
     if (efd < 0) {
         spdlog::critical("Epoll creation unsuccessful. Aborting");
@@ -290,22 +308,24 @@ void Network::run_recv(int s_fd) {
         socklen_t addr_len = sizeof src_addr;
         // If IP has changed, create new datagram socket
         // Poll the socket to see if it has received a packet (UPDATE to do async?? prob don't want thread just spinning)
-        struct epoll_event ev;
+        /*struct epoll_event ev;
         ev.data.fd = s_fd;
         ev.events = 0;
         epoll_ctl(efd, EPOLL_CTL_ADD, s_fd, &ev);
         int ret = epoll_wait(efd, &ev, 1, MAX_POLL_TIME); // maxevents??
 	if (ret == -1) {
-		spdlog::debug("epoll_wait failed!");
-	}
+		spdlog::critical("epoll_wait failed!");
+	}*/
         std::unique_ptr<char[]> buf = std::make_unique<char[]>(MAX_PACKET_SIZE);  
-        if ((numbytes = recvfrom(s_fd, buf.get(), MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) == -1) {
-            //spdlog::warn("Receive Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        if ((numbytes = recvfrom(s_fd, buf.get(), MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
+            //spdlog::critical("Receive Error {} occurred: {}", std::to_string(errno), strerror(errno));
             continue;
         }
+	cnt += 1;
 	rcv_pkt.emplace(std::move(buf));
     }
     spdlog::debug("Done with the recv thread!");
+    spdlog::critical("Network received this many packets: {} for thread {}", cnt, gettid());
 }
 
 // this is the compiled pointer to protobuf string

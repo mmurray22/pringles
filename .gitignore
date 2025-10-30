@@ -107,3 +107,6 @@ Thumbs.db
 
 # Packet captures
 *.pcap
+
+# Experiments
+experiments/results/run-*

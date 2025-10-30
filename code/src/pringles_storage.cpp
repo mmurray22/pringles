@@ -110,6 +110,8 @@ void LogStorage::change_view(uint64_t new_view_num) {
 
 void LogStorage::pringles_recv_queue() {
     // initialize - for each packet type, receive queue
+    spdlog::critical("Recv Storage Thread starting with TID = {}", gettid());
+    uint64_t cnt = 0;
     while (true) {
 	if (end_thread) {
 	    break;
@@ -141,6 +143,7 @@ void LogStorage::pringles_recv_queue() {
      		// Construct packet - only need the header this time
      		memcpy(packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
 	        net->add_to_send_queue(std::move(packet), static_cast<uint64_t>(PacketType::append), size_of_hdr);
+		cnt += 1;
 	    } else {
 	        spdlog::debug("Index is invalid! Not reply sent.");
 	    }
@@ -148,6 +151,7 @@ void LogStorage::pringles_recv_queue() {
 	    //spdlog::debug("No parsing support for this packet at this time!");
 	}
     }
+    spdlog::critical("Total number of append packets received: {} on storage server {}", cnt, gettid());
 }
 
 void LogStorage::wait_to_finish() {

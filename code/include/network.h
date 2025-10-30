@@ -163,7 +163,7 @@ class Network {
         std::shared_ptr<struct addrinfo> get_it(int s_fd);
         std::string get_ip(uint64_t pkt_type, int idx);
         std::unique_ptr<struct ethhdr> create_eth_hdr(int s_fd, int eth_type, uint64_t idx);
-        std::unique_ptr<struct iphdr> create_ip_hdr(std::string dst_ip, size_t size_of_hdr, unsigned short* pkt);
+        std::unique_ptr<struct iphdr> create_ip_hdr();
 
         /** Batching **/
         uint64_t batch_size;

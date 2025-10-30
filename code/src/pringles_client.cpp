@@ -336,6 +336,7 @@ std::unique_ptr<char[]> LogClient::create_pkt(PacketType pkt_type,
 void LogClient::pringles_recv_queue() {
     // initialize - for each packet type, receive queue
     //uint32_t nonce = 0;
+    spdlog::critical("Recv Pringles Thread starting with TID = {}", gettid());
     while (true) {
 	if (end_thread) {
 	    break;

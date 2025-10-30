@@ -3,6 +3,14 @@ project('pringles', 'cpp',
   default_options : ['warning_level=3', 'cpp_std=c++17', 'werror=true'])
 # flags + address sanitizers
 add_global_arguments('-DSOME_TOKEN=value', language : 'cpp')
+add_project_arguments(
+  '-mno-omit-leaf-frame-pointer',
+  language: 'cpp'
+)
+add_project_arguments(
+  '-fno-omit-frame-pointer',
+  language: 'cpp'
+)
 yaml_cpp = dependency('yaml-cpp')
 protoc = find_program('protoc')
 protobuf = dependency('protobuf')
