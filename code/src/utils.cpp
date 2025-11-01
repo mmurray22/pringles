@@ -202,3 +202,7 @@ uint64_t get_stor_id(YAML::Node config) {
 std::string get_json_name(YAML::Node config) {
     return config["json_name"].as<std::string>();
 }
+
+uint64_t get_num_failures(YAML::Node config) {
+    return config["num_failures"].as<uint64_t>();
+}

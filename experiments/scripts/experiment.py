@@ -33,7 +33,7 @@ SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
 COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
 RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
 
-def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, dst_mac=None, json_name=None):
+def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, dst_mac=None, json_name=None, num_failures=None):
     """Generates the configuration dictionary for a client or server."""
     
     # Base port calculation to ensure uniqueness
@@ -76,6 +76,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     
     # Pre-calculate and wrap client destination MACs (used by both client to send, and server to reply)
     client_macs = [QuotedString(mac) for mac in route_params['client_dest_macs']]
+    server_macs = [QuotedString(mac) for mac in route_params['server_dest_macs']]
 
     # --- Client Specific Fields ---
     if entity_type == 'client':
@@ -90,6 +91,9 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             # Add json_name to client config (as a QuotedString)
             'json_name': QuotedString(json_name), 
             
+            # Add num_failures to client config
+            'num_failures': num_failures, 
+
             # packet_types holds only the quoted IPs
             'packet_types': [{'ips': client_ips}],
             
@@ -116,7 +120,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'packet_types': [{'ips': server_ips}],
             
             # Add packet_types_macs to server config, using the client MACs for the return path
-            'packet_types_macs': [{'macs': client_macs}]
+            'packet_types_macs': [{'macs': server_macs}]
         })
 
     return yaml_config
@@ -601,6 +605,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
     path_server = config['program_paths']['path_server']
     
     json_output_name = config['experiment_parameters']['json_name']
+    num_failures = config['experiment_parameters']['num_failures']
     
     print(f"\n========================================================")
     print(f"   RUNNING EXPERIMENT {exp_index + 1}: {json_output_name}")
@@ -611,7 +616,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
     server_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
     
     try:
-        # Assumption: All servers use the single destination MAC defined in the TOML
+        # Assumption: All servers respond to all destination MAC defined in the TOML
         server_dst_mac_for_all = config['routing']['server_dest_macs'][0]
 
         # --- 5. Generate Server Configurations and Start Processes ---
@@ -667,7 +672,8 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             client_ip,
             client_port_offset,
             entity_id=client_id,
-            json_name=json_output_name 
+            json_name=json_output_name,
+            num_failures=num_failures
         )
         
         # Write YAML file locally

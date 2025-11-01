@@ -112,6 +112,7 @@ void LogStorage::pringles_recv_queue() {
     // initialize - for each packet type, receive queue
     spdlog::critical("Recv Storage Thread starting with TID = {}", gettid());
     uint64_t cnt = 0;
+    uint64_t total_cnt = 0;
     while (true) {
 	if (end_thread) {
 	    break;
@@ -123,6 +124,7 @@ void LogStorage::pringles_recv_queue() {
         struct ethhdr* eth = (struct ethhdr*)recv_ptr.get();
 	//spdlog::debug("The ethernet type is {}", ntohs(eth->h_proto));
 	if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
+	    total_cnt += 1;
             size_t hdr_size = get_size_of_hdr(PacketType::append);
 	    if (hdr_size == 0) {
                 spdlog::debug("Improper header type!! Packet being discarded");
@@ -151,7 +153,7 @@ void LogStorage::pringles_recv_queue() {
 	    //spdlog::debug("No parsing support for this packet at this time!");
 	}
     }
-    spdlog::critical("Total number of append packets received: {} on storage server {}", cnt, gettid());
+    spdlog::critical("RECEIVED {} append packets and REPLIED to {} append packets on storage server {}", total_cnt, cnt, gettid());
 }
 
 void LogStorage::wait_to_finish() {

@@ -90,6 +90,9 @@ class Network {
         std::mutex lock_terminate;
         // Boolean which indicates to sending and receiving threads to cease operation
         bool terminate = false;
+	bool rcv_q_available = false;
+	std::condition_variable rcv_cond;
+
 	std::mutex lock_num_sends_done;
 	uint64_t num_sends_done = 0;
 	std::mutex lock_num_recv_done;

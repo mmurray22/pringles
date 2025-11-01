@@ -33,7 +33,7 @@ void client_subroutine(std::string input_file, uint64_t cli_id, uint64_t payload
         spdlog::debug("The entry was given index: {}", idx);
 	cnt += 1;
     }
-    spdlog::critical("Pringles client total cnt: {}", cnt);
+    spdlog::critical("Total number of sent appends (NOT necessarily successful): {}", cnt);
 }
 
 int main(int argc, char* argv[]) {

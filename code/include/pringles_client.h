@@ -51,19 +51,20 @@ class LogClient : public BaseClient {
 	bool experiment_status();
     private:
 	/**** Variables ****/
-
+	uint64_t min_matching_acks = 0;
 	uint64_t num_pkt_types = 0; 
 	/* Receive queue which slots messages */
 	std::mutex pkt_q_lock;
 	std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
 	std::vector<std::string> pkt_types;
 	bool end_thread = false;
-	std::mutex next_nonce_lock;
+
+
 	std::mutex next_idx_lock;
-	uint32_t next_nonce = 0;
-	uint32_t next_idx = 0;
-	bool message_available = false;
+	bool message_available;
 	std::condition_variable message_cond;
+	std::map<int64_t, uint64_t> append_nonce_idx_map; // TODO change int64_t to uint64_t
+	std::map<int64_t, std::pair<uint64_t, std::map<uint64_t, uint64_t>>> append_ack_map;
 
 	/* Hash/ID of pending append entries */
         std::vector<uint64_t> pending_append_entries;

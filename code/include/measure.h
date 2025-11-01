@@ -28,8 +28,8 @@ class Stats {
 	    uint64_t numOps;
 	    std::mutex numOps_lock;
 		
-	    std::map<int64_t, uint64_t> lat_map;
-	    std::vector<uint64_t> latencies;
+	    std::map<int64_t, double> lat_map;
+	    std::vector<double> latencies;
 
 	    // Final values
 	    uint64_t batch_size; // Size of the message batches

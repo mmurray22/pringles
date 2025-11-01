@@ -1,6 +1,7 @@
 #include <vector>
 
 #include <optional>
+#include <set>
 #include "network.h"
 #include "base_storage.h"
 
@@ -44,6 +45,8 @@ class LogStorage : public BaseStorage {
         std::map<uint64_t, std::string> kv_store;
         // Key-Value Store Lock
         std::mutex kv_store_lock;
+
+	std::set<uint64_t> nonces;
 	
 	// Mutable
 	uint64_t shard_id;

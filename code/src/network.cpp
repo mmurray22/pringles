@@ -125,14 +125,10 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
     std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
     std::vector<std::unique_ptr<struct ethhdr>> eth_hdr_vecs;
     for (size_t i = 0; i < send_fds.size(); i++) {
-        /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
 	eth_hdr_vecs.push_back(create_eth_hdr(send_fds[i], eth_type, i));
     }     
-    /*Create sockaddr_ll struct*/
     struct sockaddr_ll sin; // TODO: This is for packets where I'm not maually putting the header on them I think, I need to use sockaddr_ll
-    /* Index of the network device */
     sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
-    /* Address length*/
     sin.sll_halen = ETH_ALEN;
     std::unique_ptr<struct iphdr> ip = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
 
@@ -154,13 +150,13 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
 		spdlog::debug("The received packet is NULL?");
 	    	return;
 	    }
-	    spdlog::debug("The number of queued packets is: {}", send_pkt_qs[pkt_type].size());
-	    spdlog::debug("Packet has been found! {}", send_packet.get());
+	    //spdlog::debug("The number of queued packets is: {}", send_pkt_qs[pkt_type].size());
+	    //spdlog::debug("Packet has been found! {}", send_packet.get());
 	    pkt_len = send_pkt_qs[pkt_type].front().first;
-	    spdlog::debug("Debug: {}", pkt_len);
+	    //spdlog::debug("Debug: {}", pkt_len);
             send_pkt_qs[pkt_type].pop();
         }
-        spdlog::debug("Past preprocessing! The packet value is still: {}", send_packet.get()); 
+        //spdlog::debug("Past preprocessing! The packet value is still: {}", send_packet.get()); 
 
 
 	// If socket_type UDP
@@ -194,16 +190,15 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
             
             /* Running a raw socket based protocol */
             std::string ip_addr = pkt_type_to_ip[pkt_type][i];
+            //spdlog::critical("IP Address: {}", ip_addr);
             size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
-            spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
+            //spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
             std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size);
        
             /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
             memcpy(packet.get(), eth_hdr_vecs[i].get(), sizeof(struct ethhdr));
             
             /*Create IP header*/
-
-	    
 	    ip.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
             ip.get()->daddr = inet_addr(ip_addr.c_str()); // destination address
             ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header^
@@ -211,7 +206,7 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
             memcpy(packet.get() + sizeof(struct ethhdr), ip.get(), sizeof(struct iphdr));
 
             /*Protocol specific code starts*/
-            spdlog::debug("Total packet size is {}", packet_size);
+            //spdlog::debug("Total packet size is {}", packet_size);
             /*Protocol specific code ends*/
 
             memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet.get()), pkt_len);
@@ -219,7 +214,6 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
    	    for (int j = 0; j < 6; j++) { // 48 bit mac address - local broadcast
        		sin.sll_addr[j] = eth_hdr_vecs[i].get()->h_dest[j];
    	    }
-         
             
             if ((num_bytes = sendto(s_fd, packet.get(), packet_size, 0, (struct sockaddr*)(&sin), sizeof(sin))) < 0 || 
                     ((uint64_t)num_bytes != packet_size)) {
@@ -227,7 +221,7 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
                 spdlog::debug("Num bytes sent: {} vs. expected: {}", num_bytes, packet_size);
                 continue;
             }
-            spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
+            //spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
 	    cnt += 1;
 	}
     }
@@ -294,38 +288,30 @@ std::unique_ptr<struct iphdr> Network::create_ip_hdr() {
 void Network::run_recv(int s_fd) {
     spdlog::info("RUNNING RECV THREAD");
     spdlog::critical("Network Recv Thread starting with TID = {}", gettid());
-
     std::string curr_ip = "";
     uint64_t cnt = 0;
-    int efd = epoll_create(s_fd);
-    if (efd < 0) {
-        spdlog::critical("Epoll creation unsuccessful. Aborting");
-        return;
-    }
     int numbytes;
     while (!terminate) {
         struct sockaddr_storage src_addr;
         socklen_t addr_len = sizeof src_addr;
-        // If IP has changed, create new datagram socket
-        // Poll the socket to see if it has received a packet (UPDATE to do async?? prob don't want thread just spinning)
-        /*struct epoll_event ev;
-        ev.data.fd = s_fd;
-        ev.events = 0;
-        epoll_ctl(efd, EPOLL_CTL_ADD, s_fd, &ev);
-        int ret = epoll_wait(efd, &ev, 1, MAX_POLL_TIME); // maxevents??
-	if (ret == -1) {
-		spdlog::critical("epoll_wait failed!");
-	}*/
         std::unique_ptr<char[]> buf = std::make_unique<char[]>(MAX_PACKET_SIZE);  
+	spdlog::debug("Right before Recvfrom!!");
         if ((numbytes = recvfrom(s_fd, buf.get(), MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
             //spdlog::critical("Receive Error {} occurred: {}", std::to_string(errno), strerror(errno));
+	    rcv_cond.notify_all();
             continue;
         }
-	cnt += 1;
+	spdlog::debug("Recv number of bytes: {}", numbytes);
+	/*struct ethhdr *eth = (struct ethhdr *)(buf.get());
+	printf("\nEthernet Header\n");
+	printf("\t|-Source Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);
+	printf("\t|-Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
+	printf("\t|-Protocol : %d\n",eth->h_proto);*/
 	rcv_pkt.emplace(std::move(buf));
+	cnt += 1;
     }
     spdlog::debug("Done with the recv thread!");
-    spdlog::critical("Network received this many packets: {} for thread {}", cnt, gettid());
+    spdlog::critical("Network received this many GENERIC packets: {} for thread {}", cnt, gettid());
 }
 
 // this is the compiled pointer to protobuf string
@@ -342,10 +328,10 @@ void Network::add_to_send_queue(std::unique_ptr<char[]> buf, uint64_t packet_typ
 }
 
 std::unique_ptr<char[]> Network::read_from_recv_queue() {
-    std::unique_lock<std::mutex> lock(rcv_queue_mutex);
     if (rcv_pkt.empty()) {
-        return NULL;
+	return NULL;
     }
+    std::unique_lock<std::mutex> lock(rcv_queue_mutex);
     //spdlog::debug("Number of packets received: {}", rcv_pkt.size());
     std::unique_ptr<char[]> receive_pkt = std::move(rcv_pkt.front());
     rcv_pkt.pop();
@@ -380,6 +366,27 @@ int Network::setup_listener_socket(std::string curr_ip) {
             return -1;
         }
         spdlog::debug("Created raw receive socket of fd {}", s_fd);
+	struct timeval timeout;
+	timeout.tv_sec = 1;  // 5 seconds timeout
+	timeout.tv_usec = 0;
+	
+	if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+	    spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+            return -1;
+	}
+	if (setsockopt(s_fd, SOL_SOCKET, SO_BINDTODEVICE, send_interface.c_str(), strlen(send_interface.c_str())) < 0) {
+	    perror("Error binding socket to device. Interface name wrong or permissions failed.");
+	    close(s_fd);
+	    return -1;
+	}
+	int ignore_outgoing = 1;
+	if (setsockopt(s_fd, SOL_PACKET, PACKET_IGNORE_OUTGOING, &ignore_outgoing, sizeof(ignore_outgoing)) < 0) {
+	    perror("Error binding socket to device. Interface name wrong or permissions failed.");
+	    close(s_fd);
+	    return -1;
+	}
+
+
 	/*struct ifreq ifr;
 	memset(&ifr, 0, sizeof(ifr));
 	strncpy(ifr.ifr_name, send_interface.c_str(), IFNAMSIZ - 1);
@@ -392,11 +399,7 @@ int Network::setup_listener_socket(std::string curr_ip) {
             return 1;
         }
 	spdlog::debug("Now setting the interface into promiscuous mode!!!");
-	if (setsockopt(s_fd, SOL_SOCKET, SO_BINDTODEVICE, send_interface.c_str(), strlen(send_interface.c_str())) < 0) {
-	    perror("Error binding socket to device. Interface name wrong or permissions failed.");
-	    close(s_fd);
-	    return -1;
-	}*/
+	*/
         /*if (setsockopt(s_fd, IPPROTO_IP, SO_REUSEADDR | IP_HDRINCL, &yes, sizeof(int)) == -1) {
             spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
             return -1;

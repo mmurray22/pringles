@@ -24,16 +24,18 @@ void Stats::startLatTimer(uint64_t nonce) {
     auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
 
     // 3. Cast the duration to milliseconds and get the count as uint64_t
-    uint64_t start_time_s = std::chrono::duration_cast<std::chrono::seconds>(duration_since_epoch).count();
-    lat_map.insert(std::pair<uint64_t, uint64_t>(nonce, start_time_s));
+    double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+    lat_map.insert(std::pair<uint64_t, double>(nonce, start_time_s));
 }
 
 bool Stats::endLatTimer(uint64_t nonce) {
-    if (lat_map.count(nonce)) {
+    if (lat_map.count(nonce) > 0) {
 	auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-        uint64_t end_time_s = std::chrono::duration_cast<std::chrono::seconds>(duration_since_epoch).count();
-        uint64_t dur = end_time_s - lat_map[nonce];
+        double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+        double dur = end_time_s - lat_map[nonce];
+	spdlog::debug("For nonce {}, started {}, ended {}, for duration {}", nonce, lat_map[nonce], end_time_s, dur);
 	latencies.push_back(dur);
+	lat_map.erase(nonce);
 	return true;
     }
     return false;
