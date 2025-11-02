@@ -125,32 +125,40 @@ void LogStorage::pringles_recv_queue() {
 	//spdlog::debug("The ethernet type is {}", ntohs(eth->h_proto));
 	if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
 	    total_cnt += 1;
-            size_t hdr_size = get_size_of_hdr(PacketType::append);
-	    if (hdr_size == 0) {
-                spdlog::debug("Improper header type!! Packet being discarded");
-            	continue;
-            }
-            spdlog::debug("Ethernet protocol with size {}", hdr_size);
-	    //struct iphdr * ip = (struct iphdr *)(sample_pkt.get() + sizeof(struct ethhdr));
+            size_t size_of_hdr = get_size_of_hdr(PacketType::append);
+            spdlog::debug("Ethernet protocol with size {}", size_of_hdr);
             struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr.get() + sizeof(struct ethhdr) + sizeof(struct iphdr));
-            char* inner_pkt = (char*)(recv_ptr.get() + sizeof(struct ethhdr) + sizeof(struct iphdr) + get_size_of_hdr(PacketType::append));
-	    std::string str(inner_pkt);
-	    spdlog::debug("Payload size: {} and index {} and cid {} and nonce {}", append_entry->payload_size, append_entry->g_idx, append_entry->cid, append_entry->nonce);
-	    if (append_entry->g_idx > 0) {
+	    if (append_entry->g_idx == 0 && append_entry->num_entries == 0) {
+	        spdlog::debug("INVALID PACKET WITH g_idx 0 or no entries - dropping");
+    	        continue;		
+	    } 
+	    spdlog::debug("Payload size: {} and index {} and cid {} and nonce {} and num_entries {}", append_entry->payload_size, append_entry->g_idx, append_entry->cid, append_entry->nonce, append_entry->num_entries);
+	    size_t offset = sizeof(struct ethhdr) + sizeof(struct iphdr) + get_size_of_hdr(PacketType::append);
+	    size_t reply_pkt_size = size_of_hdr + append_entry->payload_size * append_entry->num_entries;
+	    size_t reply_pkt_offset = size_of_hdr;
+     	    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
+            memcpy(reply_packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
+	    for (size_t i = 0; i < append_entry->num_entries; i++) {
+		char* inner_pkt = (char*)(recv_ptr.get() + offset);
 	        ringclient::Payload payload;
-	        payload.ParseFromString(str);
-	        store(append_entry->g_idx, payload.mutable_append()->entry());
-		uint64_t size_of_hdr = get_size_of_hdr(PacketType::append);
-     		std::unique_ptr<char[]> packet = std::make_unique<char[]>(size_of_hdr);
-     		// Construct packet - only need the header this time
-     		memcpy(packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
-	        net->add_to_send_queue(std::move(packet), static_cast<uint64_t>(PacketType::append), size_of_hdr);
+	    	payload.ParseFromArray(inner_pkt, append_entry->payload_size);
+		uint64_t idx = append_entry->g_idx + i;
+	        store(idx, payload.mutable_append()->entry());
+
+		ringclient::Payload reply;
+		std::string output;
+     		reply.set_packet_type(static_cast<int>(PacketType::append));
+     		reply.set_nonce(payload.nonce());
+     		reply.SerializeToString(&output);
+		memcpy(reply_packet.get() + reply_pkt_offset, output.data(), output.length());
+		spdlog::debug("Sending packet back with nonce {} and reply nonce {} and index of this entry is {} and the entry length is {}", payload.nonce(), reply.nonce(), idx, payload.mutable_append()->entry().length());
+		offset += append_entry->payload_size;
+		reply_pkt_offset += append_entry->payload_size;
 		cnt += 1;
-	    } else {
-	        spdlog::debug("Index is invalid! Not reply sent.");
 	    }
-	} else {
-	    //spdlog::debug("No parsing support for this packet at this time!");
+
+	    //spdlog::debug("For nonce {}, we got idx {}, which got {} matching acks and {} acks overall", append_entry->nonce, append_entry->g_idx, min_matching_acks, append_ack_map[append_entry->nonce].first);
+	    net->add_to_send_queue(std::move(reply_packet), static_cast<uint64_t>(PacketType::append), reply_pkt_size);
 	}
     }
     spdlog::critical("RECEIVED {} append packets and REPLIED to {} append packets on storage server {}", total_cnt, cnt, gettid());

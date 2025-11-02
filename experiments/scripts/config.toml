@@ -11,8 +11,8 @@ path_server = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/stor"
 run_setup_script = "False"
 
 [experiment_parameters]
-log_level = 6
-experiment_duration = 15 # seconds
+log_level = 1
+experiment_duration = 5 # seconds
 socket_type = "RAW" # or "UDP"
 message_size = 100 # bytes
 num_client_threads = 1

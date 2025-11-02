@@ -192,7 +192,7 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
             std::string ip_addr = pkt_type_to_ip[pkt_type][i];
             //spdlog::critical("IP Address: {}", ip_addr);
             size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
-            //spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
+            spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
             std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size);
        
             /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
@@ -295,13 +295,12 @@ void Network::run_recv(int s_fd) {
         struct sockaddr_storage src_addr;
         socklen_t addr_len = sizeof src_addr;
         std::unique_ptr<char[]> buf = std::make_unique<char[]>(MAX_PACKET_SIZE);  
-	spdlog::debug("Right before Recvfrom!!");
         if ((numbytes = recvfrom(s_fd, buf.get(), MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
             //spdlog::critical("Receive Error {} occurred: {}", std::to_string(errno), strerror(errno));
 	    rcv_cond.notify_all();
             continue;
         }
-	spdlog::debug("Recv number of bytes: {}", numbytes);
+	//spdlog::debug("Recv number of bytes: {}", numbytes);
 	/*struct ethhdr *eth = (struct ethhdr *)(buf.get());
 	printf("\nEthernet Header\n");
 	printf("\t|-Source Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);

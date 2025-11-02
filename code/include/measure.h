@@ -26,8 +26,9 @@ class Stats {
 	    uint64_t thread_id;
 
 	    uint64_t numOps;
-	    std::mutex numOps_lock;
-		
+	    std::mutex num_ops_lock;
+	    
+            std::mutex lat_map_lock;	    
 	    std::map<int64_t, double> lat_map;
 	    std::vector<double> latencies;
 

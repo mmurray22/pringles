@@ -34,7 +34,7 @@ enum PacketType {
 /* Client class */
 class LogClient : public BaseClient {
     public:
-	LogClient(std::string input_file, uint64_t cli_id, uint64_t thread_id);
+	LogClient(std::string input_file);
 	~LogClient();
         
 	// Append entries to the log
@@ -48,6 +48,7 @@ class LogClient : public BaseClient {
         // Garbage collect all log entries up to some index
         bool trim(uint64_t idx);
 	
+        void wait_to_finish();
 	bool experiment_status();
     private:
 	/**** Variables ****/
@@ -58,11 +59,25 @@ class LogClient : public BaseClient {
 	std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
 	std::vector<std::string> pkt_types;
 	bool end_thread = false;
+	bool started_append = false;
 
+	uint64_t payload_size;
+	uint64_t batch_size;
+	uint64_t num_work_threads;
+
+	uint64_t dummy_idx;
+	std::mutex dummy_idx_lock;
+
+	std::mutex num_ready_bytes_lock;
+	uint64_t num_ready_bytes;
+	std::condition_variable batch_ready_cond;
+
+	std::mutex append_entries_lock;
+	std::vector<std::string> append_entries;
+	std::condition_variable append_cond;
 
 	std::mutex next_idx_lock;
 	bool message_available;
-	std::condition_variable message_cond;
 	std::map<int64_t, uint64_t> append_nonce_idx_map; // TODO change int64_t to uint64_t
 	std::map<int64_t, std::pair<uint64_t, std::map<uint64_t, uint64_t>>> append_ack_map;
 
@@ -79,19 +94,18 @@ class LogClient : public BaseClient {
 	//StorageType stor;
 
 	std::thread recv_thread;
+	std::thread append_thread;
 	std::thread duration_thread;
+	std::vector<std::thread> cli_threads;
 
 	std::unique_ptr<Stats> stat;
 	uint64_t max_duration;
 	
 	/**** Functions ****/
-	uint32_t wait_for_append(PacketType pkt_type, uint32_t nonce);       
+        void execute(uint64_t thread_id);
+        void run_append();
         void wait_for_subscribe(uint64_t idx, uint64_t pkt_type);
-        void wait_for_finish();
-	std::unique_ptr<char[]> create_pkt(PacketType pkt_type, 
-		                           uint32_t nonce,
-				           std::optional<std::string> entry = std::nullopt,
-			   	           std::optional<int64_t> idx = 0);
+
 	void pringles_recv_queue();
 		
 

@@ -25,6 +25,7 @@ void Stats::startLatTimer(uint64_t nonce) {
 
     // 3. Cast the duration to milliseconds and get the count as uint64_t
     double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+    std::unique_lock<std::mutex> lock(lat_map_lock);
     lat_map.insert(std::pair<uint64_t, double>(nonce, start_time_s));
 }
 
@@ -32,6 +33,7 @@ bool Stats::endLatTimer(uint64_t nonce) {
     if (lat_map.count(nonce) > 0) {
 	auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
         double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+        std::unique_lock<std::mutex> lock(lat_map_lock);
         double dur = end_time_s - lat_map[nonce];
 	spdlog::debug("For nonce {}, started {}, ended {}, for duration {}", nonce, lat_map[nonce], end_time_s, dur);
 	latencies.push_back(dur);
@@ -49,7 +51,7 @@ double Stats::getAvgLatency() {
 
 //Throughput
 void Stats::addOp() {
-    //std::lock_guard<std::mutex> guard(numOps_lock);
+    std::lock_guard<std::mutex> lock(num_ops_lock);
     numOps += 1;
 }
 
@@ -64,6 +66,7 @@ double Stats::getThroughput(uint64_t elapsed) {
     return final_throughput;
 }
 
+// Written with the help of LLMs
 void Stats::exportResultsToJson() {
     std::string filename = json_name + std::to_string(thread_id) + ".json";
 

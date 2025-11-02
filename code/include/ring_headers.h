@@ -20,8 +20,10 @@ struct ring_append_entry {
     uint32_t cid;
     // FROM CLIENT: nonce to uniquely identify this append message
     uint32_t nonce;
-    // FROM CLIENT: To tell the storage server how large the payload is
+    // FROM CLIENT: To tell the storage server how many bytes each payload is
     uint64_t payload_size;
+    // FROM CLIENT: To tell the storage server how many entries are in the payload
+    uint64_t num_entries;
     // FROM NETWORK: Global sequence number of the message
     uint32_t g_idx;
     // FROM NETWORK: ID of shard message is written to
@@ -54,4 +56,4 @@ struct ring_subscribe_entry {
 // TODO Tail requests
 // TODO Trim requests
 
-std::unique_ptr<struct ring_append_entry> create_ring_append_entry(uint32_t nonce, uint32_t cid, uint64_t payload_size);
+std::unique_ptr<struct ring_append_entry> create_ring_append_entry(uint32_t nonce, uint32_t cid);
