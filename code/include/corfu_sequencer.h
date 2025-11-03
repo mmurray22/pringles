@@ -18,4 +18,5 @@ class CorfuSequencer {
     private:
         std::thread sequencer_thread;
         std::atomic<uint64_t> curr_idx{0};
+        bool terminate = false;
 };

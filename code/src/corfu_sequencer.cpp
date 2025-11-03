@@ -23,7 +23,7 @@ void CorfuSequencer::run_sequencer_thread() {
         if (!rcv_str) {
             continue;
         }
-        std::string packet_contents = corfu_client_deserialize_str_entry(rcv_str);
+        corfuclient::Payload packet_contents = corfu_client_deserialize_str_entry(rcv_str);
         if (packet_contents.token_req().reqToken()) {
             spdlog::info("sequencer received a token request");
             uint64_t idx = assign_next_idx();

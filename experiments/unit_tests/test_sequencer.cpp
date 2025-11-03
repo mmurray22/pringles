@@ -15,9 +15,9 @@
 #include "spdlog/spdlog.h"
 #include "corfu_client.h"
 
-#include "proto/corfuclient.pb.h"
-#include "proto/corfustorage.pb.h"
-#include "proto/corfusequencer.pb.h"
+#include "corfuclient.pb.h"
+#include "corfustorage.pb.h"
+#include "corfusequencer.pb.h"
 
 
 const uint64_t MAX_WAIT_TIME = 100;
@@ -25,6 +25,8 @@ const uint64_t MAX_WAIT_TIME = 100;
 void dummy_client(std::string cli_input) {
     // create network object
     YAML::Node config = YAML::LoadFile(cli_input);
+    // make it so each object has its own network object :o
+    // so put this init in the corfu sequencer and storage constructors
     std::unique_ptr<Network> net = std::make_unique<Network>(get_threads(config), 
                                                                 get_send_port(config), 
                                                                 get_recv_port(config),
@@ -72,6 +74,7 @@ void dummy_client(std::string cli_input) {
         net->add_to_send_queue(std::move(output), pkt_type);
 
         auto start_time = std::chrono::high_resolution_clock::now();
+        std::unique_ptr<std::string> rcv_str;
         while (true) {
             auto now = std::chrono::high_resolution_clock::now();
             auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
@@ -81,16 +84,17 @@ void dummy_client(std::string cli_input) {
             }
             //
             //wait_time += 10;
-            std::string rcv_str = net->read_from_recv_queue();
-            if (rcv_str == NULL) {
+            rcv_str = net->read_from_recv_queue();
+            if (!rcv_str) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
             /*Deserialize the packet*/
-            std::string packet_contents = corfu_sequencer_deserialize_str_entry(recv_str);
+            corfusequencer::Payload corfu_payload;
+            corfu_payload.ParseFromString(*(rcv_str.get()));
 
-            uint64_t log_idx = packet_contents.send_token().token();
-            uint64_t proto_type = packet_contents.packet_type();
+            uint64_t log_idx = corfu_payload.send_token().token();
+            uint64_t proto_type = corfu_payload.packet_type();
 
             spdlog::debug("Sequencing packet received back: log idx: {}, of proto_type {}", log_idx, proto_type);
         }

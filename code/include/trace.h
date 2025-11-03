@@ -3,6 +3,10 @@
 #include <memory>
 #include "utils.h"
 
+#include "corfuclient.pb.h"
+#include "corfustorage.pb.h"
+#include "corfusequencer.pb.h"
+
 #define CORFU_APPEND_PROTO_TYPE 1
 #define CORFU_READ_PROTO_TYPE 2
 #define CORFU_TRIM_PROTO_TYPE 3
@@ -33,9 +37,9 @@ template <typename T> class Trace {
         std::unique_ptr<std::string> corfu_storage_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t highest_addr);
         std::unique_ptr<std::string> corfu_sequencer_serialize_str_entry(uint64_t proto_type, uint64_t log_idx);
 
-        std::string corfu_client_deserialize_str_entry(std::unique_ptr<std::string> entry);
-        std::string corfu_storage_deserialize_str_entry(std::unique_ptr<std::string> entry);
-        std::string corfu_sequencer_deserialize_str_entry(std::unique_ptr<std::string> entry);
+        corfuclient::Payload corfu_client_deserialize_str_entry(std::unique_ptr<std::string> entry);
+        corfustorage::Payload corfu_storage_deserialize_str_entry(std::unique_ptr<std::string> entry);
+        corfusequencer::Payload corfu_sequencer_deserialize_str_entry(std::unique_ptr<std::string> entry);
         
         // Map of operation to payload value
         // Created at the start of the program and should not change during runtime

@@ -3,10 +3,6 @@
 #include "spdlog/spdlog.h"
 #include "ringclient.pb.h"
 #include "structs.h"
-
-#include "corfuclient.pb.h"
-#include "corfustorage.pb.h"
-#include "corfusequencer.pb.h"
 // #include "simple_client.h"
 
 /*
@@ -75,7 +71,7 @@ void TemporaryFunction ()
     (void)TempObj;
 }
 
-std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t client_id, uint64_t log_idx, uint64_t curr_epoch) {
+std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry, uint64_t proto_type, std::string client_id, uint64_t log_idx, uint64_t curr_epoch) {
     std::unique_ptr<std::string> output = NULL;
 
     corfuclient::Payload corfu_payload;
@@ -205,30 +201,26 @@ std::unique_ptr<std::string> corfu_sequencer_serialize_str_entry(uint64_t proto_
 }
 
 
-// CTODO: make all of this one function:
-std::string corfu_client_deserialize_str_entry(std::unique_ptr<std::string> entry) {
-    std::string output = "";
+corfuclient::Payload corfu_client_deserialize_str_entry(std::unique_ptr<std::string> entry) {
 
     corfuclient::Payload corfu_payload;
-    output = corfu_payload.ParseFromString(*(entry.get()));
+    corfu_payload.ParseFromString(*(entry.get()));
 
-    return output;
+    return corfu_payload;
 }
 
-std::string corfu_storage_deserialize_str_entry(std::unique_ptr<std::string> entry) {
-    std::string output = "";
+corfustorage::Payload corfu_storage_deserialize_str_entry(std::unique_ptr<std::string> entry) {
 
     corfustorage::Payload corfu_payload;
-    output = corfu_payload.ParseFromString(*(entry.get()));
+    corfu_payload.ParseFromString(*(entry.get()));
     
-    return output;
+    return corfu_payload;
 }
 
-std::string corfu_sequencer_deserialize_str_entry(std::unique_ptr<std::string> entry) {
-    std::string output = "";
+corfusequencer::Payload corfu_sequencer_deserialize_str_entry(std::unique_ptr<std::string> entry) {
 
     corfusequencer::Payload corfu_payload;
-    output = corfu_payload.ParseFromString(*(entry.get()));
+    corfu_payload.ParseFromString(*(entry.get()));
 
-    return output;
+    return corfu_payload;
 }

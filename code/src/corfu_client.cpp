@@ -58,7 +58,7 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
     }
 
     // recv packet from the sequencer
-    std::string packet_contents = corfu_sequencer_deserialize_str_entry(msg);
+    corfusequencer::Payload packet_contents = corfu_sequencer_deserialize_str_entry(msg);
 
     uint64_t log_idx = packet_contents.send_token().token();
 
@@ -103,7 +103,7 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
             return 1; // return error
         }
 
-        std::string packet_contents = corfu_storage_deserialize_str_entry(msg);
+        corfustorage::Payload packet_contents = corfu_storage_deserialize_str_entry(msg);
 
         if (packet_contents.packet_type() == CORFU_SEALED_PROTO_TYPE) {
             spdlog::info("Must reconfigure because the current epoch was sealed");
@@ -177,7 +177,7 @@ bool CorfuClient::trim(uint64_t log_idx) {
             return 1; // failure
         }
 
-        std::string packet_contents = corfu_storage_deserialize_str_entry(msg);
+        corfustorage::Payload packet_contents = corfu_storage_deserialize_str_entry(msg);
         if (packet_contents.packet_type() == CORFU_ACK_PROTO_TYPE) {
             // Note: corfu paper does not say to trim anything from local log representation,
             // so this is a possible optimization to add later :)

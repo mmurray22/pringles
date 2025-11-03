@@ -131,7 +131,7 @@ void CorfuStorage::server(std::shared_ptr<Network> net) {
         }
 
         // deserialize string, send to other functions
-        msg = Trace::corfu_client_deserialize_str_entry(recv_str);
+        corfuclient::Payload msg = Trace::corfu_client_deserialize_str_entry(recv_str);
 
         if (msg.packet_type() == CORFU_APPEND_PROTO_TYPE) {
             write(msg);
