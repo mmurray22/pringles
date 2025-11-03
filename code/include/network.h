@@ -11,6 +11,10 @@
 #include <utility>
 #include <map>
 
+#include "concurrentqueue.h"
+#include "readerwriterqueue.h"
+#include "atomicops.h"
+
 /*
  * Networking library which implements the low-level connectivity
  * necessary for the log to function
@@ -18,7 +22,7 @@
  * It is designed to have multiple senders and one receiver.
  */
 
-const uint64_t MAX_PACKET_SIZE = 1024;
+const uint64_t MAX_PACKET_SIZE = 8192; // TODO put in the yaml
 
 class Network {
     public:
@@ -50,7 +54,8 @@ class Network {
                 std::string self_ip,
 		std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
 		std::vector<int> pkt_type_to_eth_type,
-		std::vector<std::array<uint8_t,6>> mac_addrs);
+		std::vector<std::array<uint8_t,6>> mac_addrs,
+		uint64_t num_send_threads);
         ~Network();
 
         /*
@@ -68,7 +73,7 @@ class Network {
          * Returns a unique pointer to the received packet at the front of the queue.
 	 * Further handling/queueing/manipulation needs to be done at the client/storage server/etc..
          */
-        std::unique_ptr<char[]> read_from_recv_queue();
+        char* read_from_recv_queue();
 
         /*
          * Artificially indicates to Network object that no more requests will be issued
@@ -128,7 +133,8 @@ class Network {
         std::mutex send_pkt_qs_mutex;
         
         
-        std::queue<std::unique_ptr<char[]>> rcv_pkt;
+        //std::queue<char*> rcv_pkt;
+	moodycamel::ConcurrentQueue<char*> rcv_pkt;
         std::mutex rcv_queue_mutex;
 
 	std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip;

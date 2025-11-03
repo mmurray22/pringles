@@ -11,18 +11,18 @@ path_server = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/stor"
 run_setup_script = "False"
 
 [experiment_parameters]
-log_level = 1
-experiment_duration = 5 # seconds
+log_level = 6
+experiment_duration = 10 # seconds
 socket_type = "RAW" # or "UDP"
-message_size = 100 # bytes
+message_size = 4000 # 100 # bytes
 num_client_threads = 1
-json_name = "flamegraph_one_clients"
+json_name = "two_clients_batch"
 experiment_name = "increase_client_threads"
 num_failures = 1 # NEW
 
 [protocol_batching]
 batch_on = false
-batch_size = 8192 # bytes
+batch_size = 8192 # bytes TODO
 num_packet_types = 1
 sequencer_type = 0 
 storage_server_type = 0 
@@ -34,5 +34,5 @@ client_dest_macs = ["14:58:d0:58:ee:d2", "14:58:d0:58:8f:c2", "ec:b1:d7:85:3a:b2
 server_dest_macs = ["14:58:d0:58:2e:c2"] # TODO Change name this is so confusing
 
 [[experiment]]
-num_client_threads = 1
-json_name = "flamegraph_one_clients"
+num_client_threads = 5
+json_name = "two_clients_batch"

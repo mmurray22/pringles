@@ -9,6 +9,7 @@ sudo apt install python3-pip
 
 # utilities
 sudo apt install -y ripgrep vim net-tools iputils-ping gdb tmux tcpdump
+sudo apt install libtbb-dev
 
 #pip install toml PyYAML
 sudo apt install python3-toml python3-yaml python3-matplotlib

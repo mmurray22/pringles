@@ -20,6 +20,7 @@
 #include <fcntl.h>
 #include <stdexcept>
 #include <cstring>
+#include <atomic>
 
 #include "ring_headers.h"
 #include "ringclient.pb.h"
@@ -40,6 +41,7 @@ LogClient::LogClient(std::string input_file) {
        throw;
    }
   
+   this->num_work_threads = get_num_client_threads(config);
    // Create network
    net = std::make_unique<Network>(get_threads(config), 
                                    get_send_port(config), 
@@ -52,7 +54,8 @@ LogClient::LogClient(std::string input_file) {
 				   get_self_ip(config),
 				   get_packet_types(config),
 				   get_pkt_eth_types(),
-				   mac_addrs);
+				   mac_addrs,
+				   this->num_work_threads);
     cid = get_cli_id(config);
     set_spdlog_level(get_log_level(config));
     spdlog::info("Pringles Client: Only Append being tested");
@@ -61,7 +64,7 @@ LogClient::LogClient(std::string input_file) {
     for (size_t i = 0; i < num_pkt_types; i++) {
         this->pkt_q.insert(std::pair<PacketType, std::queue<std::unique_ptr<char[]>>>(PacketType(i), std::queue<std::unique_ptr<char[]>>()));
     }
-    this->recv_thread = std::thread(&LogClient::pringles_recv_queue, this);
+    //this->recv_thread = std::thread(&LogClient::pringles_recv_queue, this);
 
     // Protocol types
     this->seq = SequencerType(get_sequencer_type(config));
@@ -76,10 +79,10 @@ LogClient::LogClient(std::string input_file) {
     append_nonce_idx_map = {};
     append_ack_map = {};
     this->started_append = false; 
-    this->append_thread = std::thread(&LogClient::run_append, this); 
+    //this->append_thread = std::thread(&LogClient::run_append, this); 
     this->num_ready_bytes = 0;
     this->dummy_idx = 1;
-    this->num_work_threads = get_num_client_threads(config);
+
     this->payload_size = get_payload_size(config);
     this->batch_size = num_work_threads * payload_size;
     spdlog::debug("Batch size: {}", batch_size);
@@ -89,19 +92,28 @@ LogClient::LogClient(std::string input_file) {
     for (uint64_t i = 0; i < num_work_threads; i++) {
              cli_threads.emplace_back(std::thread(&LogClient::execute, this, i));	
     }
-
+    spdlog::debug("But we must be getting here?");
+    for (uint64_t i = 0; i < num_work_threads; i++) {
+             recv_threads.emplace_back(std::thread(&LogClient::pringles_recv_queue, this));	
+    }
+    spdlog::debug("We're not finishing the constructor are we?");
 }
 
 LogClient::~LogClient() {
-    //batch_ready_cond.notify_all();
-    append_thread.join();
-    spdlog::debug("Duration thread joined!"); 
-    recv_thread.join();
+    batch_ready_cond.notify_all();
+    //append_cond.notify_all();
+    //append_thread.join();
+    spdlog::debug("Append thread joined!"); 
+    //recv_thread.join();
     spdlog::debug("Received thread joined!");
     //TODO subscribe_thread.join();
     for (uint64_t i = 0; i < num_work_threads; i++) {
+        recv_threads[i].join();	
+    }
+    for (uint64_t i = 0; i < num_work_threads; i++) {
         cli_threads[i].join();
     }
+    
 
     spdlog::debug("Joined the client threads!");
     net->done();
@@ -113,6 +125,7 @@ LogClient::~LogClient() {
 
 void LogClient::execute(uint64_t thread_id) {
     spdlog::debug("At the beginning of execution here!");	
+    spdlog::critical("Execute thread starting with TID = {}", gettid());
     std::string payload(payload_size, 'X');
     uint64_t cnt = 0;
     while (experiment_status()) {	    
@@ -123,46 +136,47 @@ void LogClient::execute(uint64_t thread_id) {
     spdlog::critical("Total number of sent appends (NOT necessarily successful): {} from thread {}", cnt, thread_id);
 }
 
-/* Custom function */
-uint32_t LogClient::append(std::string entry) {
+/* REAL Custom function */
+/*uint32_t LogClient::append(std::string entry) { // TODO need to implement retry timeout
+
      spdlog::debug("At the beginning of the append!");
      std::string output;
      uint32_t nonce = generate_nonce();
-     std::unique_ptr<ringclient::Payload> p = std::make_unique<ringclient::Payload>();
-     p->set_packet_type(static_cast<int>(PacketType::append));
-     p->set_nonce(nonce);
-     spdlog::debug("Nonce: {}", p->nonce());
-     ringclient::AppendEntry* app = p->mutable_append();
-     app->set_entry(entry);
-     p->SerializeToString(&output);
+     stat->startLatTimer(nonce);
      
-     append_entries_lock.lock();
-     append_entries.push_back(output);
-     append_entries_lock.unlock();
-
-     append_nonce_idx_map.insert(std::pair<int64_t,uint64_t>(nonce, 0));
+     ringclient::Payload p;
+     p.set_packet_type(static_cast<int>(PacketType::append));
+     p.set_nonce(nonce);
+     spdlog::debug("Nonce: {}", p.nonce());
+     ringclient::AppendEntry* app = p.mutable_append();
+     app->set_entry(entry);
+     p.SerializeToString(&output);
      
      num_ready_bytes_lock.lock();
+     //append_entries_lock.lock();
+     append_entries.push_back(output);
+     append_nonce_idx_map.insert(std::pair<int64_t,int64_t>(nonce, -1)); // Perhaps there was a race condition? TODO
+     //append_entries_lock.unlock();
+
+
      spdlog::debug("Num ready bytes b4: {}", num_ready_bytes);
      num_ready_bytes += output.length();
      spdlog::debug("Num ready bytes after: {}", num_ready_bytes);
      num_ready_bytes_lock.unlock();
-     spdlog::debug("NOTIFYING THE CONDITION VARIABLE");
-     batch_ready_cond.notify_all();
-	
-     stat->startLatTimer(nonce);
+     //spdlog::debug("NOTIFYING THE CONDITION VARIABLE");
+     batch_ready_cond.notify_one();
      spdlog::debug("New append with nonce : {}", nonce);
      
      {
      	 std::unique_lock<std::mutex> lock(next_idx_lock);
-     	 append_cond.wait(lock, [this] {
-     	   	     return message_available || end_thread;
+     	 append_cond.wait(lock, [this, nonce] {
+     	   	     return (append_nonce_idx_map[nonce] >= 0) || end_thread;
      	 });
-     	 message_available = false;
+     	 message_available = false; // TODO irrelevant
      }
-     if (append_nonce_idx_map[nonce] == 0) {
+     if (append_nonce_idx_map[nonce] <= 0) {
      	    spdlog::critical("!!!!!! INCORRECT INDEX for nonce {}, NOT BEING COUNTED NEEDS TO BE HANDLED", nonce);
-     	    batch_ready_cond.notify_all();
+     	    //batch_ready_cond.notify_all();
      	    return 0;
      }
      if(stat->endLatTimer(nonce)) {
@@ -170,16 +184,28 @@ uint32_t LogClient::append(std::string entry) {
      }
      spdlog::debug("Successfully got index for nonce {}", nonce);
      return append_nonce_idx_map[nonce];  
-}
+}*/
 
-void LogClient::run_append() {
+uint32_t LogClient::append(std::string entry) { // TODO need to implement retry timeout
+
+     spdlog::debug("At the beginning of the append!");
+     std::string output;
+     uint32_t nonce = generate_nonce();
+     stat->startLatTimer(nonce);
+     
+     ringclient::Payload p;
+     p.set_packet_type(static_cast<int>(PacketType::append));
+     p.set_nonce(nonce);
+     spdlog::debug("Nonce: {}", p.nonce());
+     ringclient::AppendEntry* app = p.mutable_append();
+     app->set_entry(entry);
+     p.SerializeToString(&output);
+     
+     spdlog::debug("New append with nonce : {}", nonce);
      // Create packet header	
-     spdlog::debug("APPEND THREAD STARTED");
      size_t size_of_hdr = get_size_of_hdr(PacketType::append);
-     spdlog::debug("BEFORE CREATING THE HEADER");
-     std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(generate_nonce(), cid); // TODO ADD BATCH SIZE 
-     spdlog::debug("AFTER CREATING THE HEADER");
-     switch (seq)
+     std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(generate_nonce(), cid); 
+     switch (seq) // MOVE
      {
 	case SequencerType::DUMMY: 
 	{
@@ -192,66 +218,149 @@ void LogClient::run_append() {
 	};
      }
      spdlog::debug("BEFORE WHILE LOOP IN APPEND THREAD");
-     while (true) { 
-	if (end_thread) {
-	    spdlog::debug("APPEND THREAD DONE BEFORE CONDITION VAR!");
+
+     size_t packet_size = size_of_hdr;
+     uint64_t allocated_packet_size = size_of_hdr + output.length() + 1;
+     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+     hdr.get()->payload_size = output.length();	
+     hdr.get()->num_entries = 1; //append_entries.size();
+
+     memcpy(packet.get(), reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
+     memcpy(packet.get() + packet_size, output.data(), output.length());
+     packet_size += output.length();
+
+     packet[packet_size] = '\0';
+     packet_size += 1;
+
+     spdlog::debug("Adding append packet to send queue of size {} and header size {} vs allocated size: {}", packet_size, size_of_hdr, allocated_packet_size);
+     	
+     append_nonce_lock_map.emplace(std::piecewise_construct, std::forward_as_tuple(hdr.get()->nonce), std::forward_as_tuple());
+     append_cond_map.emplace(std::piecewise_construct, std::forward_as_tuple(hdr.get()->nonce), std::forward_as_tuple());
+     {
+		//std::unique_lock<std::mutex> lock(append_nonce_lock_map[hdr.get()->nonce]);		
+		std::unique_lock<std::mutex> lock(next_idx_lock);		
+		append_nonce_idx_map.insert(std::pair<int64_t,int64_t>(nonce, -1)); // Perhaps there was a race condition? TODO
+
+     }
+	TbbStringMap::accessor a;
+	if (append_ack_map.insert(a, hdr.get()->nonce)) {
+		//append_ack_map.insert(std::pair<int64_t, std::unordered_map<uint64_t, uint64_t>>(hdr.get()->nonce, {}));
+		a->second = {};
+	}
+     	spdlog::debug("The nonce of the batch is : {} and the num of entries: {}", hdr.get()->nonce, hdr.get()->num_entries);
+     	stat->startLatTimer(hdr.get()->nonce);
+	net->add_to_send_queue(std::move(packet), static_cast<int>(PacketType::append), packet_size);
+     
+     {
+     	 std::unique_lock<std::mutex> lock(append_nonce_lock_map[hdr.get()->nonce]);
+     	 //std::unique_lock<std::mutex> lock(next_idx_lock);
+     	 append_cond_map[hdr.get()->nonce].wait(lock, [this, nonce] {
+     	   	     return (append_nonce_idx_map[nonce] >= 0) || end_thread;
+     	 });
+     	 //message_available = false; // TODO irrelevant
+     }
+     if (append_nonce_idx_map[nonce] <= 0) {
+     	    spdlog::critical("!!!!!! INCORRECT INDEX for nonce {}, NOT BEING COUNTED NEEDS TO BE HANDLED", nonce);
+     	    //batch_ready_cond.notify_all();
+     	    return 0;
+     }
+     if(stat->endLatTimer(nonce)) {
+     	   stat->addOp();
+     }
+     spdlog::debug("Successfully got index for nonce {}", nonce);
+     return append_nonce_idx_map[nonce];  
+}
+
+void LogClient::run_append() {
+     std::chrono::nanoseconds MAX_BATCH_WAIT_NS(100); // TODO PUT IN YAML
+     auto wait_start = std::chrono::steady_clock::now();
+     auto wait_end = wait_start + MAX_BATCH_WAIT_NS;
+    
+     spdlog::critical("Run Append Thread starting with TID = {}", gettid());
+     // Create packet header	
+     size_t size_of_hdr = get_size_of_hdr(PacketType::append);
+     std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(generate_nonce(), cid); 
+     switch (seq) // MOVE
+     {
+	case SequencerType::DUMMY: 
+	{
+	    hdr.get()->g_idx = dummy_idx;
 	    break;
-	}
-	started_append = true;
-	
-	num_ready_bytes_lock.lock();
-        if (num_ready_bytes < batch_size) {
-            num_ready_bytes_lock.unlock();
-	    continue;
-	}
-	std::unique_ptr<char[]> packet = std::make_unique<char[]>(size_of_hdr + num_ready_bytes + 1);
-	uint64_t allocated_packet_size = size_of_hdr + num_ready_bytes + 1;
-	num_ready_bytes = 0;
-        num_ready_bytes_lock.unlock();
-        hdr.get()->payload_size = append_entries[0].length();
-	hdr.get()->num_entries = append_entries.size();
+	}; 
+	default:
+	{
+            hdr.get()->g_idx = 0; // To be filled in by the switch
+	};
+     }
+     spdlog::debug("BEFORE WHILE LOOP IN APPEND THREAD");
 
-
+     while (!end_thread) { 
+        std::unique_ptr<char[]> packet; 
 	size_t packet_size = size_of_hdr;
+	uint64_t allocated_packet_size = 0;
+	// TODO YOU NEED A COND VARIABLE
+	{
+            std::unique_lock<std::mutex> lock(num_ready_bytes_lock); // TODO: PER QUEUE LOCK
+            batch_ready_cond.wait(lock, [&, this] {
+                return (num_ready_bytes > batch_size) || end_thread;        
+            });
+	    spdlog::debug("MADE IT PAST THE CONDITIONAL");
+	    if (end_thread) {
+		    break;
+	    }
+            
+	// NEW
+
+	// CORRECT num_ready_bytes_lock.lock(); // CRITICAL SECTION START TODO
+	/*if (num_ready_bytes == 0 num_ready_bytes < batch_size) { // CHANGE TO TIMEOUT TODO
+            // CORRECT num_ready_bytes_lock.unlock();
+	    continue;
+	}	*/
+
+        /*if (num_ready_bytes >= batch_size) { SOMETHING WRONG WITH THIS LOGIC AND num_ready_bytes == 0
+	} else if (std::chrono::steady_clock::now() >= wait_end && num_ready_bytes > 0) { // TODO make this an atomic
+	} else {
+
+	    continue;
+	}*/
+	//num_ready_bytes_lock.lock(); // CRITICAL SECTION START TODO TEST
+	allocated_packet_size = size_of_hdr + num_ready_bytes + 1;
+	num_ready_bytes = 0;
+	} // TEMP TODO
+	packet = std::make_unique<char[]>(allocated_packet_size);
+	hdr.get()->payload_size = append_entries[0].length();
+	hdr.get()->num_entries = append_entries.size();
+	
+
      	memcpy(packet.get(), reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
-	/*{
-     	    std::unique_lock<std::mutex> lock(num_ready_bytes_lock);
-     	    batch_ready_cond.wait(lock, [this] {
-     	   	     return (num_ready_bytes >= batch_size) || end_thread;
-     	    });
-
-     	    num_ready_bytes = 0;
-     	}*/
-	if (end_thread) {
-	    spdlog::debug("APPEND THREAD DONE AFTER CONDITION VAR!");
-	    break;
-	}
-
 
 	spdlog::debug("Past the condition variable! {}", append_entries.size());
-
-	for (uint64_t i = 0; i < append_entries.size(); i++) {
+	for (uint64_t i = 0; i < append_entries.size(); /*i++*/) {
 	    std::string output = append_entries[i];
+	    if ((packet_size + output.length()) > allocated_packet_size) {
+	        break;
+	    }
      	    memcpy(packet.get() + packet_size, output.data(), output.length());
      	    packet_size += output.length();
+	    append_entries.erase(std::next(append_entries.begin(), i), std::next(append_entries.begin(), i+1));
 	}
 	spdlog::debug("Packet size: {}, Num_entries: {}", packet_size, append_entries.size());
 	packet[packet_size] = '\0';
 	packet_size += 1;
 
-	
-
      	spdlog::debug("Adding append packet to send queue of size {} and header size {} vs allocated size: {}", packet_size, size_of_hdr, allocated_packet_size);
      	
-     	next_idx_lock.lock();
-     	std::pair<uint64_t, std::map<uint64_t, uint64_t>> idx_pair = {0, {}};
-     	append_ack_map.insert(std::pair<int64_t, std::pair<uint64_t, std::map<uint64_t, uint64_t>>>(hdr.get()->nonce, idx_pair));
-     	next_idx_lock.unlock();
-     	
-     	stat->startLatTimer(hdr.get()->nonce);
+     	//next_idx_lock.lock(); // TODO check if this is safe behaviour?
+        //next_idx_lock.unlock();
+	//append_entries.clear();
+    // } TODO
+	//std::pair<uint64_t, std::map<uint64_t, uint64_t>> idx_pair = {0, {}};
+     	append_ack_map.insert(std::pair<int64_t, std::unordered_map<uint64_t, uint64_t>>(hdr.get()->nonce, {}));
      	spdlog::debug("The nonce of the batch is : {} and the num of entries: {}", hdr.get()->nonce, hdr.get()->num_entries);
-     	net->add_to_send_queue(std::move(packet), static_cast<int>(PacketType::append), packet_size);
-	append_entries.clear();
+     	stat->startLatTimer(hdr.get()->nonce);
+	net->add_to_send_queue(std::move(packet), static_cast<int>(PacketType::append), packet_size);
+	wait_start = std::chrono::steady_clock::now();
+     	wait_end = wait_start + MAX_BATCH_WAIT_NS;
      }
 }
 
@@ -396,57 +505,75 @@ void LogClient::pringles_recv_queue() {
     uint64_t total_cnt = 0;
     while (true) {
 	if (end_thread) {
-	    append_cond.notify_all();
+	    for (auto it = append_cond_map.begin(); it != append_cond_map.end(); ++it) {
+	        (it->second).notify_all();
+	    }
 	    break;
 	}
-	std::unique_ptr<char[]> recv_ptr = net->read_from_recv_queue(); // will receive the full packet, including Eth header
+	char* recv_ptr = net->read_from_recv_queue(); // will receive the full packet, including Eth header
 	if (!recv_ptr) {
 	    continue;
 	}
-	struct ethhdr* eth = (struct ethhdr*)recv_ptr.get();
+	struct ethhdr* eth = (struct ethhdr*)recv_ptr;
 	if (ntohs(eth->h_proto) == ETH_APPEND_REQ) { // TODO Move this to run_append? CHANGE TO ETH APPEND RESP?
 		total_cnt += 1;
-    		struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr.get() + sizeof(struct ethhdr) + sizeof(struct iphdr));
+    		struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
 		spdlog::debug("The nonce received is : {}", append_entry->nonce);
-		if (append_ack_map.count(append_entry->nonce) == 0) {
+		{
+		 std::unique_lock<std::mutex> lock(append_nonce_lock_map[append_entry->nonce]);		
+		 spdlog::debug("Append entry NONCE is {}", append_entry->nonce);
+		 spdlog::debug("Map size: {}", append_ack_map.size());
+		 TbbStringMap::const_accessor a;
+		 if (!append_ack_map.find(a, append_entry->nonce)) {
 		    spdlog::debug("SKIPPING THIS NONCE {}", append_entry->nonce);
 		    continue;
-		}
-		{
-		 std::unique_lock<std::mutex> lock(next_idx_lock);
-		 append_ack_map[append_entry->nonce].first += 1;
-		 if (append_ack_map[append_entry->nonce].second.count(append_entry->g_idx)) {
-		     append_ack_map[append_entry->nonce].second[append_entry->g_idx] += 1;
+		 }
+
+		 //std::unique_lock<std::mutex> lock(next_idx_lock);		
+		 //std::unique_lock<std::mutex> lock(next_idx_lock);
+		 //append_ack_map[append_entry->nonce].first += 1;
+		 if (append_ack_map[append_entry->nonce].find(append_entry->g_idx)) {
+		     append_ack_map[append_entry->nonce][append_entry->g_idx] += 1;
 		 } else {
-		     append_ack_map[append_entry->nonce].second.insert(std::pair<uint64_t, uint64_t>(append_entry->g_idx, 1));
+		     next_idx_lock.lock();
+		     append_ack_map[append_entry->nonce].insert(std::pair<uint64_t, uint64_t>(append_entry->g_idx, 1));
+		     next_idx_lock.unlock();
 		 }
 		     
-		 if (append_ack_map[append_entry->nonce].second[append_entry->g_idx] >= min_matching_acks) {
-			 
+		 if (append_ack_map[append_entry->nonce][append_entry->g_idx] >= min_matching_acks) {
 			/*** FILL IN APPEND NONCE MAP ****/
 	    		spdlog::debug("Payload size: {} and index {} and cid {} and nonce {} and num entries {}", append_entry->payload_size, append_entry->g_idx, append_entry->cid, append_entry->nonce, append_entry->num_entries);
 			size_t offset = sizeof(struct ethhdr) + sizeof(struct iphdr) + get_size_of_hdr(PacketType::append);
 			for (size_t i = 0; i < append_entry->num_entries; i++) {
-			    char* inner_pkt = (char*)(recv_ptr.get() + offset);
+			    char* inner_pkt = (char*)(recv_ptr + offset);
 	          	    ringclient::Payload payload;
 	    		    payload.ParseFromArray(inner_pkt, append_entry->payload_size);
 			    spdlog::debug("THE PAYLOAD NONCE IS: {}", payload.nonce());
-			    if (append_nonce_idx_map.count(payload.nonce())) {
+			    if (append_nonce_idx_map.count(payload.nonce()) > 0) {
 				append_nonce_idx_map[payload.nonce()] = append_entry->g_idx + i;
 				spdlog::debug("The value put in the map is: {}", append_nonce_idx_map[payload.nonce()]);
 			    } else {
 			        spdlog::critical("NO RECORD OF THIS ENTRY???");
+				append_nonce_idx_map[payload.nonce()] = 0;
 			    }
 			    offset += append_entry->payload_size;
 		  	    cnt += 1;
 			}
-			spdlog::debug("DONE WITH ACKS For nonce {}, we got idx {}, which got {} matching acks and {} acks overall", append_entry->nonce, append_entry->g_idx, min_matching_acks, append_ack_map[append_entry->nonce].first);
-			append_ack_map.erase(append_entry->nonce);
+			spdlog::debug("DONE WITH ACKS For nonce {}, we got idx {}, which got {} matching acks and ?? acks overall", append_entry->nonce, append_entry->g_idx, min_matching_acks);
+
 		  	message_available = true;
-     		 }  // TODO need to do a timeout in case this never happens
+     		 } else {  // TODO need to do a timeout in case this never happens
+		     message_available = false;
+		 }
 		}
-		append_cond.notify_all();
+		next_idx_lock.lock();
+		if (message_available) {
+			append_ack_map.erase(append_entry->nonce);
+		}
+		next_idx_lock.unlock();
+		append_cond_map[append_entry->nonce].notify_all();
 	}
+	free(recv_ptr);
 	// Read
 	// Tail
 	// Subscribe
@@ -457,7 +584,7 @@ void LogClient::pringles_recv_queue() {
 
 /* Experiment Logistics */
 void LogClient::wait_to_finish() {
-        std::chrono::seconds sleep_duration(max_duration);
+    std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);
     spdlog::debug("End thread: {}", end_thread);
     end_thread = true;

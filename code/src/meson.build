@@ -4,5 +4,5 @@ pringleslib = shared_library('logging',
   pringles_sources, 
   generated, 
   include_directories : inc, 
-  dependencies : [yaml_cpp, spdlog], 
+  dependencies : [yaml_cpp, spdlog, tbb_dep], 
   install : true)

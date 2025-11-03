@@ -49,7 +49,8 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
 				   get_self_ip(config),
 				   get_packet_types(config),
 				   get_pkt_eth_types(),
-				   mac_addrs);
+				   mac_addrs,
+				   1); // TODO Need to do something else here??? Storage server could be faster
     set_spdlog_level(get_log_level(config));
     spdlog::info("Pringles Client: Only Append being tested");
     this->shard_id = get_shard_id(config);
@@ -59,12 +60,20 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
  
     this->stor = StorageType(get_storage_type(config));
     this->ssid = storage_id;
+    
+    for (uint64_t i = 0; i < 5; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
+        recv_threads.emplace_back(std::thread(&LogStorage::pringles_recv_queue, this));	
+    }
 
-    this->recv_thread = std::thread(&LogStorage::pringles_recv_queue, this);
+    //this->recv_thread = std::thread(&LogStorage::pringles_recv_queue, this);
 }
 
 LogStorage::~LogStorage() {
-    this->recv_thread.join();
+    for (uint64_t i = 0; i < 5; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
+        recv_threads[i].join();	
+    }
+
+    //this->recv_thread.join();
     net->done();
 }
 
@@ -113,21 +122,22 @@ void LogStorage::pringles_recv_queue() {
     spdlog::critical("Recv Storage Thread starting with TID = {}", gettid());
     uint64_t cnt = 0;
     uint64_t total_cnt = 0;
+    size_t size_of_hdr = get_size_of_hdr(PacketType::append);
     while (true) {
 	if (end_thread) {
 	    break;
 	}
-	std::unique_ptr<char[]> recv_ptr = net->read_from_recv_queue(); // will receive the full packet, including Eth header
+	char* recv_ptr = net->read_from_recv_queue(); // will receive the full packet, including Eth header
 	if (!recv_ptr) {
 	    continue;
 	}
-        struct ethhdr* eth = (struct ethhdr*)recv_ptr.get();
+        struct ethhdr* eth = (struct ethhdr*)recv_ptr;
 	//spdlog::debug("The ethernet type is {}", ntohs(eth->h_proto));
 	if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
 	    total_cnt += 1;
-            size_t size_of_hdr = get_size_of_hdr(PacketType::append);
+
             spdlog::debug("Ethernet protocol with size {}", size_of_hdr);
-            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr.get() + sizeof(struct ethhdr) + sizeof(struct iphdr));
+            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
 	    if (append_entry->g_idx == 0 && append_entry->num_entries == 0) {
 	        spdlog::debug("INVALID PACKET WITH g_idx 0 or no entries - dropping");
     	        continue;		
@@ -139,7 +149,7 @@ void LogStorage::pringles_recv_queue() {
      	    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
             memcpy(reply_packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
 	    for (size_t i = 0; i < append_entry->num_entries; i++) {
-		char* inner_pkt = (char*)(recv_ptr.get() + offset);
+		char* inner_pkt = (char*)(recv_ptr + offset);
 	        ringclient::Payload payload;
 	    	payload.ParseFromArray(inner_pkt, append_entry->payload_size);
 		uint64_t idx = append_entry->g_idx + i;
@@ -160,6 +170,7 @@ void LogStorage::pringles_recv_queue() {
 	    //spdlog::debug("For nonce {}, we got idx {}, which got {} matching acks and {} acks overall", append_entry->nonce, append_entry->g_idx, min_matching_acks, append_ack_map[append_entry->nonce].first);
 	    net->add_to_send_queue(std::move(reply_packet), static_cast<uint64_t>(PacketType::append), reply_pkt_size);
 	}
+	free(recv_ptr);
     }
     spdlog::critical("RECEIVED {} append packets and REPLIED to {} append packets on storage server {}", total_cnt, cnt, gettid());
 }

@@ -4,11 +4,12 @@
 #include <vector>
 #include <queue>
 #include <map>
+#include <unordered_map>
 #include <mutex>
 #include <condition_variable>
 #include <optional>
 #include <chrono>
-
+#include <tbb/concurrent_hash_map.h> 
 #include "base_client.h"
 
 #include "measure.h"
@@ -78,8 +79,13 @@ class LogClient : public BaseClient {
 
 	std::mutex next_idx_lock;
 	bool message_available;
-	std::map<int64_t, uint64_t> append_nonce_idx_map; // TODO change int64_t to uint64_t
-	std::map<int64_t, std::pair<uint64_t, std::map<uint64_t, uint64_t>>> append_ack_map;
+	std::unordered_map<int64_t, int64_t> append_nonce_idx_map; // TODO revisit types
+	std::map<int64_t, std::mutex> append_nonce_lock_map; // TODO revisit types
+	std::map<int64_t, std::condition_variable> append_cond_map; // TODO revisit types
+	//std::map<int64_t, std::pair<uint64_t, std::map<uint64_t, uint64_t>>> append_ack_map;
+	//std::unordered_map<int64_t, std::unordered_map<uint64_t, uint64_t>> append_ack_map;
+	
+	tbb::concurrent_hash_map<int64_t, std::unordered_map<uint64_t, uint64_t>> append_ack_map;
 
 	/* Hash/ID of pending append entries */
         std::vector<uint64_t> pending_append_entries;
@@ -97,6 +103,7 @@ class LogClient : public BaseClient {
 	std::thread append_thread;
 	std::thread duration_thread;
 	std::vector<std::thread> cli_threads;
+	std::vector<std::thread> recv_threads;
 
 	std::unique_ptr<Stats> stat;
 	uint64_t max_duration;

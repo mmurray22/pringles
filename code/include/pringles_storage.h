@@ -53,7 +53,8 @@ class LogStorage : public BaseStorage {
 	uint64_t shard_switch_id;
 	uint64_t view_num;
 	bool end_thread = false;
-	std::thread recv_thread;
+	//std::thread recv_thread;
+	std::vector<std::thread> recv_threads;
 
 	// Immutable
 	uint64_t max_duration;

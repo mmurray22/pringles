@@ -15,6 +15,7 @@ yaml_cpp = dependency('yaml-cpp')
 protoc = find_program('protoc')
 protobuf = dependency('protobuf')
 spdlog = dependency('spdlog')
+tbb_dep = dependency('tbb', required: true) 
 add_project_link_arguments(['-lprotobuf'], language: ['cpp'])
 
 # Generate protobuf library
