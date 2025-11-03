@@ -1,6 +1,23 @@
 #include <string>
 #include <map>
 #include <memory>
+#include "utils.h"
+
+#define CORFU_APPEND_PROTO_TYPE 1
+#define CORFU_READ_PROTO_TYPE 2
+#define CORFU_TRIM_PROTO_TYPE 3
+#define CORFU_SEAL_PROTO_TYPE 4
+#define CORFU_GETTOKEN_PROTO_TYPE 5
+
+#define CORFU_ACK_PROTO_TYPE 6
+#define CORFU_SEALED_PROTO_TYPE 7
+#define CORFU_UNWRITTEN_PROTO_TYPE 8
+#define CORFU_WRITTEN_PROTO_TYPE 9
+#define CORFU_STORE_READ_PROTO_TYPE 10
+#define CORFU_STORE_SEAL_PROTO_TYPE 11
+#define CORFU_DELETED_PROTO_TYPE 12
+
+#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 13
 
 template <typename T> class Trace {
     public:

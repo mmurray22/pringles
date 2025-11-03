@@ -28,4 +28,4 @@ class BaseClient {
         //std::unique_ptr<Trace<T>> trace;
         ClientType cli_type;
         bool local;
-}
+};

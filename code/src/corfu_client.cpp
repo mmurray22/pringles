@@ -139,7 +139,7 @@ uint64_t CorfuClient::fill(uint64_t idx) {
     return 0;
 }
 
-uint64_t CorfuClient::trim(uint64_t log_idx) {
+bool CorfuClient::trim(uint64_t log_idx) {
     // loop through all of the replicas that have this log position
     std::vector<CorfuStorage> send_machines;
     // use current epoch to find corresponding send machines

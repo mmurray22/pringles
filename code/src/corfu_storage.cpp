@@ -20,7 +20,7 @@ void CorfuStorage::write(std::string msg) {
     // if epoch != s_epoch, respond <err_sealed>
     if (msg.append().currEpoch() != s_epoch) {
         std::unique_ptr<std::string> err_packet = corfu_storage_serialize_str_entry("", CORFU_SEALED_PROTO_TYPE, 0);
-        uint64_t client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
+        std::string client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
 
         net->add_to_send_queue(err_packet, client_id);
         return;
@@ -32,14 +32,14 @@ void CorfuStorage::write(std::string msg) {
         if (storage_map[msg.append().idx()].deleted) { // has it been marked deleted?
             // send <err_deleted>
             std::unique_ptr<std::string> err_packet = corfu_storage_serialize_str_entry("", CORFU_DELETED_PROTO_TYPE, 0);
-            uint64_t client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
+            std::string client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
 
             net->add_to_send_queue(err_packet, client_id);
             return;
         } else { // if not marked deleted, then it must be written to already so we send back err + written contents
             // send <err_written>
             std::unique_ptr<std::string> err_packet = corfu_storage_serialize_str_entry(storage_map[msg.append().idx()].contents, CORFU_WRITTEN_PROTO_TYPE, 0);
-            uint64_t client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
+            std::string client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
 
             net->add_to_send_queue(err_packet, client_id);
             return;
@@ -50,7 +50,7 @@ void CorfuStorage::write(std::string msg) {
 
     // reply with ack
     std::unique_ptr<std::string> ack_packet = corfu_storage_serialize_str_entry("", CORFU_ACK_PROTO_TYPE, 0);
-    uint64_t client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
+    std::string client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
 
     net->add_to_send_queue(ack_packet, client_id);
 }
@@ -59,7 +59,7 @@ void CorfuStorage::read(std::string msg) {
     // if epoch != s_epoch, respond <err_sealed>
     if (msg.read().currEpoch() != s_epoch) {
         std::unique_ptr<std::string> err_packet = corfu_storage_serialize_str_entry("", CORFU_SEALED_PROTO_TYPE, 0);
-        uint64_t client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
+        std::string client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
 
         net->add_to_send_queue(err_packet, client_id);
         return;
@@ -69,7 +69,7 @@ void CorfuStorage::read(std::string msg) {
     // if unwritten, respond <err_unwritten> (entry is not in the map)
     if (storage_map.count(msg.read().idx()) == 0) { // is the entry not already in the map?
         std::unique_ptr<std::string> err_packet = corfu_storage_serialize_str_entry("", CORFU_UNWRITTEN_PROTO_TYPE, 0);
-        uint64_t client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
+        std::string client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
 
         net->add_to_send_queue(err_packet, client_id);
         return;
@@ -79,7 +79,7 @@ void CorfuStorage::read(std::string msg) {
     if (storage_map[msg.read().idx()].deleted) {
             // send <err_deleted>
             std::unique_ptr<std::string> err_packet = corfu_storage_serialize_str_entry("", CORFU_DELETED_PROTO_TYPE, 0);
-            uint64_t client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
+            std::string client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
 
             net->add_to_send_queue(err_packet, client_id);
             return;
@@ -87,7 +87,7 @@ void CorfuStorage::read(std::string msg) {
 
     // if written, respond <pg_content>
     std::unique_ptr<std::string> read_packet = corfu_storage_serialize_str_entry(storage_map[msg.read().idx()].contents, CORFU_STORE_READ_PROTO_TYPE, 0);
-    uint64_t client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
+    std::string client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
 
     net->add_to_send_queue(err_packet, client_id);
 }
@@ -98,7 +98,7 @@ void CorfuStorage::storage_delete(std::string msg) {
 
     // reply with ack
     std::unique_ptr<std::string> ack_packet = corfu_storage_serialize_str_entry("", CORFU_ACK_PROTO_TYPE, 0);
-    uint64_t client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
+    std::string client_id = msg.clientID(); // each packet comes with a client ip, but better solution should be found
 
     net->add_to_send_queue(ack_packet, client_id);
 }

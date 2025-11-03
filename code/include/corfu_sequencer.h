@@ -3,8 +3,6 @@
 #include <mutex>
 #include <atomic>
 
-#define CORFU_GETTOKEN_PROTO_TYPE 6
-#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 14
 
 class CorfuSequencer {
     public:
@@ -20,4 +18,4 @@ class CorfuSequencer {
     private:
         std::thread sequencer_thread;
         std::atomic<uint64_t> curr_idx{0};
-}
+};

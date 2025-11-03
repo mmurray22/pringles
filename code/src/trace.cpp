@@ -3,26 +3,11 @@
 #include "spdlog/spdlog.h"
 #include "ringclient.pb.h"
 #include "structs.h"
+
 #include "corfuclient.pb.h"
 #include "corfustorage.pb.h"
 #include "corfusequencer.pb.h"
 // #include "simple_client.h"
-
-#define CORFU_APPEND_PROTO_TYPE 1
-#define CORFU_READ_PROTO_TYPE 2
-#define CORFU_TRIM_PROTO_TYPE 3
-#define CORFU_SEAL_PROTO_TYPE 4
-#define CORFU_GETTOKEN_PROTO_TYPE 5
-
-#define CORFU_ACK_PROTO_TYPE 6
-#define CORFU_SEALED_PROTO_TYPE 7
-#define CORFU_UNWRITTEN_PROTO_TYPE 8
-#define CORFU_WRITTEN_PROTO_TYPE 9
-#define CORFU_STORE_READ_PROTO_TYPE 10
-#define CORFU_STORE_SEAL_PROTO_TYPE 11
-#define CORFU_DELETED_PROTO_TYPE 12
-
-#define CORFU_GETTOKEN_REPLY_PROTO_TYPE 13
 
 /*
  * Reads in a txt file trace of the format "operation: payload"
