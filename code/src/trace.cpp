@@ -219,6 +219,8 @@ std::unique_ptr<std::string> corfu_sequencer_serialize_str_entry(uint64_t proto_
     return output;
 }
 
+
+// CTODO: make all of this one function:
 std::string corfu_client_deserialize_str_entry(std::unique_ptr<std::string> entry) {
     std::string output = "";
 

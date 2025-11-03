@@ -6,5 +6,9 @@ net_cli = executable('net_cli', 'net_cli.cpp',
                      include_directories : inc,
                      dependencies: [yaml_cpp, spdlog],
                      link_with : pringleslib)
+test_sequencer = executable('test_sequencer', 'test_sequencer.cpp',
+                     include_directories : inc,
+                     dependencies: [yaml_cpp, spdlog],
+                     link_with : pringleslib)
 
-test('pringleslib test', net_serv, args: ['/home/micahrocks/Programming/ringlog/experiments/yaml/unit_test_datagram.yaml'])
+test('pringleslib test', test_sequencer, args: ['/root/name/pringles/experiments/yaml/test_sequencer.yaml'])
