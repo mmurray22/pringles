@@ -11,7 +11,6 @@
 #include <chrono>
 #include <tbb/concurrent_hash_map.h> 
 #include "base_client.h"
-
 #include "measure.h"
 
 const std::chrono::seconds MAX_WAIT_TIME(5);
@@ -51,6 +50,7 @@ class LogClient : public BaseClient {
 	
         void wait_to_finish();
 	bool experiment_status();
+        void execute(uint64_t thread_id);
     private:
 	/**** Variables ****/
 	uint64_t min_matching_acks = 0;
@@ -85,7 +85,7 @@ class LogClient : public BaseClient {
 	//std::map<int64_t, std::pair<uint64_t, std::map<uint64_t, uint64_t>>> append_ack_map;
 	//std::unordered_map<int64_t, std::unordered_map<uint64_t, uint64_t>> append_ack_map;
 	
-	tbb::concurrent_hash_map<int64_t, std::unordered_map<uint64_t, uint64_t>> append_ack_map;
+	std::unordered_map<uint32_t, uint64_t> append_ack_map;
 
 	/* Hash/ID of pending append entries */
         std::vector<uint64_t> pending_append_entries;
@@ -109,7 +109,7 @@ class LogClient : public BaseClient {
 	uint64_t max_duration;
 	
 	/**** Functions ****/
-        void execute(uint64_t thread_id);
+
         void run_append();
         void wait_for_subscribe(uint64_t idx, uint64_t pkt_type);
 

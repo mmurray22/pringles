@@ -55,7 +55,7 @@ class Network {
 		std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
 		std::vector<int> pkt_type_to_eth_type,
 		std::vector<std::array<uint8_t,6>> mac_addrs,
-		uint64_t num_send_threads, bool run_threads);
+		uint64_t num_send_threads);
         ~Network();
 
         /*
@@ -79,16 +79,16 @@ class Network {
          * Artificially indicates to Network object that no more requests will be issued
          */
         void done();
-	
-	char* recv_packet();
-	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type);
- 
+
         /*
          * Update the packet classifiers
          * Useful if the classifiers are receiver IPs and some receivers fail/are changed
          */
         void add_pkt_type(uint64_t pkt_type);
         bool remove_pkt_type(uint64_t pkt_type);
+
+	char* recv_packet();
+	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type);
         
     private:
         // checksum for IP packet header construction
@@ -111,11 +111,6 @@ class Network {
         // Goes through the steps of stopping and cleaning up all the threads
         uint64_t total_num_threads;
         void stop_threads();
-
-        // Sender thread function, parameterized by the packet type the sender is responsible for
-        void run_send(uint64_t pkt_type, int eth_type);
-        // Receiver thread 
-        void run_recv(int s_fd);
 
         // Send Thread pool
         std::vector<std::thread> send_threads;
@@ -147,12 +142,11 @@ class Network {
 	//uint8_t mac_array[6]; // TODO add vector of these
 
         uint64_t num_pkt_type = 0;
-	std::unique_ptr<struct iphdr> cli_send_ip; 
+	
 	std::map<int, std::shared_ptr<struct addrinfo>> fd_to_it;
         
         bool pkts_in_queue();
-        bool run_threads; 
-        char* norm_buf;
+        
         /** IP Address + Socket Management **/
         std::string send_interface;
         std::string self_ip;

@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
 
     LogClient pringles_cli = LogClient(input_file);
     spdlog::debug("Pringles client created and started!");
-    pringles_cli.wait_to_finish();
+    pringles_cli.execute(0);
     return 0;
 }
 

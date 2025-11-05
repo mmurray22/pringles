@@ -4,6 +4,7 @@
 #include <set>
 #include "network.h"
 #include "base_storage.h"
+#include "measure.h"
 
 enum StorageType {
 	MEM_KV,

@@ -50,7 +50,7 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
 				   get_packet_types(config),
 				   get_pkt_eth_types(),
 				   mac_addrs,
-				   1); // TODO Need to do something else here??? Storage server could be faster
+				   1, true); // TODO Need to do something else here??? Storage server could be faster
     set_spdlog_level(get_log_level(config));
     spdlog::info("Pringles Client: Only Append being tested");
     this->shard_id = get_shard_id(config);
@@ -61,7 +61,7 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
     this->stor = StorageType(get_storage_type(config));
     this->ssid = storage_id;
     
-    for (uint64_t i = 0; i < 5; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
+    for (uint64_t i = 0; i < 1; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
         recv_threads.emplace_back(std::thread(&LogStorage::pringles_recv_queue, this));	
     }
 
@@ -69,7 +69,7 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
 }
 
 LogStorage::~LogStorage() {
-    for (uint64_t i = 0; i < 5; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
+    for (uint64_t i = 0; i < 1; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
         recv_threads[i].join();	
     }
 
@@ -86,6 +86,7 @@ bool LogStorage::store(uint64_t idx, std::string entry) {
     {
 	case StorageType::MEM_KV: 
 	{
+	    std::unique_lock<std::mutex> lock(kv_store_lock);
 	    kv_store.insert(std::pair<uint64_t, std::string>(idx, entry));
 	    return true;
 	};	    
