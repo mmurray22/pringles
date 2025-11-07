@@ -80,8 +80,6 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
             std::cout << "Thread " << recv_threads.back().get_id() << " pinned to core " << i << std::endl;
         } 
     }
-
-    //this->recv_thread = std::thread(&LogStorage::pringles_recv_queue, this);
 }
 
 LogStorage::~LogStorage() {
@@ -145,22 +143,25 @@ void LogStorage::pringles_recv_queue() {
 	    break;
 	}
         char* recv_ptr = net->recv_packet();
-	//char* recv_ptr = net->read_from_recv_queue(); // will receive the full packet, including Eth header
 	if (!recv_ptr) {
 	    continue;
 	}
+	//char* recv_ptr = net->read_from_recv_queue(); // will receive the full packet, including Eth header
+
+	
         struct ethhdr* eth = (struct ethhdr*)recv_ptr;
 	//spdlog::debug("The ethernet type is {}", ntohs(eth->h_proto));
+	
 	if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
 	    total_cnt += 1;
 
-            spdlog::debug("Ethernet protocol with size {}", size_of_hdr);
+            //spdlog::debug("Ethernet protocol with size {}", size_of_hdr);
             struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
 	    if (append_entry->g_idx == 0 && append_entry->num_entries == 0) {
 	        spdlog::debug("INVALID PACKET WITH g_idx 0 or no entries - dropping");
     	        continue;		
 	    } 
-	    spdlog::debug("Payload size: {} and index {} and cid {} and nonce {} and num_entries {}", append_entry->payload_size, append_entry->g_idx, append_entry->cid, append_entry->nonce, append_entry->num_entries);
+	    //spdlog::debug("Payload size: {} and index {} and cid {} and nonce {} and num_entries {}", append_entry->payload_size, append_entry->g_idx, append_entry->cid, append_entry->nonce, append_entry->num_entries);
 	    size_t offset = sizeof(struct ethhdr) + sizeof(struct iphdr) + size_of_hdr;
 	    size_t reply_pkt_size = size_of_hdr + append_entry->payload_size * append_entry->num_entries;
 	    size_t reply_pkt_offset = size_of_hdr;
@@ -189,6 +190,7 @@ void LogStorage::pringles_recv_queue() {
             net->send_packet(std::move(reply_packet), reply_pkt_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);
 	    //net->add_to_send_queue(std::move(reply_packet), static_cast<uint64_t>(PacketType::append), reply_pkt_size);
 	}
+        // DUMMY: net->send_packet(std::move(reply_packet), reply_pkt_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);
     }
     spdlog::critical("RECEIVED {} append packets and REPLIED to {} append packets on storage server {}", total_cnt, cnt, gettid());
 }

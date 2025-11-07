@@ -25,6 +25,7 @@ void Stats::startLatTimer(uint64_t nonce) {
 
     // 3. Cast the duration to milliseconds and get the count as uint64_t
     double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+    
     std::unique_lock<std::mutex> lock(lat_map_lock);
     lat_map.insert(std::pair<uint64_t, double>(nonce, start_time_s));
 }

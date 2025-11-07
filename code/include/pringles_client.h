@@ -9,7 +9,8 @@
 #include <condition_variable>
 #include <optional>
 #include <chrono>
-#include <tbb/concurrent_hash_map.h> 
+#include <atomic>
+
 #include "base_client.h"
 #include "measure.h"
 
@@ -48,9 +49,13 @@ class LogClient : public BaseClient {
         // Garbage collect all log entries up to some index
         bool trim(uint64_t idx);
 	
+        void wait_to_warmup();
+        void wait_to_cooldown();
         void wait_to_finish();
 	bool experiment_status();
         void execute(uint64_t thread_id);
+
+        uint32_t dummy(std::string entry);
     private:
 	/**** Variables ****/
 	uint64_t min_matching_acks = 0;
@@ -102,6 +107,7 @@ class LogClient : public BaseClient {
 	std::thread recv_thread;
 	std::thread append_thread;
 	std::thread duration_thread;
+	std::thread execution_thread;
 	std::vector<std::thread> cli_threads;
 	std::vector<std::thread> recv_threads;
 
@@ -109,6 +115,9 @@ class LogClient : public BaseClient {
 	uint64_t max_duration;
 	uint64_t warm_up;
 	uint64_t cool_down;
+	std::atomic<bool> collect_stats; 
+
+	uint64_t global_thread_id;
 	
 	/**** Functions ****/
 

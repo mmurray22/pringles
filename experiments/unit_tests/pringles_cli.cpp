@@ -22,7 +22,12 @@
 void run_client(std::string input_file, uint64_t i) {
     LogClient pringles_cli = LogClient(input_file, i);
     spdlog::debug("Pringles client created and started!");
-    pringles_cli.execute(i);
+    pringles_cli.wait_to_warmup();
+    spdlog::debug("Pringles warmup is done!");
+    pringles_cli.wait_to_finish();
+    spdlog::debug("Pringles experiment data collection is done!");
+    pringles_cli.wait_to_cooldown();
+    spdlog::debug("Pringles client cooldown is done!");
 }
 
 int main(int argc, char* argv[]) {

@@ -91,9 +91,24 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id) {
     this->max_duration = get_experiment_duration(config);
     this->warm_up = get_warm_up(config);
     this->cool_down = get_cool_down(config);
+    this->global_thread_id = thread_id;
     
-    this->duration_thread = std::thread(&LogClient::wait_to_finish, this);
-    spdlog::debug("We're not finishing the constructor are we?");
+    //this->duration_thread = std::thread(&LogClient::wait_to_finish, this);
+    this->execution_thread = std::thread(&LogClient::execute, this, thread_id);
+    pthread_t native_handle = this->execution_thread.native_handle();
+
+    // Create a CPU set and add the desired core
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(thread_id, &cpuset); // Pin to core 'i'
+
+    // Set thread affinity
+    int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
+    if (result != 0) {
+        std::cerr << "Error setting thread affinity for thread " << this->execution_thread.get_id() << ": " << result << std::endl;
+    }
+
+    collect_stats = false;
 }
 
 LogClient::~LogClient() {
@@ -103,13 +118,14 @@ LogClient::~LogClient() {
     /*for (uint64_t i = 0; i < num_work_threads; i++) {
         recv_threads[i].join();	
     }*/
-    duration_thread.join(); 
+    //duration_thread.join(); 
+    execution_thread.join();
     spdlog::debug("Joined the client threads!");
     net->done();
-    stat->getAvgLatency();
+    /*stat->getAvgLatency();
     stat->getThroughput(max_duration);
     stat->getTotalOps();
-    stat->exportResultsToJson();
+    stat->exportResultsToJson();*/
 }
 
 void LogClient::execute(uint64_t thread_id) {
@@ -118,12 +134,52 @@ void LogClient::execute(uint64_t thread_id) {
     std::string payload(payload_size, 'X');
     uint64_t cnt = 0;
     while (experiment_status()) {	    
- 	uint32_t idx = append(payload);
+ 	uint32_t idx = append(payload); // dummy(payload); //append(payload);
         spdlog::debug("The entry was given index: {}", idx);
 	cnt += 1;
     }
     spdlog::critical("Total number of sent appends (NOT necessarily successful): {} from thread {}", cnt, thread_id);
 }
+
+uint32_t LogClient::dummy(std::string entry) { // TODO need to implement retry timeout
+     (void) entry;
+     spdlog::debug("At the beginning of the append!");
+     uint32_t nonce = generate_nonce();
+     if (collect_stats) {
+         stat->startLatTimer(nonce); // TODO: Could do without the map?
+     }
+
+     // Create packet buffer which will be sent  
+     uint64_t allocated_packet_size = 150;
+     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+     memset(packet.get(), 'x', allocated_packet_size);
+     packet[allocated_packet_size - 1] = '\0';
+     net->send_packet(std::move(packet), allocated_packet_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);
+    
+     bool got_quorum = false;
+     /*
+     std::chrono::nanoseconds MAX_BATCH_WAIT_NS(100); // TODO PUT IN YAML
+     auto wait_start = std::chrono::steady_clock::now();
+     auto wait_end = wait_start + MAX_BATCH_WAIT_NS;
+     */
+     while (!got_quorum/* && std::chrono::steady_clock::now() < wait_end*/) {
+        char* recv_ptr = net->recv_packet();
+	if (!recv_ptr) {
+	    continue;
+	}
+	got_quorum = true;
+	if (end_thread) {
+	    break;
+	}
+     }
+
+     if(collect_stats && stat->endLatTimer(nonce)) {
+     	   stat->addOp();
+           spdlog::debug("Successfully got index for nonce {}", nonce);
+     }
+     return 1;  
+}
+
 
 /* REAL Custom function */
 uint32_t LogClient::append(std::string entry) { // TODO need to implement retry timeout
@@ -132,7 +188,9 @@ uint32_t LogClient::append(std::string entry) { // TODO need to implement retry 
      
      uint32_t ret_idx = 0;
      uint32_t nonce = generate_nonce();
-     stat->startLatTimer(nonce); // TODO: Could do without the map?
+     if (collect_stats) {
+         stat->startLatTimer(nonce); // TODO: Could do without the map?
+     }
     
      // Create protobuf content  --> TODO: Remove
      std::string output;
@@ -220,13 +278,12 @@ uint32_t LogClient::append(std::string entry) { // TODO need to implement retry 
 	spdlog::debug("Got to before the map erasure!");
 	append_ack_map.clear();
 	spdlog::debug("After the map erasure");
-        //free(recv_ptr);
      }
 
-     if(ret_idx != 0 && stat->endLatTimer(nonce)) {
+     if(collect_stats && ret_idx != 0 && stat->endLatTimer(nonce)) {
      	   stat->addOp();
+           spdlog::debug("Successfully got index for nonce {}", nonce);
      }
-     spdlog::debug("Successfully got index for nonce {}", nonce);
      return ret_idx;  
 }
 
@@ -366,27 +423,20 @@ bool LogClient::trim(uint64_t idx) {
 
 /* Experiment Logistics */
 void LogClient::wait_to_finish() {
+    collect_stats = true;
     std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);
-    spdlog::debug("End thread: {}", end_thread);
-    end_thread = true;
+    spdlog::debug("Collecting statistics!");
     stat->getAvgLatency();
     stat->getThroughput(max_duration);
     stat->getTotalOps();
     stat->exportResultsToJson();
-
+    collect_stats = false;
 } 
 
 void LogClient::wait_to_warmup() {
     std::chrono::seconds sleep_duration(warm_up);
     std::this_thread::sleep_for(sleep_duration);
-    spdlog::debug("End thread: {}", end_thread);
-    end_thread = true;
-    stat->getAvgLatency();
-    stat->getThroughput(max_duration);
-    stat->getTotalOps();
-    stat->exportResultsToJson();
-
 }
 
 void LogClient::wait_to_cooldown() {
@@ -394,11 +444,6 @@ void LogClient::wait_to_cooldown() {
     std::this_thread::sleep_for(sleep_duration);
     spdlog::debug("End thread: {}", end_thread);
     end_thread = true;
-    stat->getAvgLatency();
-    stat->getThroughput(max_duration);
-    stat->getTotalOps();
-    stat->exportResultsToJson();
-
 } 
 
 bool LogClient::experiment_status() {

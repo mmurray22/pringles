@@ -48,11 +48,15 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
 
     # Calculate experiment duration, adding a delay for servers (Feature 3)
     exp_duration = exp_params['experiment_duration']
+    warm_up = exp_params['warm_up']
+    cool_down = exp_params['cool_down']
+
+
     if entity_type == 'server':
         # Servers run longer than the client to ensure no early termination
-        final_duration = exp_duration + SERVER_START_DELAY
+        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY
     else:
-        final_duration = exp_duration
+        final_duration = exp_duration + warm_up + cool_down
 
     # Initialize the base YAML structure
     yaml_config = {
@@ -98,7 +102,13 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'packet_types': [{'ips': client_ips}],
             
             # packet_types_macs holds only the quoted MACs
-            'packet_types_macs': [{'macs': client_macs}] 
+            'packet_types_macs': [{'macs': client_macs}],
+
+            # warm up time
+            'warm_up': warm_up,
+
+            # cool down time
+            'cool_down': cool_down
         })
     
     # --- Storage Server Specific Fields ---
