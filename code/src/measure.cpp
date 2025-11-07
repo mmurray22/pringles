@@ -11,7 +11,7 @@ Stats::Stats(uint64_t batch_size, bool batch_on, std::string json_name, uint64_t
     this->batch_size = batch_size;
     this->batch_on = batch_on;
     this->json_name = json_name;
-    this->thread_id = thread_id;
+    this->thread_id = thread_id; //default
     this->latencies = {};
     this->numOps = 0;
 }

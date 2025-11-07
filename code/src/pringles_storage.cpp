@@ -26,7 +26,7 @@
 #include <fcntl.h>
 #include <stdexcept>
 #include <cstring>
-
+#include <sched.h>
 
 LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
    YAML::Node config = YAML::LoadFile(input_file);
@@ -50,7 +50,7 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
 				   get_packet_types(config),
 				   get_pkt_eth_types(),
 				   mac_addrs,
-				   1, true); // TODO Need to do something else here??? Storage server could be faster
+				   1, false); // TODO Need to do something else here??? Storage server could be faster
     set_spdlog_level(get_log_level(config));
     spdlog::info("Pringles Client: Only Append being tested");
     this->shard_id = get_shard_id(config);
@@ -60,9 +60,25 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
  
     this->stor = StorageType(get_storage_type(config));
     this->ssid = storage_id;
-    
+   
+    // TODO ERROR NOT THREAD SAFE FOR MULTIPLE THREADS 
     for (uint64_t i = 0; i < 1; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
         recv_threads.emplace_back(std::thread(&LogStorage::pringles_recv_queue, this));	
+
+	pthread_t native_handle = recv_threads.back().native_handle();
+
+        // Create a CPU set and add the desired core
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(i, &cpuset); // Pin to core 'i'
+
+        // Set thread affinity
+        int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
+        if (result != 0) {
+            std::cerr << "Error setting thread affinity for thread " << recv_threads.back().get_id() << ": " << result << std::endl;
+        } else {
+            std::cout << "Thread " << recv_threads.back().get_id() << " pinned to core " << i << std::endl;
+        } 
     }
 
     //this->recv_thread = std::thread(&LogStorage::pringles_recv_queue, this);
@@ -128,7 +144,8 @@ void LogStorage::pringles_recv_queue() {
 	if (end_thread) {
 	    break;
 	}
-	char* recv_ptr = net->read_from_recv_queue(); // will receive the full packet, including Eth header
+        char* recv_ptr = net->recv_packet();
+	//char* recv_ptr = net->read_from_recv_queue(); // will receive the full packet, including Eth header
 	if (!recv_ptr) {
 	    continue;
 	}
@@ -144,7 +161,7 @@ void LogStorage::pringles_recv_queue() {
     	        continue;		
 	    } 
 	    spdlog::debug("Payload size: {} and index {} and cid {} and nonce {} and num_entries {}", append_entry->payload_size, append_entry->g_idx, append_entry->cid, append_entry->nonce, append_entry->num_entries);
-	    size_t offset = sizeof(struct ethhdr) + sizeof(struct iphdr) + get_size_of_hdr(PacketType::append);
+	    size_t offset = sizeof(struct ethhdr) + sizeof(struct iphdr) + size_of_hdr;
 	    size_t reply_pkt_size = size_of_hdr + append_entry->payload_size * append_entry->num_entries;
 	    size_t reply_pkt_offset = size_of_hdr;
      	    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
@@ -169,9 +186,9 @@ void LogStorage::pringles_recv_queue() {
 	    }
 
 	    //spdlog::debug("For nonce {}, we got idx {}, which got {} matching acks and {} acks overall", append_entry->nonce, append_entry->g_idx, min_matching_acks, append_ack_map[append_entry->nonce].first);
-	    net->add_to_send_queue(std::move(reply_packet), static_cast<uint64_t>(PacketType::append), reply_pkt_size);
+            net->send_packet(std::move(reply_packet), reply_pkt_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);
+	    //net->add_to_send_queue(std::move(reply_packet), static_cast<uint64_t>(PacketType::append), reply_pkt_size);
 	}
-	free(recv_ptr);
     }
     spdlog::critical("RECEIVED {} append packets and REPLIED to {} append packets on storage server {}", total_cnt, cnt, gettid());
 }

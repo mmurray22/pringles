@@ -1,7 +1,7 @@
 [network_setup]
 client_ip = "10.10.1.2"
 server_ips = ["10.10.1.3", "10.10.1.4", "10.10.1.5"]
-network_interface = "enp3s0f0"
+network_interface = "enp3s0f0" # TODO: MAKE THIS A LIST FOR CLIENTS AND SERVERS!!!!
 ssh_key = "/proj/ove-PG0/murray/cloudlab"
 ssh_user = "murray22" # Added for complete SSH command
 
@@ -12,7 +12,9 @@ run_setup_script = "False"
 
 [experiment_parameters]
 log_level = 6
-experiment_duration = 15 # seconds
+warm_up = 10 # seconds
+cool_down = 10 # seconds
+experiment_duration = 40 # seconds
 socket_type = "RAW" # or "UDP"
 message_size = 100 # 100 # bytes
 num_client_threads = 1
@@ -28,11 +30,11 @@ sequencer_type = 0
 storage_server_type = 0 
 
 [routing]
-list_client_dest_ips = ["10.10.1.2", "10.10.1.3", "10.10.1.5"]
+list_client_dest_ips = ["10.10.1.3", "10.10.1.4", "10.10.1.5"]
 list_storage_server_dest_ips = ["10.10.1.2"]
-client_dest_macs = ["a0:36:9f:2a:5f:10", "a0:36:9f:2a:5e:a0", "a0:36:9f:28:fa:78"]
-server_dest_macs = ["a0:36:9f:28:f9:70"] # TODO Change name this is so confusing
+client_dest_macs = ["a0:36:9f:28:f1:6c", "a0:36:9f:2a:5f:10", "a0:36:9f:2a:5c:c4"]
+server_dest_macs = ["a0:36:9f:2a:5c:38"] # TODO Change name this is so confusing
 
 [[experiment]]
-num_client_threads = 1
-json_name = "two_clients_batch"
+num_client_threads = 8
+json_name = "eight_client"

@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <utility>
 #include <map>
+#include <unordered_map>
 
 #include "concurrentqueue.h"
 #include "readerwriterqueue.h"
@@ -91,6 +92,10 @@ class Network {
         bool remove_pkt_type(uint64_t pkt_type);
         
     private:
+	std::unordered_map<uint64_t, struct sockaddr_ll> sin_map;
+	std::map<uint64_t, std::vector<std::unique_ptr<struct ethhdr>>> eth_hdr_map; 
+
+
         // checksum for IP packet header construction
         unsigned short checksum(unsigned short *buf, int nwords);         
 
@@ -132,7 +137,7 @@ class Network {
         /* Send Packet queues
          * Assumption: All packets in the queue are of size > 0
          */
-        std::map<uint64_t, std::queue<std::pair<uint64_t, std::unique_ptr<char[]>>>> send_pkt_qs;
+        std::unordered_map<uint64_t, std::queue<std::pair<uint64_t, std::unique_ptr<char[]>>>> send_pkt_qs;
         std::mutex send_pkt_qs_mutex;
         
         
@@ -141,14 +146,14 @@ class Network {
         std::mutex rcv_queue_mutex;
 
 	std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip;
-	std::map<uint64_t, std::vector<int>> pkt_type_to_fd;
+	std::unordered_map<uint64_t, std::vector<int>> pkt_type_to_fd;
 
 	std::vector<std::array<uint8_t,6>> mac_addrs;
 	//uint8_t mac_array[6]; // TODO add vector of these
 
         uint64_t num_pkt_type = 0;
 	std::unique_ptr<struct iphdr> cli_send_ip; 
-	std::map<int, std::shared_ptr<struct addrinfo>> fd_to_it;
+	std::unordered_map<int, std::shared_ptr<struct addrinfo>> fd_to_it;
         
         bool pkts_in_queue();
         bool run_threads; 

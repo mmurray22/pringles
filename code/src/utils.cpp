@@ -147,6 +147,16 @@ uint64_t get_experiment_duration(YAML::Node config) {
     return config["experiment_duration"].as<uint64_t>();
 }
 
+/* Warm up */
+uint64_t get_warm_up(YAML::Node config) {
+    return config["warm_up"].as<uint64_t>();
+}
+
+/* Cool down */
+uint64_t get_cool_down(YAML::Node config) {
+    return config["cool_down"].as<uint64_t>();
+}
+
 uint64_t get_payload_size(YAML::Node config) {
     return config["payload_size"].as<uint64_t>();
 }

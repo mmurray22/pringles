@@ -30,8 +30,7 @@
 #include "yaml-cpp/yaml.h"
 #define RECEIVE_PORT 3149
 
-LogClient::LogClient(std::string input_file) {
-
+LogClient::LogClient(std::string input_file, uint64_t thread_id) {
    // Get packet types for sending/receiving
    YAML::Node config = YAML::LoadFile(input_file);
    num_pkt_types = get_num_pkt_types(config);
@@ -88,8 +87,10 @@ LogClient::LogClient(std::string input_file) {
     this->payload_size = get_payload_size(config);
     this->batch_size = num_work_threads * payload_size;
     spdlog::debug("Batch size: {}", batch_size);
-    this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), 0); // TODO thread_id?
+    this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id);
     this->max_duration = get_experiment_duration(config);
+    this->warm_up = get_warm_up(config);
+    this->cool_down = get_cool_down(config);
     
     this->duration_thread = std::thread(&LogClient::wait_to_finish, this);
     spdlog::debug("We're not finishing the constructor are we?");
@@ -369,6 +370,35 @@ void LogClient::wait_to_finish() {
     std::this_thread::sleep_for(sleep_duration);
     spdlog::debug("End thread: {}", end_thread);
     end_thread = true;
+    stat->getAvgLatency();
+    stat->getThroughput(max_duration);
+    stat->getTotalOps();
+    stat->exportResultsToJson();
+
+} 
+
+void LogClient::wait_to_warmup() {
+    std::chrono::seconds sleep_duration(warm_up);
+    std::this_thread::sleep_for(sleep_duration);
+    spdlog::debug("End thread: {}", end_thread);
+    end_thread = true;
+    stat->getAvgLatency();
+    stat->getThroughput(max_duration);
+    stat->getTotalOps();
+    stat->exportResultsToJson();
+
+}
+
+void LogClient::wait_to_cooldown() {
+    std::chrono::seconds sleep_duration(cool_down);
+    std::this_thread::sleep_for(sleep_duration);
+    spdlog::debug("End thread: {}", end_thread);
+    end_thread = true;
+    stat->getAvgLatency();
+    stat->getThroughput(max_duration);
+    stat->getTotalOps();
+    stat->exportResultsToJson();
+
 } 
 
 bool LogClient::experiment_status() {

@@ -506,6 +506,8 @@ def plot_results(local_target_dir):
     plt.ylabel('Aggregate Throughput')
     plt.title(f'Aggregate Throughput vs. Client Count\nExperiment: {os.path.basename(local_target_dir)}')
     plt.grid(True, linestyle='--', alpha=0.6)
+    plt.xlim(xmin=0) # NEW
+    plt.ylim(ymin=0) # NEW
     plt.xticks(num_clients_list) # Force X-ticks to match data points
     plot_filepath_1 = os.path.join(local_target_dir, "throughput_vs_clients.png")
     plt.savefig(plot_filepath_1)
@@ -520,6 +522,8 @@ def plot_results(local_target_dir):
     plt.ylabel('Total Average Latency')
     plt.title(f'Total Average Latency vs. Client Count\nExperiment: {os.path.basename(local_target_dir)}')
     plt.grid(True, linestyle='--', alpha=0.6)
+    plt.xlim(xmin=0) # NEW
+    plt.ylim(ymin=0) # NEW
     plt.xticks(num_clients_list) # Force X-ticks to match data points
     plot_filepath_2 = os.path.join(local_target_dir, "latency_vs_clients.png")
     plt.savefig(plot_filepath_2)
@@ -529,7 +533,8 @@ def plot_results(local_target_dir):
     
     # --- Plot 3: Aggregate Throughput vs. Total Average Latency (throughput_vs_latency.png) ---
     plt.figure(figsize=(8, 6))
-    plt.scatter(tput_list, latency_list, marker='o', color='green')
+    plt.plot(tput_list, latency_list, marker='o', linestyle='-', color='green')
+    #plt.scatter(tput_list, latency_list, marker='o', color='green')
     # Annotate each point with the number of clients
     for i, clients in enumerate(num_clients_list):
         plt.annotate(f'{clients} Cli', (tput_list[i], latency_list[i]), 
@@ -539,6 +544,8 @@ def plot_results(local_target_dir):
     plt.ylabel('Total Average Latency')
     plt.title(f'Throughput-Latency Tradeoff\nExperiment: {os.path.basename(local_target_dir)}')
     plt.grid(True, linestyle='--', alpha=0.6)
+    plt.xlim(xmin=0) # NEW
+    plt.ylim(ymin=0) # NEW
     plot_filepath_3 = os.path.join(local_target_dir, "throughput_vs_latency.png")
     plt.savefig(plot_filepath_3)
     plt.close()

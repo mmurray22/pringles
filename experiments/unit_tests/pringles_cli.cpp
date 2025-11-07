@@ -19,6 +19,11 @@
 #include "trace.h"
 #include "pringles_client.h"
 
+void run_client(std::string input_file, uint64_t i) {
+    LogClient pringles_cli = LogClient(input_file, i);
+    spdlog::debug("Pringles client created and started!");
+    pringles_cli.execute(i);
+}
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -28,9 +33,14 @@ int main(int argc, char* argv[]) {
     YAML::Node config = YAML::LoadFile(input_file);
     set_spdlog_level(get_log_level(config));
 
-    LogClient pringles_cli = LogClient(input_file);
-    spdlog::debug("Pringles client created and started!");
-    pringles_cli.execute(0);
+    std::vector<std::thread> cli_threads = {};
+    uint64_t num_work_threads = get_num_client_threads(config);
+    for (uint64_t i = 0; i < num_work_threads /*TODO YAML*/; i++) {
+        cli_threads.emplace_back(std::thread(&run_client, input_file, i));	
+    }
+    for (uint64_t i = 0; i < cli_threads.size(); i++) {
+        cli_threads[i].join();
+    }
     return 0;
 }
 
