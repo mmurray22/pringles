@@ -19,6 +19,22 @@ Stats::Stats(uint64_t batch_size, bool batch_on, std::string json_name, uint64_t
 Stats::~Stats() {
 }
 
+// Microbenchmark: Send call
+/*double Stats::getStartSendTo() {
+    auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+
+    // 3. Cast the duration to milliseconds and get the count as uint64_t
+    return std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+}
+
+void Stats::getSendToDuration(double start_time) {
+    auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+    double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+    double dur = end_time_s - start_time;
+    sendto.push_back(dur);
+}*/
+
+
 // Latency
 void Stats::startLatTimer(uint64_t nonce) {
     auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();

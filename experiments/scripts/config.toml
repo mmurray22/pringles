@@ -7,15 +7,15 @@ ssh_key = "/proj/ove-PG0/murray/cloudlab"
 ssh_user = "murray22" # Added for complete SSH command
 
 [program_paths]
-path_client = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/cli"
-path_server = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/stor"
+path_client = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_cli"
+path_server = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_stor"
 run_setup_script = "False"
 
 [experiment_parameters]
 log_level = 6
 warm_up = 5 # seconds
 cool_down = 5 # seconds
-experiment_duration = 20 # seconds
+experiment_duration = 50 # seconds
 socket_type = "RAW" # or "UDP"
 message_size = 100 # 100 # bytes
 num_client_threads = 1
@@ -40,9 +40,9 @@ server_dest_macs = ["0c:42:a1:dd:58:94"] # TODO Change name this is so confusing
 num_client_threads = 1
 json_name = "one_client"
 
-[[experiment]]
-num_client_threads = 4
-json_name = "four_client"
+#[[experiment]]
+#num_client_threads = 4
+#json_name = "four_client"
 #
 #[[experiment]]
 #num_client_threads = 6
