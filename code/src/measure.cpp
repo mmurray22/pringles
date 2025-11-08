@@ -30,13 +30,28 @@ void Stats::startLatTimer(uint64_t nonce) {
     lat_map.insert(std::pair<uint64_t, double>(nonce, start_time_s));
 }
 
+double Stats::getStartLat() {
+    auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+
+    // 3. Cast the duration to milliseconds and get the count as uint64_t
+    return std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+}
+
+void Stats::getDuration(double start_time) {
+    auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+    double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+    double dur = end_time_s - start_time;
+    latencies.push_back(dur);
+}
+
+
 bool Stats::endLatTimer(uint64_t nonce) {
     if (lat_map.count(nonce) > 0) {
 	auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
         double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
         std::unique_lock<std::mutex> lock(lat_map_lock);
         double dur = end_time_s - lat_map[nonce];
-	spdlog::debug("For nonce {}, started {}, ended {}, for duration {}", nonce, lat_map[nonce], end_time_s, dur);
+	//spdlog::debug("For nonce {}, started {}, ended {}, for duration {}", nonce, lat_map[nonce], end_time_s, dur);
 	latencies.push_back(dur);
 	lat_map.erase(nonce);
 	return true;
@@ -46,13 +61,13 @@ bool Stats::endLatTimer(uint64_t nonce) {
 
 double Stats::getAvgLatency() {
     final_avg_latency = std::accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
-    spdlog::critical("Average latency: {}s", final_avg_latency);
+    spdlog::critical("Average latency: {}ms", final_avg_latency*1000);
     return final_avg_latency;
 }
 
 //Throughput
 void Stats::addOp() {
-    std::lock_guard<std::mutex> lock(num_ops_lock);
+    //std::lock_guard<std::mutex> lock(num_ops_lock);
     numOps += 1;
 }
 

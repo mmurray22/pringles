@@ -1,8 +1,9 @@
 #include <mutex>
 #include <vector>
 #include <chrono>
-#include <map>
+#include <unordered_map>
 #include <string>
+#include <atomic>
 
 class Stats {
 	public:
@@ -13,6 +14,10 @@ class Stats {
 	    void startLatTimer(uint64_t nonce);
 	    bool endLatTimer(uint64_t nonce);
 	    uint64_t get_duration();
+
+	    double getStartLat();
+            void getDuration(double start_time);
+
 
 	    //Throughput
 	    void addOp();
@@ -25,11 +30,11 @@ class Stats {
 	private:
 	    uint64_t thread_id;
 
-	    uint64_t numOps;
-	    std::mutex num_ops_lock;
+	    std::atomic<uint64_t> numOps;
+	    //std::mutex num_ops_lock;
 	    
             std::mutex lat_map_lock;	    
-	    std::map<int64_t, double> lat_map;
+	    std::unordered_map<int64_t, double> lat_map;
 	    std::vector<double> latencies;
 
 	    // Final values
