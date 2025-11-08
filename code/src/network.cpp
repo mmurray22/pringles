@@ -336,28 +336,12 @@ void Network::run_recv(int s_fd) {
             continue;
         }
 
-        //std::unique_ptr<char[]> buf = std::make_unique<char[]>(norm_buf, num_bytes);  
-	
-	
-	//memcpy(buf.get(), norm_buf, MAX_PACKET_SIZE);
-	//
-	//spdlog::debug("Recv number of bytes: {}", numbytes);
-	/*struct ethhdr *eth = (struct ethhdr *)(buf.get());
-	printf("\nEthernet Header\n");
-	printf("\t|-Source Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);
-	printf("\t|-Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
-	printf("\t|-Protocol : %d\n",eth->h_proto);*/
-	
-	//rcv_pkt.emplace(std::move(buf));
-	//rcv_pkt.emplace(norm_buf);
 	bool succeeded =  rcv_pkt.try_enqueue(norm_buf);
 	while(!succeeded & !terminate) {
 	    succeeded = rcv_pkt.try_enqueue(norm_buf);
 	}
 	cnt += 1;
-	//memset(norm_buf, 0, MAX_PACKET_SIZE);
     }
-    //free(norm_buf);
     spdlog::debug("Done with the recv thread!");
     spdlog::critical("Network received this many GENERIC packets: {} for thread {}", cnt, gettid());
 }
@@ -578,9 +562,9 @@ bool Network::send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len,
         
         /* Running a raw socket based protocol */
         std::string ip_addr = pkt_type_to_ip[pkt_type][i];
-        spdlog::debug("IP Address: {}", ip_addr);
+        //spdlog::debug("IP Address: {}", ip_addr);
         size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
-        spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
+        //spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
 
         std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size); // TODO phase this out eventually
         
@@ -590,8 +574,7 @@ bool Network::send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len,
         /*Create IP header*/
         cli_send_ip.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
         cli_send_ip.get()->daddr = inet_addr(ip_addr.c_str()); // destination address
-        cli_send_ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header^
-
+        cli_send_ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header
         memcpy(packet.get() + sizeof(struct ethhdr), cli_send_ip.get(), sizeof(struct iphdr));
         memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet.get()), pkt_len);
 
@@ -614,7 +597,7 @@ bool Network::send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len,
 	    sent_all = false;
             continue;
         }
-        spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
+        //spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
     }
     return sent_all;
 }

@@ -6,7 +6,6 @@
  * - Path to yaml file 
  */
 
-#include "network.h"
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -41,6 +40,7 @@
 #include "spdlog/spdlog.h"
 #include "utils.h"
 #include "measure.h"
+#include "network.h"
 
 #define ETH_APPEND_REQ 0x0860
 
@@ -49,51 +49,42 @@ std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 bool end_thread = false;
 
-void custom_client(std::unique_ptr<Network> net, std::string json_name, uint64_t thread_id, uint64_t batch_size, bool batch_on, uint64_t max_duration) {
-    spdlog::critical("Network Client Thread starting with TID = {}", gettid());
-    std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
-    spdlog::info("Simple Net Client!");
-    uint32_t nonce = 1;
-
-    uint64_t allocated_packet_size = 4000;
-    /*char* allocated_packet = std::malloc(allocated_packet_size);
-    memset(allocated_packet, 'x', allocated_packet_size);*/
+void custom_server(std::unique_ptr<Network> net, std::string json_name, uint64_t thread_id, uint64_t batch_size, bool batch_on) {
+    spdlog::critical("Network Storage Thread starting with TID = {}", gettid());
+    (void) json_name;
+    (void) thread_id;
+    (void) batch_size;
+    (void) batch_on;
+    //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
+    spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
     while (!end_thread) {
-	//uint32_t nonce = generate_nonce();
-
-     	// Create packet buffer which will be sent  
-
-     	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
-
-     	//packet[allocated_packet_size - 1] = '\0';
-	
-        double start_time = stat->getStartLat();
-	net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ);
-
      	bool got_quorum = false;
         while (!got_quorum) {
-	    if (end_thread) {
-                break;
-	    }
+	     if (end_thread) {
+	         break;
+	     }
+
             char* recv_ptr = net->recv_packet();
 	    if (!recv_ptr) {
 	        continue;
 	    }
+	    //spdlog::debug("Made it here!");    
 	    struct ethhdr* eth = (struct ethhdr*)recv_ptr;
    	    if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
-		stat->getDuration(start_time);
-		stat->addOp();
 	        got_quorum = true;
+		uint64_t allocated_packet_size = 150;
+     		std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+     		memset(packet.get(), 'x', allocated_packet_size);
+     		packet[allocated_packet_size - 1] = '\0';
+     		net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ);
 	    }
-        }
-	nonce += 1;
-    }
-    spdlog::debug("Made it out of the loop!");
-    stat->getAvgLatency();
-    stat->getThroughput(max_duration);
-    stat->getTotalOps();
-    stat->exportResultsToJson();
+	}
 
+	// Create packet buffer which will be sent  
+	if (end_thread) {
+	    break;
+	}
+     	    }
     net->done();
 }
 
@@ -101,6 +92,8 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         spdlog::critical("Not enough arguments provided! Need YAML file");
     }
+
+    spdlog::critical("Network Main Thread starting with TID = {}", gettid());
     std::string input_file = std::string(argv[1]);
     YAML::Node config = YAML::LoadFile(input_file);
     std::vector<int> eth_types = {ETH_APPEND_REQ};
@@ -122,12 +115,13 @@ int main(int argc, char* argv[]) {
 				   get_packet_types(config),
 				   eth_types,
 				   mac_addrs,
-				   1, false); // TODO Need to do something else here??? Storage server could be faster
+				   1, false); 
     set_spdlog_level(get_log_level(config));
-    spdlog::info("Simple Network: Sending/Receiving to remote host");
-    std::thread client_thread(&custom_client, std::move(net), get_json_name(config), 0, get_batch_size(config), get_batch_on(config), get_experiment_duration(config));
+    spdlog::info("Simple Network server");
+    std::string json_name = "dummy";
+    std::thread server_thread(custom_server, std::move(net), json_name, 0, get_batch_size(config), get_batch_on(config));
 
-    pthread_t native_handle = client_thread.native_handle();
+    pthread_t native_handle = server_thread.native_handle();
 
     // Create a CPU set and add the desired core
     cpu_set_t cpuset;
@@ -137,14 +131,16 @@ int main(int argc, char* argv[]) {
     // Set thread affinity
     int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
     if (result != 0) {
-        std::cerr << "Error setting thread affinity for thread " << client_thread.get_id() << ": " << result << std::endl;
+        std::cerr << "Error setting thread affinity for thread " << server_thread.get_id() << ": " << result << std::endl;
     } 
-    spdlog::debug("Going to wait to sleep {}", get_experiment_duration(config));
-    std::chrono::seconds sleep_duration(get_experiment_duration(config));
+
+    uint64_t max_duration = get_experiment_duration(config) + 5;
+
+    std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);
     end_thread = true;
-    spdlog::debug("Thread done!");
-    client_thread.join();
+
+    server_thread.join();
     return 0;
 }
 

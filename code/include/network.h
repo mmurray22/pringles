@@ -93,7 +93,7 @@ class Network {
         
     private:
 	std::unordered_map<uint64_t, struct sockaddr_ll> sin_map;
-	std::map<uint64_t, std::vector<std::unique_ptr<struct ethhdr>>> eth_hdr_map; 
+	std::unordered_map<uint64_t, std::vector<std::unique_ptr<struct ethhdr>>> eth_hdr_map; 
 
 
         // checksum for IP packet header construction
