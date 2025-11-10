@@ -43,6 +43,7 @@
 #include "measure.h"
 
 #define ETH_APPEND_REQ 0x0860
+#define ETH_APPEND_RESP 0x0880
 
 const uint64_t MAX_WAIT_TIME = 100;
 std::string sequence_pkt_type = "sequencer";
@@ -83,7 +84,7 @@ void custom_client(std::string input_file, uint64_t thread_id) {
     spdlog::info("Simple Net Client!");
     uint32_t nonce = 1;
 
-    uint64_t allocated_packet_size = 4000;
+    uint64_t allocated_packet_size = 150;
     /*char* allocated_packet = std::malloc(allocated_packet_size);
     memset(allocated_packet, 'x', allocated_packet_size);*/
     while (!end_thread) {
@@ -96,7 +97,7 @@ void custom_client(std::string input_file, uint64_t thread_id) {
      	//packet[allocated_packet_size - 1] = '\0';
 	
         double start_time = stat->getStartLat();
-	net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ);
+	net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, get_switch_mac(config), get_switch_ip(config));
 
      	bool got_quorum = false;
         while (!got_quorum) {
@@ -108,7 +109,8 @@ void custom_client(std::string input_file, uint64_t thread_id) {
 	        continue;
 	    }
 	    struct ethhdr* eth = (struct ethhdr*)recv_ptr;
-   	    if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
+   	    if (ntohs(eth->h_proto) == ETH_APPEND_RESP) {
+	        //spdlog::debug("Received a packet!");
 		stat->getDuration(start_time);
 		stat->addOp();
 	        got_quorum = true;

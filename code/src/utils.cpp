@@ -196,6 +196,101 @@ std::vector<std::array<uint8_t, 6>> get_dst_mac_addrs(YAML::Node config) {
     return ret;    
 }
 
+std::array<uint8_t,6> get_switch_mac(YAML::Node config) {
+    unsigned int bytes[6];
+    std::string mac = config["switch_mac"].as<std::string>();
+    spdlog::debug("MAC addr: {}", mac);
+    // Use sscanf to parse the hex values separated by colons.
+    // %x reads a hexadecimal integer.
+    int result = sscanf(mac.c_str(), "%x:%x:%x:%x:%x:%x",
+                        &bytes[0], &bytes[1], &bytes[2],
+                        &bytes[3], &bytes[4], &bytes[5]);
+    uint8_t mac_array[6];
+    if (result == 6) {
+        // Cast the parsed unsigned ints back to uint8_t
+        for (int i = 0; i < 6; ++i) {
+            mac_array[i] = static_cast<uint8_t>(bytes[i]);
+        }
+    }	
+    std::array<uint8_t, 6> mac_final_form;
+    
+    // Use std::copy to copy 6 elements from the source C-style array
+    // into the destination std::array.
+    std::copy(
+        std::begin(mac_array), // Start of source array
+        std::end(mac_array),   // End of source array
+        mac_final_form.begin() // Start of destination std::array
+    );
+    return mac_final_form;
+}
+
+std::string get_switch_ip(YAML::Node config) {
+    return config["switch_ip"].as<std::string>();
+}
+
+std::array<uint8_t,6> get_cli_mac(YAML::Node config) {
+    unsigned int bytes[6];
+    std::string mac = config["cli_mac"].as<std::string>();
+    spdlog::debug("MAC addr: {}", mac);
+    // Use sscanf to parse the hex values separated by colons.
+    // %x reads a hexadecimal integer.
+    int result = sscanf(mac.c_str(), "%x:%x:%x:%x:%x:%x",
+                        &bytes[0], &bytes[1], &bytes[2],
+                        &bytes[3], &bytes[4], &bytes[5]);
+    uint8_t mac_array[6];
+    if (result == 6) {
+        // Cast the parsed unsigned ints back to uint8_t
+        for (int i = 0; i < 6; ++i) {
+            mac_array[i] = static_cast<uint8_t>(bytes[i]);
+        }
+    }	
+    std::array<uint8_t, 6> mac_final_form;
+    
+    // Use std::copy to copy 6 elements from the source C-style array
+    // into the destination std::array.
+    std::copy(
+        std::begin(mac_array), // Start of source array
+        std::end(mac_array),   // End of source array
+        mac_final_form.begin() // Start of destination std::array
+    );
+    return mac_final_form;
+}
+
+std::string get_cli_ip(YAML::Node config) {
+    return config["cli_ip"].as<std::string>();
+}
+
+std::array<uint8_t,6> get_stor_mac(YAML::Node config) {
+    unsigned int bytes[6];
+    std::string mac = config["stor_mac"].as<std::string>();
+    spdlog::debug("MAC addr: {}", mac);
+    // Use sscanf to parse the hex values separated by colons.
+    // %x reads a hexadecimal integer.
+    int result = sscanf(mac.c_str(), "%x:%x:%x:%x:%x:%x",
+                        &bytes[0], &bytes[1], &bytes[2],
+                        &bytes[3], &bytes[4], &bytes[5]);
+    uint8_t mac_array[6];
+    if (result == 6) {
+        // Cast the parsed unsigned ints back to uint8_t
+        for (int i = 0; i < 6; ++i) {
+            mac_array[i] = static_cast<uint8_t>(bytes[i]);
+        }
+    }	
+    std::array<uint8_t, 6> mac_final_form;
+    
+    // Use std::copy to copy 6 elements from the source C-style array
+    // into the destination std::array.
+    std::copy(
+        std::begin(mac_array), // Start of source array
+        std::end(mac_array),   // End of source array
+        mac_final_form.begin() // Start of destination std::array
+    );
+    return mac_final_form;
+}
+
+std::string get_stor_ip(YAML::Node config) {
+    return config["stor_ip"].as<std::string>();
+}
 
 uint64_t get_num_client_threads(YAML::Node config) {
     return config["num_client_threads"].as<uint64_t>();

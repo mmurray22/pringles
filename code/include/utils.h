@@ -47,6 +47,16 @@ uint64_t get_stor_id(YAML::Node config);
 
 std::string get_json_name(YAML::Node config);
 uint64_t get_num_failures(YAML::Node config);
+
+std::array<uint8_t,6> get_switch_mac(YAML::Node config);
+std::string get_switch_ip(YAML::Node config);
+std::array<uint8_t,6> get_cli_mac(YAML::Node config);
+std::string get_cli_ip(YAML::Node config);
+std::array<uint8_t,6> get_stor_mac(YAML::Node config);
+std::string get_stor_ip(YAML::Node config);
+
+
+
 /*INACTIVE*/
 std::string get_string_entry_payload(YAML::Node config);
 uint64_t get_read_timeout(YAML::Node config);
