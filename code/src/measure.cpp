@@ -77,7 +77,8 @@ bool Stats::endLatTimer(uint64_t nonce) {
 
 double Stats::getAvgLatency() {
     final_avg_latency = std::accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
-    spdlog::critical("Average latency: {}ms", final_avg_latency*1000);
+    final_avg_latency *= 1000;
+    spdlog::critical("Average latency: {}ms", final_avg_latency);
     return final_avg_latency;
 }
 

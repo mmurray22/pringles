@@ -42,5 +42,5 @@ class Stats {
 	    bool batch_on; // Boolean indicating whether batch is on
 	    std::string json_name; // Filename for the stats json
 	    double final_throughput; // ops/sec - total throughput for this thread
-	    double final_avg_latency; // seconds - total avg latency
+	    double final_avg_latency; // milliseconds - total avg latency
 };

@@ -40,14 +40,26 @@ server_dest_macs = ["0c:42:a1:dd:58:94"] # TODO Change name this is so confusing
 num_client_threads = 1
 json_name = "one_client"
 
-#[[experiment]]
-#num_client_threads = 4
-#json_name = "four_client"
-#
-#[[experiment]]
-#num_client_threads = 6
-#json_name = "six_client"
-#
-#[[experiment]]
-#num_client_threads = 8
-#json_name = "eight_client"
+[[experiment]]
+num_client_threads = 4
+json_name = "four_client"
+
+[[experiment]]
+num_client_threads = 8
+json_name = "eight_client"
+
+[[experiment]]
+num_client_threads = 12
+json_name = "twelve_client"
+
+[[experiment]]
+num_client_threads = 16
+json_name = "sixteen_client"
+
+[[experiment]]
+num_client_threads = 20
+json_name = "twozero_client"
+
+[[experiment]]
+num_client_threads = 24
+json_name = "twofour_client"

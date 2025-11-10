@@ -49,7 +49,35 @@ std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 bool end_thread = false;
 
-void custom_client(std::unique_ptr<Network> net, std::string json_name, uint64_t thread_id, uint64_t batch_size, bool batch_on, uint64_t max_duration) {
+void custom_client(std::string input_file, uint64_t thread_id) {
+    YAML::Node config = YAML::LoadFile(input_file);
+    std::string json_name = get_json_name(config);
+    uint64_t batch_size = get_batch_size(config);
+    bool batch_on = get_batch_on(config);
+    uint64_t max_duration = get_experiment_duration(config);
+    std::vector<int> eth_types = {ETH_APPEND_REQ};
+    std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
+    if (mac_addrs.size() < 1) {
+        spdlog::critical("Unable to parse mac address!");
+        throw;
+    }
+
+    std::unique_ptr<Network> net = std::make_unique<Network>(get_threads(config), 
+                                   get_send_port(config), 
+                                   get_recv_port(config),
+				   get_socket_type(config),
+                                   get_log_level(config),
+				   get_batch_size(config),
+				   get_batch_on(config),
+				   get_interface(config),
+				   get_self_ip(config),
+				   get_packet_types(config),
+				   eth_types,
+				   mac_addrs,
+				   1, false); // TODO Need to do something else here??? Storage server could be faster
+    set_spdlog_level(get_log_level(config));
+    spdlog::info("Simple Network: Sending/Receiving to remote host");
+
     spdlog::critical("Network Client Thread starting with TID = {}", gettid());
     std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
     spdlog::info("Simple Net Client!");
@@ -103,48 +131,32 @@ int main(int argc, char* argv[]) {
     }
     std::string input_file = std::string(argv[1]);
     YAML::Node config = YAML::LoadFile(input_file);
-    std::vector<int> eth_types = {ETH_APPEND_REQ};
-    std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
-    if (mac_addrs.size() < 1) {
-        spdlog::critical("Unable to parse mac address!");
-        throw;
+    std::vector<std::thread> client_threads;
+    for (uint64_t i = 0; i < get_num_client_threads(config); i++) {
+        client_threads.emplace_back(std::thread(&custom_client, input_file, i));
+
+        pthread_t native_handle = client_threads[i].native_handle();
+
+    	// Create a CPU set and add the desired core
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+    	CPU_SET(i, &cpuset); // Pin to core 'i'
+
+        // Set thread affinity
+        int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
+        if (result != 0) {
+            std::cerr << "Error setting thread affinity for thread " << client_threads[i].get_id() << ": " << result << std::endl;
+        }  
     }
-
-    std::unique_ptr<Network> net = std::make_unique<Network>(get_threads(config), 
-                                   get_send_port(config), 
-                                   get_recv_port(config),
-				   get_socket_type(config),
-                                   get_log_level(config),
-				   get_batch_size(config),
-				   get_batch_on(config),
-				   get_interface(config),
-				   get_self_ip(config),
-				   get_packet_types(config),
-				   eth_types,
-				   mac_addrs,
-				   1, false); // TODO Need to do something else here??? Storage server could be faster
-    set_spdlog_level(get_log_level(config));
-    spdlog::info("Simple Network: Sending/Receiving to remote host");
-    std::thread client_thread(&custom_client, std::move(net), get_json_name(config), 0, get_batch_size(config), get_batch_on(config), get_experiment_duration(config));
-
-    pthread_t native_handle = client_thread.native_handle();
-
-    // Create a CPU set and add the desired core
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(0, &cpuset); // Pin to core 'i'
-
-    // Set thread affinity
-    int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
-    if (result != 0) {
-        std::cerr << "Error setting thread affinity for thread " << client_thread.get_id() << ": " << result << std::endl;
-    } 
+   
     spdlog::debug("Going to wait to sleep {}", get_experiment_duration(config));
     std::chrono::seconds sleep_duration(get_experiment_duration(config));
     std::this_thread::sleep_for(sleep_duration);
     end_thread = true;
     spdlog::debug("Thread done!");
-    client_thread.join();
+    for (uint64_t i = 0; i < client_threads.size(); i++) {
+        client_threads[i].join();
+    }
     return 0;
 }
 

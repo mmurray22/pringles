@@ -529,7 +529,7 @@ def plot_results(local_target_dir):
     plt.figure(figsize=(8, 6))
     plt.plot(num_clients_list, latency_list, marker='o', linestyle='-', color='red')
     plt.xlabel('Number of Clients')
-    plt.ylabel('Total Average Latency')
+    plt.ylabel('Total Average Latency (ms)')
     plt.title(f'Total Average Latency vs. Client Count\nExperiment: {os.path.basename(local_target_dir)}')
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.xlim(xmin=0) # NEW
@@ -551,7 +551,7 @@ def plot_results(local_target_dir):
                      textcoords="offset points", xytext=(5,-5), ha='left')
                      
     plt.xlabel('Aggregate Throughput')
-    plt.ylabel('Total Average Latency')
+    plt.ylabel('Total Average Latency (ms)')
     plt.title(f'Throughput-Latency Tradeoff\nExperiment: {os.path.basename(local_target_dir)}')
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.xlim(xmin=0) # NEW
