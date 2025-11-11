@@ -118,6 +118,9 @@ class LogClient : public BaseClient {
 	std::atomic<bool> collect_stats; 
 
 	uint64_t global_thread_id;
+
+	std::array<uint8_t,6> seq_mac;
+	std::string seq_ip;
 	
 	/**** Functions ****/
 

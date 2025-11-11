@@ -1,0 +1,1 @@
+[2025-11-10 23:52:40.859] [critical] Network Main Thread starting with TID = 130707

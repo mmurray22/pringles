@@ -2,6 +2,13 @@
 client_ip = "10.10.1.2"
 sequencer_ip = "10.10.1.4"
 server_ips = ["10.10.1.3"]
+
+stor_ips = ["10.10.1.3"]
+stor_macs = ["0c:42:a1:dd:5f:74"]
+cli_ips = ["10.10.1.2"]
+cli_macs = ["0c:42:a1:dd:58:94"]
+switch_ip = "10.10.1.4"
+switch_mac = "0c:42:a1:e2:a6:9c"
 network_interface = "enp65s0f0np0" # TODO: MAKE THIS A LIST FOR CLIENTS AND SERVERS!!!!
 ssh_key = "/proj/ove-PG0/murray/cloudlab"
 ssh_user = "murray22" # Added for complete SSH command
@@ -9,6 +16,7 @@ ssh_user = "murray22" # Added for complete SSH command
 [program_paths]
 path_client = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_cli"
 path_server = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_stor"
+path_switch = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_seq"
 run_setup_script = "False"
 
 [experiment_parameters]
@@ -19,9 +27,11 @@ experiment_duration = 50 # seconds
 socket_type = "RAW" # or "UDP"
 message_size = 100 # 100 # bytes
 num_client_threads = 1
-json_name = "one_client"
-experiment_name = "increase_client_threads"
+json_name = "increase_client"
+experiment_name = "testing_script"
 num_failures = 0 # NEW
+git_hash = ""
+use_switch = 1
 
 [protocol_batching]
 batch_on = false
@@ -52,9 +62,9 @@ json_name = "one_client"
 #num_client_threads = 12
 #json_name = "twelve_client"
 
-[[experiment]]
-num_client_threads = 16
-json_name = "sixteen_client"
+#[[experiment]]
+#num_client_threads = 16
+#json_name = "sixteen_client"
 
 #[[experiment]]
 #num_client_threads = 20

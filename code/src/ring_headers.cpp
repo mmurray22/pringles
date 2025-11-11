@@ -7,3 +7,8 @@ std::unique_ptr<struct ring_append_entry> create_ring_append_entry(uint32_t nonc
     app_entry_hdr.get()->cid = cid;
     return app_entry_hdr;
 }
+
+
+size_t get_ring_append_size() {
+    return sizeof(struct ring_append_entry);
+}

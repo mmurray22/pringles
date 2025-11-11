@@ -29,9 +29,10 @@ Network::Network(uint64_t maxThreads,
                  bool batch_on,
                  std::string send_interface,
                  std::string self_ip,
-		 std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
+		 uint64_t num_pkt_type,
+		 /*std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
 		 std::vector<int> pkt_type_to_eth_type,
-		 std::vector<std::array<uint8_t,6>> mac_addrs,
+		 std::vector<std::array<uint8_t,6>> mac_addrs,*/
 		 uint64_t num_send_threads, bool run_threads) :  rcv_pkt(1000000)
 { 
     
@@ -50,7 +51,6 @@ Network::Network(uint64_t maxThreads,
 
     // Ingest the destination macs 
     this->mac_addrs = mac_addrs;
-    //memcpy(this->mac_array, mac_array, 6);
     total_num_threads = maxThreads;
 
     SEND_PORT = send_port;
@@ -62,7 +62,22 @@ Network::Network(uint64_t maxThreads,
     this->pkt_type_to_ip = pkt_type_to_ip;
     this->pkt_type_to_fd = {};
     this->sin_map = {};
-    for (auto it =  pkt_type_to_ip.begin(); it != pkt_type_to_ip.end(); it++) {
+    this->num_pkt_type = num_pkt_type;
+    for (uint64_t i = 0; i < num_pkt_type; i++) {
+        // hello
+	std::shared_ptr<struct addrinfo> socket_it = std::make_shared<struct addrinfo>();
+        //int socket = socket_type == "UDP" ? setup_talker_socket(it->second[i], socket_it) : setup_raw_talker_socket();
+	int socket = setup_raw_talker_socket();
+        if (socket < 0) {
+            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", it->second[i]);
+            throw std::runtime_error("Can't create sending socket");
+	}
+	pkt_type_to_fd[i].push_back(socket);
+	spdlog::debug("The key is {} and the socket fd is {}", i, socket);
+	fd_to_it.insert({socket, socket_it});
+
+    }
+    /*for (auto it =  pkt_type_to_ip.begin(); it != pkt_type_to_ip.end(); it++) {
 	if (it->second.size() < 1) {
 		spdlog::debug("Packet type {} has NO IP addresses!", it->first);
 		continue;
@@ -79,8 +94,7 @@ Network::Network(uint64_t maxThreads,
 		spdlog::debug("The key is {} and the socket fd is {}", it->first, socket);
 		fd_to_it.insert({socket, socket_it});
     	}
-	num_pkt_type += 1;
-    }
+    }*/
     spdlog::debug("The number ofd fds for packet type 0 is {}", this->pkt_type_to_fd[0].size());
 
     spdlog::debug("Receiver socket setup start! SELF IP IS: {}", self_ip);	
@@ -92,7 +106,7 @@ Network::Network(uint64_t maxThreads,
     if (run_threads) {
    	 /*Initialize queues and threads*/
    	 //total_num_threads = maxThreads == 0 ? std::thread::hardware_concurrency()-1 : maxThreads; TODO add multiple threads in later
-   	 for (const auto& [key, value] : pkt_type_to_ip) {
+   	 /*for (const auto& [key, value] : pkt_type_to_ip) {
    	     send_pkt_qs.insert(std::pair<uint64_t, std::queue<std::pair<uint64_t, std::unique_ptr<char[]>>>>(key, std::queue<std::pair<uint64_t, std::unique_ptr<char[]>>>()));
    	     for (uint64_t i = 0; i < num_send_threads; i++) {
    	         if (socket_type == "UDP") {
@@ -101,17 +115,16 @@ Network::Network(uint64_t maxThreads,
    	             send_threads.emplace_back(std::thread(&Network::run_send, this, key, pkt_type_to_eth_type[key]));	
    	         }
    	     }
-   	 }
+   	 }*/
 
    	 // Create receiving threadpool (only 1 thread for now since it's Network I/O bound)
-   	 recv_threads.emplace_back(std::thread(&Network::run_recv, this, recv_socket)); // TODO: Fix this jesus christ
+   	 recv_threads.emplace_back(std::thread(&Network::run_recv, this, recv_socket));
     } else {
-	//this->eth_hdr_map = {};
         for (const auto& [key, value] : pkt_type_to_fd) {
             std::vector<int> send_fds = pkt_type_to_fd[key];
             std::vector<std::unique_ptr<struct ethhdr>> eth_hdr_vecs;
             for (size_t i = 0; i < send_fds.size(); i++) {
-                eth_hdr_vecs.push_back(create_eth_hdr(send_fds[i], pkt_type_to_eth_type[key], i));
+                eth_hdr_vecs.push_back(create_eth_hdr(send_fds[i], i));
             }
             eth_hdr_map.emplace(key, std::move(eth_hdr_vecs));
     
@@ -272,7 +285,7 @@ std::shared_ptr<struct addrinfo> Network::get_it(int s_fd) {
 }
 
 /*Create ethernet header*/
-std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd, int eth_type, uint64_t idx) {
+std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd, uint64_t idx) {
     if (eth_type < 0) {
         spdlog::warn("Unable to ethernet type for this packet type! No packets sent.");
         return NULL;

@@ -57,3 +57,4 @@ struct ring_subscribe_entry {
 // TODO Trim requests
 
 std::unique_ptr<struct ring_append_entry> create_ring_append_entry(uint32_t nonce, uint32_t cid);
+size_t get_ring_append_size();

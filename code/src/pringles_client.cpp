@@ -392,35 +392,6 @@ bool LogClient::trim(uint64_t idx) {
 	return false;
 }
 
-/*** Helper functions ***/
-/*std::string wait_for_read(PacketType pkt_type, int32_t nonce) {
-    while (true) {
-        if (wait_time >= MAX_WAIT_TIME) {
-            spdlog::debug("!!!!!!!!!!!!!!No more packets to receive.");
-            break;
-        }
-	
-        char* recv_pkt_with_hdr = pkt_q[pkt_type].pop();
-	if (recv_pkt_with_hdr == NULL) { // nothing in the receive queue, so we sleep
-            continue;
-        }
-	
-	// Parse out header
-        struct ring_read_entry* append_entry = (struct ring_append_entry*)recv_pkt_with_hdr;
-	if (append_entry->nonce != nonce) {
-	    pkt_q[pkt_type].push(recv_pkt_with_hdr);
-	    continue;
-	}
-
-	// Parse out packet contents (if needed)
-	char* ser_payload = (char*)(recv_pkt_with_hdr.get() + hdr_size);
-	std::string str(ser_payload);
-	ringclient::Payload payload;
-	payload.ParseFromString(str);
-
-    }
-}*/
-
 /* Experiment Logistics */
 void LogClient::wait_to_finish() {
     collect_stats = true;

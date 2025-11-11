@@ -41,14 +41,22 @@
 #include "spdlog/spdlog.h"
 #include "utils.h"
 #include "measure.h"
-
-#define ETH_APPEND_REQ 0x0860
-#define ETH_APPEND_RESP 0x0880
+#include "ring_headers.h"
 
 const uint64_t MAX_WAIT_TIME = 100;
 std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 bool end_thread = false;
+
+struct AppendInfo {
+    uint64_t nonce;
+    std::string entry;
+};
+
+struct ReturnInfo {
+    uint64_t nonce;
+};
+
 
 void custom_client(std::string input_file, uint64_t thread_id) {
     YAML::Node config = YAML::LoadFile(input_file);
@@ -56,6 +64,10 @@ void custom_client(std::string input_file, uint64_t thread_id) {
     uint64_t batch_size = get_batch_size(config);
     bool batch_on = get_batch_on(config);
     uint64_t max_duration = get_experiment_duration(config);
+    uint64_t payload_size = get_payload_size(config);
+    uint64_t nonce = thread_id;
+    uint64_t scale = 2;
+
     std::vector<int> eth_types = {ETH_APPEND_REQ};
     std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
     if (mac_addrs.size() < 1) {
@@ -82,21 +94,29 @@ void custom_client(std::string input_file, uint64_t thread_id) {
     spdlog::critical("Network Client Thread starting with TID = {}", gettid());
     std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
     spdlog::info("Simple Net Client!");
-    uint32_t nonce = 1;
 
-    uint64_t allocated_packet_size = 150;
-    /*char* allocated_packet = std::malloc(allocated_packet_size);
-    memset(allocated_packet, 'x', allocated_packet_size);*/
+    std::string payload(payload_size, 'x');
+    size_t size_of_hdr = get_ring_append_size();
+    std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(nonce, thread_id);
+    hdr.get()->payload_size = payload_size;
+    hdr.get()->num_entries = 1;
+    uint64_t allocated_packet_size = size_of_hdr + payload_size + 1;
+
     while (!end_thread) {
-	//uint32_t nonce = generate_nonce();
-
      	// Create packet buffer which will be sent  
-
      	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
 
-     	//packet[allocated_packet_size - 1] = '\0';
-	
         double start_time = stat->getStartLat();
+	memcpy(packet.get(), reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
+	memcpy(packet.get() + size_of_hdr, payload.c_str(), payload.length());
+     	packet[allocated_packet_size - 1] = '\0';
+	//memcpy(packet.get() + size_of_hdr, reinterpret_cast<const char*>(&appInfo), sizeof(AppendInfo));
+	
+	char* entry = (char*)(packet.get() + sizeof(struct ring_append_entry));
+	spdlog::debug("Entry: {}", std::string(entry));
+
+
+	//spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, sizeof(AppendInfo), size_of_hdr);
 	net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, get_switch_mac(config), get_switch_ip(config));
 
      	bool got_quorum = false;
@@ -110,13 +130,14 @@ void custom_client(std::string input_file, uint64_t thread_id) {
 	    }
 	    struct ethhdr* eth = (struct ethhdr*)recv_ptr;
    	    if (ntohs(eth->h_proto) == ETH_APPEND_RESP) {
-	        //spdlog::debug("Received a packet!");
+		// TODO: Check nonce
 		stat->getDuration(start_time);
 		stat->addOp();
 	        got_quorum = true;
 	    }
         }
-	nonce += 1;
+	nonce *= scale;
+	scale += 1;
     }
     spdlog::debug("Made it out of the loop!");
     stat->getAvgLatency();
@@ -135,14 +156,14 @@ int main(int argc, char* argv[]) {
     YAML::Node config = YAML::LoadFile(input_file);
     std::vector<std::thread> client_threads;
     for (uint64_t i = 0; i < get_num_client_threads(config); i++) {
-        client_threads.emplace_back(std::thread(&custom_client, input_file, i));
+        client_threads.emplace_back(std::thread(&custom_client, input_file, i+1));
 
         pthread_t native_handle = client_threads[i].native_handle();
 
     	// Create a CPU set and add the desired core
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-    	CPU_SET(i, &cpuset); // Pin to core 'i'
+    	CPU_SET(i % 30, &cpuset); // Pin to core 'i'
 
         // Set thread affinity
         int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);

@@ -29,6 +29,7 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # --- Configuration Constants ---
 BASE_PORT = 50000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
+SWITCH_START_DELAY = 10  # Time to wait after starting servers before starting client
 SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
 COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
 RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
@@ -55,12 +56,24 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     if entity_type == 'server':
         # Servers run longer than the client to ensure no early termination
         final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY
+    elif entity_type == 'switch':
+        final_duration = exp_duration + warm_up + cool_down + SWITCH_START_DELAY
     else:
         final_duration = exp_duration + warm_up + cool_down
 
     # Initialize the base YAML structure
+    cli_macs = [QuotedString(mac) for mac in net_params['cli_macs']]
+    cli_ips = [QuotedString(mac) for mac in net_params['cli_ips']]
+    stor_macs = [QuotedString(mac) for mac in net_params['stor_macs']]
+    stor_ips = [QuotedString(mac) for mac in net_params['stor_ips']]
     yaml_config = {
         'log_level': exp_params['log_level'],
+        'switch_ip': QuotedString(net_params['switch_ip']),
+        'switch_mac': QuotedString(net_params['switch_mac']),
+        'cli_macs': cli_macs,
+        'cli_ips': cli_ips,
+        'stor_macs': stor_macs,
+        'stor_ips': stor_ips,
         'send_port': send_port,
         'recv_port': recv_port,
         'send_threads': 1,  # [INACTIVE]
@@ -88,6 +101,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         client_ips = [QuotedString(ip) for ip in route_params['list_client_dest_ips']]
         
         yaml_config.update({
+            'use_switch': exp_params['use_switch'],
             'sequencer_type': proto_params['sequencer_type'],
             'num_client_threads': exp_params['num_client_threads'],
             'cli_id': entity_id, # Integer
@@ -99,10 +113,10 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'num_failures': num_failures, 
 
             # packet_types holds only the quoted IPs
-            'packet_types': [{'ips': client_ips}],
+            #'packet_types': [{'ips': client_ips}],
             
             # packet_types_macs holds only the quoted MACs
-            'packet_types_macs': [{'macs': client_macs}],
+            #'packet_types_macs': [{'macs': client_macs}],
 
             # warm up time
             'warm_up': warm_up,
@@ -125,12 +139,13 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'shard_id': shard_id,
             'shard_switch_id': shard_switch_id,
             'stor_id': entity_id, # Integer
-            'dst_mac': QuotedString(dst_mac), # WRAPPED: Ensures server dst_mac is quoted
+            'use_switch': exp_params['use_switch']
+            #'dst_mac': QuotedString(dst_mac), # WRAPPED: Ensures server dst_mac is quoted
             # Each server uses one packet type that targets the quoted client IP
-            'packet_types': [{'ips': server_ips}],
+            #'packet_types': [{'ips': server_ips}],
             
             # Add packet_types_macs to server config, using the client MACs for the return path
-            'packet_types_macs': [{'macs': server_macs}]
+            #'packet_types_macs': [{'macs': server_macs}]
         })
 
     return yaml_config
@@ -610,16 +625,19 @@ def run_compile_command(ip, ssh_key, ssh_user):
         return False
 
 
+# To be executed for each experiment
 def run_experiment_cycle(config, exp_index, local_results_dir):
     """Runs a single, full experiment cycle based on the merged configuration."""
     
     # Extract run-specific parameters from the merged config
     ssh_key = config['network_setup']['ssh_key']
     ssh_user = config['network_setup']['ssh_user']
-    client_ip = config['network_setup']['client_ip']
+    client_ip = config['network_setup']['client_ip'] # TODO SEQ make plural?
+    switch_ip = config['network_setup']['switch_ip'] # TODO SEQ
     server_ips = config['network_setup']['server_ips']
     path_client = config['program_paths']['path_client']
     path_server = config['program_paths']['path_server']
+    path_switch = config['program_paths']['path_switch'] # TODO SEQ
     
     json_output_name = config['experiment_parameters']['json_name']
     num_failures = config['experiment_parameters']['num_failures']
@@ -631,7 +649,10 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
     
     server_processes = []
     server_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
+    switch_processes = []
+    switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
     
+
     try:
         # Assumption: All servers respond to all destination MAC defined in the TOML
         server_dst_mac_for_all = config['routing']['server_dest_macs'][0]
@@ -676,8 +697,49 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
         # --- 6. Wait for Servers to Initialize ---
         print(f"\nWaiting {SERVER_START_DELAY} seconds for storage servers to initialize...")
         time.sleep(SERVER_START_DELAY)
+        
+        # --- 7. Generate Switch Configuration and Start Process --- # TODO
+        print("\n--- Starting Switch ---")
+        switch_id = random.randint(100000, 999999)
+        switch_config_filename = f"switch_config_{json_output_name}.yaml" # Unique filename
+        switch_port_offset = len(server_ips) * 2
+        
+        switch_config = generate_yaml_config(
+            config, 
+            'switch',
+            switch_ip,
+            switch_port_offset,
+            entity_id=switch_id,
+            json_name=json_output_name,
+            num_failures=num_failures
+        )
+        
+        # Write YAML file locally
+        with open(switch_config_filename, 'w') as f:
+            yaml.dump(switch_config, f, default_flow_style=False)
+        print(f"Generated client config: {switch_config_filename}")
 
-        # --- 7. Generate Client Configuration and Start Process ---
+        # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+        if not transfer_file(switch_config_filename, switch_ip, ssh_user, ssh_key):
+            raise Exception(f"Failed to transfer config to server {ip}")
+        
+        # Start remote process
+        process, log_filename = execute_remote_command(switch_ip, path_switch, switch_config_filename, ssh_key, ssh_user) # MODIFIED: Get log filename
+        if process:
+            switch_processes.append(process)
+            switch_log_files[ip] = log_filename # MODIFIED: Store log filename
+        else:
+            raise Exception(f"Failed to start server process on {ip}")
+
+        if not switch_processes:
+            raise Exception("No servers were successfully started.")
+
+        # --- 8. Wait for Servers to Initialize --- TODO
+        print(f"\nWaiting {SWITCH_START_DELAY} seconds for storage servers to initialize...")
+        time.sleep(SWITCH_START_DELAY)
+        
+
+        # --- 9. Generate Client Configuration and Start Process ---
         print("\n--- Starting Client ---")
         client_id = random.randint(100000, 999999)
         client_config_filename = f"client_config_{json_output_name}.yaml" # Unique filename
@@ -758,7 +820,16 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 log_filename,
                 local_results_dir
             )
-            
+        
+        for ip, log_filename in switch_log_files.items():
+            copy_log_file_back(
+                ip,
+                ssh_user,
+                ssh_key,
+                log_filename,
+                local_results_dir
+            )
+   
         for proc in server_processes:
             try:
                 if proc.poll() is None:
@@ -769,8 +840,20 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 #pass 
             except Exception as e:
                 print(f"Could not check on server process: {e}")
-
+        
         print("Server processes are assumed to exit on their own after the client terminates.")
+        for proc in switch_processes:
+            try:
+                if proc.poll() is None:
+                    print(f"Terminating server process (PID: {proc.pid})...")
+                    proc.terminate()
+                # The nohup process is difficult to kill via Popen.terminate(). 
+                # Relying on the server timeout is safer.
+                #pass 
+            except Exception as e:
+                print(f"Could not check on switch process: {e}")
+
+        print("Switch processes are assumed to exit on their own after the client terminates.")
         
 def main(config_file="config.toml"):
     """Main function to parse config, generate YAMLs, and execute experiments in a loop."""
@@ -797,9 +880,10 @@ def main(config_file="config.toml"):
     base_config = full_config.copy() 
 
     # --- Initial Setup ---
-    client_ip = base_config['network_setup']['client_ip']
+    client_ips = base_config['network_setup']['cli_ips']
     server_ips = base_config['network_setup']['server_ips']
-    all_ips = [client_ip] + server_ips
+    switch_ip = base_config['network_setup']['switch_ip']
+    all_ips = client_ips + server_ips + [switch_ip]  # TODO SEQ
     ssh_key = base_config['network_setup']['ssh_key']
     ssh_user = base_config['network_setup']['ssh_user']
     
@@ -808,7 +892,8 @@ def main(config_file="config.toml"):
     timestamp_str = now.strftime("%Y-%m-%d_%H%M%S") + f".{now.microsecond // 1000:03d}"
     
     # Using a generic prefix + timestamp only
-    results_folder_name = f"run-{timestamp_str}" 
+    timestamp_name = f"run-{timestamp_str}"
+    results_folder_name = base_config['experiment_parameters']['experiment_name'] + '_' + timestamp_name
     local_results_dir = os.path.join(RESULTS_BASE_DIR, results_folder_name)
     
     try:
@@ -900,6 +985,4 @@ if __name__ == '__main__':
     except ImportError:
         print("ERROR: 'matplotlib' library not found. Install with 'pip install matplotlib'.")
         sys.exit(1)
-
-
     main()

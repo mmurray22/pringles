@@ -41,14 +41,22 @@
 #include "utils.h"
 #include "measure.h"
 #include "network.h"
-
-#define ETH_APPEND_REQ 0x0860
-#define ETH_APPEND_RESP 0x0880
+#include "ring_headers.h"
 
 const uint64_t MAX_WAIT_TIME = 100;
 std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 bool end_thread = false;
+
+struct AppendInfo {
+    uint64_t nonce;
+    std::string entry;
+};
+
+struct ReturnInfo {
+    uint64_t nonce;
+};
+
 
 void custom_sequencer(std::unique_ptr<Network> net, 
 		      std::string json_name, 
@@ -68,6 +76,8 @@ void custom_sequencer(std::unique_ptr<Network> net,
     spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
     spdlog::info("Simple Net Sequencer, cli_ip {}!", cli_ip);
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);
+
+    size_t size_of_hdr = get_ring_append_size();
     while (!end_thread) {
      	bool got_quorum = false;
         while (!got_quorum) {
@@ -81,51 +91,28 @@ void custom_sequencer(std::unique_ptr<Network> net,
 	    }
 
 	    struct ethhdr* eth = (struct ethhdr*)recv_ptr;
-   	    if (ntohs(eth->h_proto) == ETH_APPEND_REQ) { // send to storage server
+   	    if (ntohs(eth->h_proto) == ETH_APPEND_REQ || ntohs(eth->h_proto) == ETH_APPEND_RESP) { // send to storage server
 	        got_quorum = true;
-	        //spdlog::debug("ETHERNET APPEND REQUEST!!!!");    
-/*
-            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
-	    size_t offset = sizeof(struct ethhdr) + sizeof(struct iphdr) + size_of_hdr;
-	    size_t reply_pkt_size = size_of_hdr + append_entry->payload_size * append_entry->num_entries;
-	    size_t reply_pkt_offset = size_of_hdr;
-     	    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
-            memcpy(reply_packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
-	    for (size_t i = 0; i < append_entry->num_entries; i++) {
-		char* inner_pkt = (char*)(recv_ptr + offset);
-	        ringclient::Payload payload;
-	    	payload.ParseFromArray(inner_pkt, append_entry->payload_size);
-		uint64_t idx = append_entry->g_idx + i;
-	        store(idx, payload.mutable_append()->entry());
+		struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
+	    	size_t reply_pkt_size = size_of_hdr + append_entry->payload_size + 1;
+	    	size_t reply_pkt_offset = size_of_hdr;
+     	        spdlog::debug("Append entry: {}, {}", append_entry->nonce, append_entry->payload_size);
 
-		ringclient::Payload reply;
-		std::string output;
-     		reply.set_packet_type(static_cast<int>(PacketType::append));
-     		reply.set_nonce(payload.nonce());
-     		reply.SerializeToString(&output);
-		memcpy(reply_packet.get() + reply_pkt_offset, output.data(), output.length());
-		spdlog::debug("Sending packet back with nonce {} and reply nonce {} and index of this entry is {} and the entry length is {}", payload.nonce(), reply.nonce(), idx, payload.mutable_append()->entry().length());
-		offset += append_entry->payload_size;
-		reply_pkt_offset += append_entry->payload_size;
-		cnt += 1;
-	    }
+		std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
+            	memcpy(reply_packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
+     		reply_packet[reply_pkt_size - 1] = '\0';
 
-	    //spdlog::debug("For nonce {}, we got idx {}, which got {} matching acks and {} acks overall", append_entry->nonce, append_entry->g_idx, min_matching_acks, append_ack_map[append_entry->nonce].first);
-            net->send_packet(std::move(reply_packet), reply_pkt_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);
-*/
-                uint64_t allocated_packet_size = 150;
-     		std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
-     		memset(packet.get(), 'x', allocated_packet_size);
-     		packet[allocated_packet_size - 1] = '\0';
-     		net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_mac, stor_ip);
-	    } else if (ntohs(eth->h_proto) == ETH_APPEND_RESP) { // send to client
-	        got_quorum = true;
-	        //spdlog::debug("ETHERNET APPEND RESPOND!!!!");    
-		uint64_t allocated_packet_size = 150;
-     		std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
-     		memset(packet.get(), 'x', allocated_packet_size);
-     		packet[allocated_packet_size - 1] = '\0';
-		net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_RESP, cli_mac, cli_ip);
+		/*struct AppendInfo* append_info = reinterpret_cast<struct AppendInfo*>(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry));
+		spdlog::debug("Nonce: {}, Entry: {}", append_info->nonce, append_info->entry);*/
+
+		memcpy(reply_packet.get() + reply_pkt_offset, reinterpret_cast<const char*>(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry)), append_entry->payload_size);
+		spdlog::debug("ETH_APPEND_REQ: {}, Append nonce: {}, Append payload size: {}", ETH_APPEND_REQ, append_entry->nonce, append_entry->payload_size);
+     		if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
+		    net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_REQ, stor_mac, stor_ip);
+		} else if (ntohs(eth->h_proto) == ETH_APPEND_RESP) {
+     		    net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_mac, cli_ip);
+		}
+
 	    }
 
 	}

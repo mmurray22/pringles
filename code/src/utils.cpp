@@ -230,7 +230,7 @@ std::string get_switch_ip(YAML::Node config) {
 
 std::array<uint8_t,6> get_cli_mac(YAML::Node config) {
     unsigned int bytes[6];
-    std::string mac = config["cli_mac"].as<std::string>();
+    std::string mac = config["cli_mac"].as<std::vector<std::string>>()[0]; // TODO
     spdlog::debug("MAC addr: {}", mac);
     // Use sscanf to parse the hex values separated by colons.
     // %x reads a hexadecimal integer.
@@ -257,12 +257,12 @@ std::array<uint8_t,6> get_cli_mac(YAML::Node config) {
 }
 
 std::string get_cli_ip(YAML::Node config) {
-    return config["cli_ip"].as<std::string>();
+    return config["cli_ip"].as<std::vector<std::string>>()[0]; // TODO
 }
 
 std::array<uint8_t,6> get_stor_mac(YAML::Node config) {
     unsigned int bytes[6];
-    std::string mac = config["stor_mac"].as<std::string>();
+    std::string mac = config["stor_mac"].as<std::vector<std::string>>()[0]; // TODO
     spdlog::debug("MAC addr: {}", mac);
     // Use sscanf to parse the hex values separated by colons.
     // %x reads a hexadecimal integer.
@@ -289,7 +289,7 @@ std::array<uint8_t,6> get_stor_mac(YAML::Node config) {
 }
 
 std::string get_stor_ip(YAML::Node config) {
-    return config["stor_ip"].as<std::string>();
+    return config["stor_ip"].as<std::vector<std::string>>()[0]; // TODO
 }
 
 uint64_t get_num_client_threads(YAML::Node config) {
