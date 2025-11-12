@@ -48,19 +48,10 @@ std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 bool end_thread = false;
 
-struct AppendInfo {
-    uint64_t nonce;
-    std::string entry;
-};
-
-struct ReturnInfo {
-    uint64_t nonce;
-};
-
 std::unordered_map<uint64_t, std::string> storage = {};
 
 void store(uint64_t idx, std::string entry) {
-    storage.insert(std::pair<uint64_t, std::string>(idx, entry));
+    storage.try_emplace(idx, entry);
 }
 
 void custom_server(std::unique_ptr<Network> net, 
@@ -96,21 +87,21 @@ void custom_server(std::unique_ptr<Network> net,
    	    if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
 	        got_quorum = true;
 		struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
-	    	size_t reply_pkt_size = size_of_hdr + sizeof(struct ReturnInfo);
-	    	size_t reply_pkt_offset = size_of_hdr;
+	    	size_t reply_pkt_size = size_of_hdr; // + sizeof(struct ReturnInfo);
+	    	//size_t reply_pkt_offset = size_of_hdr;
 
 		char* entry = (char*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry));
-		spdlog::debug("Nonce: {}, Entry: {}", append_entry->nonce, std::string(entry));
-		std::string dummy = "entry";
+		//spdlog::debug("Nonce: {}, Entry: {}", append_entry->nonce, std::string(entry));
+		
+		std::string dummy(entry); // = "entry";
 		store(idx, dummy); // TODO placeholder
 		idx += 1;
+		
 		// TODO: store(append_entry->g_idx, append_info->entry);
 
-		struct ReturnInfo ret;
-		ret.nonce = idx; // append_info->nonce;
      	    	std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
             	memcpy(reply_packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
-		memcpy(reply_packet.get() + reply_pkt_offset, reinterpret_cast<const char*>(&ret), sizeof(struct ReturnInfo));
+		//memcpy(reply_packet.get() + reply_pkt_offset, reinterpret_cast<const char*>(&ret), sizeof(struct ReturnInfo));
      		net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_mac, switch_ip);
 	    
 	    }
@@ -120,7 +111,7 @@ void custom_server(std::unique_ptr<Network> net,
 	if (end_thread) {
 	    break;
 	}
-     	    }
+    }
     net->done();
 }
 
@@ -133,14 +124,7 @@ int main(int argc, char* argv[]) {
     std::string input_file = std::string(argv[1]);
     YAML::Node config = YAML::LoadFile(input_file);
     std::vector<int> eth_types = {ETH_APPEND_REQ};
-    std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
-    if (mac_addrs.size() < 1) {
-        spdlog::critical("Unable to parse mac address!");
-        throw;
-    }
-
-    std::unique_ptr<Network> net = std::make_unique<Network>(get_threads(config), 
-                                   get_send_port(config), 
+    std::unique_ptr<Network> net = std::make_unique<Network>(get_send_port(config), 
                                    get_recv_port(config),
 				   get_socket_type(config),
                                    get_log_level(config),
@@ -148,10 +132,8 @@ int main(int argc, char* argv[]) {
 				   get_batch_on(config),
 				   get_interface(config),
 				   get_self_ip(config),
-				   get_packet_types(config),
-				   eth_types,
-				   mac_addrs,
-				   1, false); 
+				   get_num_pkt_types(config),
+				   false); 
     set_spdlog_level(get_log_level(config));
     spdlog::info("Simple Network server");
     std::string json_name = "dummy";

@@ -43,8 +43,7 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id) {
    this->num_work_threads = get_num_client_threads(config);
    // Create network
    bool run_threads = false;
-   net = std::make_unique<Network>(get_threads(config), 
-                                   get_send_port(config), 
+   net = std::make_unique<Network>(get_send_port(config), 
                                    get_recv_port(config),
 				   get_socket_type(config),
                                    get_log_level(config),
@@ -52,10 +51,7 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id) {
 				   get_batch_on(config),
 				   get_interface(config),
 				   get_self_ip(config),
-				   get_packet_types(config),
-				   get_pkt_eth_types(),
-				   mac_addrs,
-				   this->num_work_threads,
+				   get_num_pkt_types(config),
 				   run_threads);
     cid = get_cli_id(config);
     set_spdlog_level(get_log_level(config));
@@ -65,22 +61,18 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id) {
     for (size_t i = 0; i < num_pkt_types; i++) {
         this->pkt_q.insert(std::pair<PacketType, std::queue<std::unique_ptr<char[]>>>(PacketType(i), std::queue<std::unique_ptr<char[]>>()));
     }
-    //this->recv_thread = std::thread(&LogClient::pringles_recv_queue, this);
 
     // Protocol types
     this->seq = SequencerType(get_sequencer_type(config));
-    //this->stor = StorageType(get_storage_type(config));
 
     // Updating the log 
     cached_log_entries = {};
-
     message_available = false;
 
     min_matching_acks = get_num_failures(config) + 1;
     append_nonce_idx_map = {};
     append_ack_map = {};
     this->started_append = false; 
-    //this->append_thread = std::thread(&LogClient::run_append, this); 
     this->num_ready_bytes = 0;
     this->dummy_idx = 1;
 
@@ -92,7 +84,10 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id) {
     this->warm_up = get_warm_up(config);
     this->cool_down = get_cool_down(config);
     this->global_thread_id = thread_id;
-    
+   
+    this->switch_mac = get_switch_mac(config);
+    this->switch_ip = get_switch_ip(config); 
+
     //this->duration_thread = std::thread(&LogClient::wait_to_finish, this);
     this->execution_thread = std::thread(&LogClient::execute, this, thread_id);
     pthread_t native_handle = this->execution_thread.native_handle();
@@ -122,10 +117,6 @@ LogClient::~LogClient() {
     execution_thread.join();
     spdlog::debug("Joined the client threads!");
     net->done();
-    /*stat->getAvgLatency();
-    stat->getThroughput(max_duration);
-    stat->getTotalOps();
-    stat->exportResultsToJson();*/
 }
 
 void LogClient::execute(uint64_t thread_id) {
@@ -154,7 +145,7 @@ uint32_t LogClient::dummy(std::string entry) { // TODO need to implement retry t
      std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
      memset(packet.get(), 'x', allocated_packet_size);
      packet[allocated_packet_size - 1] = '\0';
-     net->send_packet(std::move(packet), allocated_packet_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);
+     net->send_packet(std::move(packet), allocated_packet_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append], switch_mac, switch_ip);
     
      bool got_quorum = false;
      /*
@@ -229,7 +220,7 @@ uint32_t LogClient::append(std::string entry) { // TODO need to implement retry 
      memcpy(packet.get() + size_of_hdr, output.data(), output.length());
      packet[allocated_packet_size - 1] = '\0';
      	
-     net->send_packet(std::move(packet), allocated_packet_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);
+     net->send_packet(std::move(packet), allocated_packet_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append], switch_mac, switch_ip);
     
      spdlog::debug("Map size: {}", append_ack_map.size());
 

@@ -29,7 +29,7 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # --- Configuration Constants ---
 BASE_PORT = 50000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
-SWITCH_START_DELAY = 10  # Time to wait after starting servers before starting client
+SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
 SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
 COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
 RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
@@ -735,7 +735,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             raise Exception("No servers were successfully started.")
 
         # --- 8. Wait for Servers to Initialize --- TODO
-        print(f"\nWaiting {SWITCH_START_DELAY} seconds for storage servers to initialize...")
+        print(f"\nWaiting {SWITCH_START_DELAY} seconds for software switch to initialize...")
         time.sleep(SWITCH_START_DELAY)
         
 
@@ -823,7 +823,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
         
         for ip, log_filename in switch_log_files.items():
             copy_log_file_back(
-                ip,
+                switch_ip,
                 ssh_user,
                 ssh_key,
                 log_filename,
@@ -881,9 +881,9 @@ def main(config_file="config.toml"):
 
     # --- Initial Setup ---
     client_ips = base_config['network_setup']['cli_ips']
-    server_ips = base_config['network_setup']['server_ips']
+    stor_ips = base_config['network_setup']['stor_ips']
     switch_ip = base_config['network_setup']['switch_ip']
-    all_ips = client_ips + server_ips + [switch_ip]  # TODO SEQ
+    all_ips = client_ips + stor_ips + [switch_ip]  # TODO SEQ
     ssh_key = base_config['network_setup']['ssh_key']
     ssh_user = base_config['network_setup']['ssh_user']
     

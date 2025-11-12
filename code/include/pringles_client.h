@@ -58,6 +58,10 @@ class LogClient : public BaseClient {
         uint32_t dummy(std::string entry);
     private:
 	/**** Variables ****/
+	std::string switch_ip;
+	std::array<uint8_t,6> switch_mac;
+
+
 	uint64_t min_matching_acks = 0;
 	uint64_t num_pkt_types = 0; 
 	/* Receive queue which slots messages */

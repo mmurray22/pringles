@@ -38,8 +38,7 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
    }
 
    // Create network
-   net = std::make_unique<Network>(get_threads(config), 
-                                   get_send_port(config), 
+   net = std::make_unique<Network>(get_send_port(config), 
                                    get_recv_port(config),
 				   get_socket_type(config),
                                    get_log_level(config),
@@ -47,10 +46,8 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
 				   get_batch_on(config),
 				   get_interface(config),
 				   get_self_ip(config),
-				   get_packet_types(config),
-				   get_pkt_eth_types(),
-				   mac_addrs,
-				   1, false); // TODO Need to do something else here??? Storage server could be faster
+				   get_num_pkt_types(config),
+				   false);
     set_spdlog_level(get_log_level(config));
     spdlog::info("Pringles Client: Only Append being tested");
     this->shard_id = get_shard_id(config);
@@ -60,6 +57,9 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
  
     this->stor = StorageType(get_storage_type(config));
     this->ssid = storage_id;
+
+    this->switch_mac = get_switch_mac(config);
+    this->switch_ip = get_switch_ip(config);
    
     // TODO ERROR NOT THREAD SAFE FOR MULTIPLE THREADS 
     for (uint64_t i = 0; i < 1; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
@@ -187,7 +187,7 @@ void LogStorage::pringles_recv_queue() {
 	    }
 
 	    //spdlog::debug("For nonce {}, we got idx {}, which got {} matching acks and {} acks overall", append_entry->nonce, append_entry->g_idx, min_matching_acks, append_ack_map[append_entry->nonce].first);
-            net->send_packet(std::move(reply_packet), reply_pkt_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);
+            net->send_packet(std::move(reply_packet), reply_pkt_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append], switch_mac, switch_ip);
 	    //net->add_to_send_queue(std::move(reply_packet), static_cast<uint64_t>(PacketType::append), reply_pkt_size);
 	}
         // DUMMY: net->send_packet(std::move(reply_packet), reply_pkt_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);

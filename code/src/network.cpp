@@ -20,8 +20,7 @@
 #include "utils.h"
 #include "spdlog/spdlog.h"
 
-Network::Network(uint64_t maxThreads, 
-                 std::string send_port, 
+Network::Network(std::string send_port, 
                  std::string recv_port,
                  std::string socket_type,
                  uint64_t log_level,
@@ -30,111 +29,50 @@ Network::Network(uint64_t maxThreads,
                  std::string send_interface,
                  std::string self_ip,
 		 uint64_t num_pkt_type,
-		 /*std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
-		 std::vector<int> pkt_type_to_eth_type,
-		 std::vector<std::array<uint8_t,6>> mac_addrs,*/
-		 uint64_t num_send_threads, bool run_threads) :  rcv_pkt(1000000)
+		 bool run_threads) :  rcv_pkt(1000000)
 { 
-    
     if (geteuid() != 0) { // Check if we are running as root
         throw std::runtime_error("Not running as root!");
     }
     if(!check_socket_type(socket_type)) { 
         throw std::runtime_error("Invalid socket type!");
     }
+    set_spdlog_level(log_level);
     this->run_threads = run_threads;
     this->socket_type = socket_type;
     this->send_interface = send_interface;
     this->batch_size = batch_size;
     this->self_ip = self_ip;
     this->batch_on = batch_on;
-
-    // Ingest the destination macs 
-    this->mac_addrs = mac_addrs;
-    total_num_threads = maxThreads;
-
+    this->num_pkt_type = num_pkt_type;
     SEND_PORT = send_port;
     RECV_PORT = recv_port;
-
-    set_spdlog_level(log_level);
-
-    /* Initialize sockets */
-    this->pkt_type_to_ip = pkt_type_to_ip;
     this->pkt_type_to_fd = {};
-    this->sin_map = {};
-    this->num_pkt_type = num_pkt_type;
-    for (uint64_t i = 0; i < num_pkt_type; i++) {
-        // hello
-	std::shared_ptr<struct addrinfo> socket_it = std::make_shared<struct addrinfo>();
-        //int socket = socket_type == "UDP" ? setup_talker_socket(it->second[i], socket_it) : setup_raw_talker_socket();
-	int socket = setup_raw_talker_socket();
-        if (socket < 0) {
-            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", it->second[i]);
-            throw std::runtime_error("Can't create sending socket");
-	}
-	pkt_type_to_fd[i].push_back(socket);
-	spdlog::debug("The key is {} and the socket fd is {}", i, socket);
-	fd_to_it.insert({socket, socket_it});
-
+    send_socket = setup_raw_talker_socket();
+    if (send_socket < 0) {
+        spdlog::critical("SENDER Socket creation unsuccessful. Aborting");
+        throw std::runtime_error("Can't create sending socket");
     }
-    /*for (auto it =  pkt_type_to_ip.begin(); it != pkt_type_to_ip.end(); it++) {
-	if (it->second.size() < 1) {
-		spdlog::debug("Packet type {} has NO IP addresses!", it->first);
-		continue;
-	}
-	pkt_type_to_fd.insert({it->first, {}});
-        for (uint64_t i = 0; i < it->second.size(); i++) {
-		std::shared_ptr<struct addrinfo> socket_it = std::make_shared<struct addrinfo>();
-        	int socket = socket_type == "UDP" ? setup_talker_socket(it->second[i], socket_it) : setup_raw_talker_socket();
-        	if (socket < 0) {
-            		spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", it->second[i]);
-            		throw std::runtime_error("Can't create sending socket");
-		}
-		pkt_type_to_fd[it->first].push_back(socket);
-		spdlog::debug("The key is {} and the socket fd is {}", it->first, socket);
-		fd_to_it.insert({socket, socket_it});
-    	}
-    }*/
-    spdlog::debug("The number ofd fds for packet type 0 is {}", this->pkt_type_to_fd[0].size());
+    spdlog::debug("The socket fd is {}", send_socket);
+    recv_socket = setup_listener_socket(self_ip);
+    if (recv_socket < 0) {
+        spdlog::critical("SENDER Socket creation unsuccessful. Aborting");
+        throw std::runtime_error("Can't create sending socket");
+    }
+    spdlog::debug("The socket fd is {}", recv_socket);
 
-    spdlog::debug("Receiver socket setup start! SELF IP IS: {}", self_ip);	
-    recv_socket = setup_listener_socket(self_ip); // TODO: Only need one receive socket?
-    spdlog::debug("Receiver socket setup done!");	
-    /* End of new initializing socket */
+    this->send_ip_hdr = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
+    this->norm_buf = (char*)std::malloc(MAX_PACKET_SIZE);
+    this->send_eth_hdr = create_eth_hdr(send_socket);
 
-    this->cli_send_ip = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
+
+    this->sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
+    this->sin.sll_halen = ETH_ALEN;
     if (run_threads) {
-   	 /*Initialize queues and threads*/
-   	 //total_num_threads = maxThreads == 0 ? std::thread::hardware_concurrency()-1 : maxThreads; TODO add multiple threads in later
-   	 /*for (const auto& [key, value] : pkt_type_to_ip) {
-   	     send_pkt_qs.insert(std::pair<uint64_t, std::queue<std::pair<uint64_t, std::unique_ptr<char[]>>>>(key, std::queue<std::pair<uint64_t, std::unique_ptr<char[]>>>()));
-   	     for (uint64_t i = 0; i < num_send_threads; i++) {
-   	         if (socket_type == "UDP") {
-   	             send_threads.emplace_back(std::thread(&Network::run_send, this, key, 0));	
-   	         } else {
-   	             send_threads.emplace_back(std::thread(&Network::run_send, this, key, pkt_type_to_eth_type[key]));	
-   	         }
-   	     }
-   	 }*/
-
-   	 // Create receiving threadpool (only 1 thread for now since it's Network I/O bound)
-   	 recv_threads.emplace_back(std::thread(&Network::run_recv, this, recv_socket));
-    } else {
-        for (const auto& [key, value] : pkt_type_to_fd) {
-            std::vector<int> send_fds = pkt_type_to_fd[key];
-            std::vector<std::unique_ptr<struct ethhdr>> eth_hdr_vecs;
-            for (size_t i = 0; i < send_fds.size(); i++) {
-                eth_hdr_vecs.push_back(create_eth_hdr(send_fds[i], i));
-            }
-            eth_hdr_map.emplace(key, std::move(eth_hdr_vecs));
-    
-            struct sockaddr_ll sin; // TODO: This is for packets where I'm not maually putting the header on them I think, I need to use sockaddr_ll
-            sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
-            sin.sll_halen = ETH_ALEN;
-	    sin_map.insert(std::pair<uint64_t, struct sockaddr_ll>(key, sin));
-	}
+   	 this->send_thread = std::thread(&Network::run_send, this);	
+   	 this->recv_thread = std::thread(&Network::run_recv, this, recv_socket);
     }
-    norm_buf = (char*)std::malloc(MAX_PACKET_SIZE);
+    /* End of new initializing socket */
 }
     
 Network::~Network() {
@@ -153,21 +91,11 @@ unsigned short Network::checksum(unsigned short *buf, int nwords) {
 
 // Threadpool send thread function
 // Send packets as they are queued
-void Network::run_send(uint64_t pkt_type, int eth_type) {
-    spdlog::debug("RUNNING SEND THREAD for packet type: {}", pkt_type);
-    spdlog::critical("Network Send Thread starting with TID = {}", gettid());
+void Network::run_send() {
+    /*spdlog::critical("Network Send Thread starting with TID = {}", gettid());
     uint64_t cnt = 0;
-    std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
-    std::vector<std::unique_ptr<struct ethhdr>> eth_hdr_vecs;
-    for (size_t i = 0; i < send_fds.size(); i++) {
-	eth_hdr_vecs.push_back(create_eth_hdr(send_fds[i], eth_type, i));
-    }     
-    struct sockaddr_ll sin; // TODO: This is for packets where I'm not maually putting the header on them I think, I need to use sockaddr_ll
-    sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
-    sin.sll_halen = ETH_ALEN;
+    
     std::unique_ptr<struct iphdr> ip = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
-
-    //std::unique_ptr<char[]> send_packet = std::make_unique<char[]>(MAX_PACKET_SIZE); 
 
     char* send_packet = (char*)std::malloc(MAX_PACKET_SIZE);
     while (!terminate) {
@@ -196,10 +124,10 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
             send_pkt_qs[pkt_type].pop();
         }
         //spdlog::debug("Past preprocessing! The packet value is still: {}", send_packet.get()); 
-
+*/
 
 	// If socket_type UDP
-        if (socket_type == "UDP") {
+        /*if (socket_type == "UDP") {
 	    spdlog::debug("Sending a UDP packet!");
 	    for (size_t i = 0; i < pkt_type_to_ip[pkt_type].size(); i++) {
 	    	//std::shared_ptr<struct addrinfo> it = std::make_shared<struct addrinfo>();
@@ -231,7 +159,6 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
                 continue;
             }
             
-            /* Running a raw socket based protocol */
             std::string ip_addr = pkt_type_to_ip[pkt_type][i];
             //spdlog::critical("IP Address: {}", ip_addr);
             size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
@@ -239,19 +166,15 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
 
             std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size); // TODO phase this out eventually
        
-            /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
             memcpy(packet.get(), eth_hdr_vecs[i].get(), sizeof(struct ethhdr));
             
-            /*Create IP header*/
 	    ip.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
             ip.get()->daddr = inet_addr(ip_addr.c_str()); // destination address
             ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header^
 
             memcpy(packet.get() + sizeof(struct ethhdr), ip.get(), sizeof(struct iphdr));
 
-            /*Protocol specific code starts*/
             //spdlog::debug("Total packet size is {}", packet_size);
-            /*Protocol specific code ends*/
 
             memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet), pkt_len);
             ssize_t num_bytes = 0;
@@ -269,11 +192,11 @@ void Network::run_send(uint64_t pkt_type, int eth_type) {
 	    cnt += 1;
 
 	}
-	memset(send_packet, 0, MAX_PACKET_SIZE);
-    }
-    free(send_packet);
-    spdlog::debug("Done with the send thread focused on {}", pkt_type);
-    spdlog::critical("Network send this many packets: {} for thread {}", cnt, gettid());
+	memset(send_packet, 0, MAX_PACKET_SIZE);*/
+    //}
+    //free(send_packet);
+    //spdlog::debug("Done with the send thread focused on {}", pkt_type);
+    //spdlog::critical("Network send this many packets: {} for thread {}", cnt, gettid());
 }
 
 std::string Network::get_ip(uint64_t pkt_type, int idx) {
@@ -285,14 +208,16 @@ std::shared_ptr<struct addrinfo> Network::get_it(int s_fd) {
 }
 
 /*Create ethernet header*/
-std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd, uint64_t idx) {
-    if (eth_type < 0) {
+std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd) {
+    std::array<uint8_t, 6> default_mac = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    int eth_type_def = 0x800;
+    if (eth_type_def < 0) {
         spdlog::warn("Unable to ethernet type for this packet type! No packets sent.");
         return NULL;
     } 
     std::unique_ptr<struct ethhdr> eth = std::make_unique<struct ethhdr>();
     for (int i = 0; i < 6; i++) { // 48 bit mac address - local broadcast
-        eth.get()->h_dest[i] = mac_addrs[idx][i];
+        eth.get()->h_dest[i] = default_mac[i]; // TODO
     }
         
     /*Get src address*/
@@ -308,7 +233,7 @@ std::unique_ptr<struct ethhdr> Network::create_eth_hdr(int s_fd, uint64_t idx) {
     memcpy(eth.get()->h_source, ifr.get()->ifr_hwaddr.sa_data, 6 * sizeof (uint8_t));
 
     /*Set ethernet type*/
-    eth.get()->h_proto = htons(eth_type); // Tells receiver how to parse packet
+    eth.get()->h_proto = htons(eth_type_def); // Tells receiver how to parse packet
     return eth;
 }
 
@@ -538,181 +463,65 @@ bool Network::send_packet(std::unique_ptr<char[]> send_packet,
 			  std::array<uint8_t,6> dst_mac,
 			  std::string dst_ip) {
     bool sent_all = true;
-    spdlog::debug("The dst ip is: {}", dst_ip);
-    (void) eth_type; 
-    std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
-    /*std::vector<std::unique_ptr<struct ethhdr>> eth_hdr_vec;
-    for (size_t i = 0; i < send_fds.size(); i++) {
-	eth_hdr_vec.push_back(create_eth_hdr(send_fds[i], eth_type, i));
-    }
-
-    
-    struct sockaddr_ll sin; // TODO: This is for packets where I'm not maually putting the header on them I think, I need to use sockaddr_ll
-    sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
-    sin.sll_halen = ETH_ALEN;*/
+    //spdlog::debug("The dst ip is: {}", dst_ip);
+    //std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
 
     // If socket_type UDP
     if (socket_type == "UDP") { // TODO need to move into the for loop?
         spdlog::debug("Sending a UDP packet!");
-        for (size_t i = 0; i < pkt_type_to_ip[pkt_type].size(); i++) {
-        	int s_fd = pkt_type_to_fd[pkt_type][i];
-        	if (s_fd < 0) {
-                    spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", pkt_type);
-                    throw std::runtime_error("Can't create sending socket");
-                } 
-        	ssize_t num_bytes = sendto(s_fd, send_packet.get(), pkt_len, 0, fd_to_it[s_fd]->ai_addr, fd_to_it[s_fd]->ai_addrlen);
-        	if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
-                    spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-		    sent_all = false;
-		    continue;
-        	}
-        	spdlog::info("Successfully sent {} bytes to the receiver with packet value ???", std::to_string(num_bytes));
+	std::shared_ptr<struct addrinfo> socket_it = std::make_shared<struct addrinfo>();
+        int s_fd = setup_talker_socket(dst_ip, socket_it);
+        if (s_fd < 0) {
+            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", pkt_type);
+            throw std::runtime_error("Can't create sending socket");
+        } 
+        ssize_t num_bytes = sendto(send_socket, send_packet.get(), pkt_len, 0, socket_it->ai_addr, socket_it->ai_addrlen);
+        if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
+            spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
+            sent_all = false;
         }
+        spdlog::info("Successfully sent {} bytes to the receiver with packet value ???", std::to_string(num_bytes));
         return sent_all;
     }
 
     // If the packet type is a descriptive string to indicate header type
     //std::unique_ptr<struct ethhdr> eth = eth_hdr_map[pkt_type][i];
-    for (size_t i = 0; i < send_fds.size(); i++) {
-        struct sockaddr_ll sin = sin_map[pkt_type];
-        for (int j = 0; j < 6; j++) { // 48 bit mac address - local broadcast
-            eth_hdr_map[pkt_type][i].get()->h_dest[j] = dst_mac[j];
-            sin.sll_addr[j] = dst_mac[j];
-        }
-	eth_hdr_map[pkt_type][i].get()->h_proto = htons(eth_type);
-
-	int s_fd = send_fds[i];
-        if (s_fd < 0) {
-            spdlog::critical("No socket found, dropping buffers");
-            continue;
-        }
-        
-        /* Running a raw socket based protocol */
-        std::string ip_addr = dst_ip;//TODO: old pkt_type_to_ip[pkt_type][i];
-        //spdlog::debug("IP Address: {}", ip_addr);
-        size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
-        //spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
-
-        std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size); // TODO phase this out eventually
-        
-        /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
-        memcpy(packet.get(), eth_hdr_map[pkt_type][i].get(), sizeof(struct ethhdr));
-        
-        /*Create IP header*/
-        cli_send_ip.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
-        cli_send_ip.get()->daddr = inet_addr(ip_addr.c_str()); // destination address
-        cli_send_ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header
-        memcpy(packet.get() + sizeof(struct ethhdr), cli_send_ip.get(), sizeof(struct iphdr));
-        memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet.get()), pkt_len);
-
-
-        /*for (int j = 0; j < 6; j++) { // 48 bit mac address - local broadcast
-            sin.sll_addr[j] = eth_hdr_map[pkt_type][i].get()->h_dest[j];
-        }*/
-	
-	/*printf("\nEthernet Header\n");
-	printf("\t|-True Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth_hdr_vec[i].get()->h_dest[0],eth_hdr_vec[i].get()->h_dest[1],eth_hdr_vec[i].get()->h_dest[2],eth_hdr_vec[i].get()->h_dest[3],eth_hdr_vec[i].get()->h_dest[4],eth_hdr_vec[i].get()->h_dest[5]);*/
-	/*printf("\t|-Map Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth_hdr_map[pkt_type][i].get()->h_dest[0],eth_hdr_map[pkt_type][i].get()->h_dest[1],eth_hdr_map[pkt_type][i].get()->h_dest[2],eth_hdr_map[pkt_type][i].get()->h_dest[3],eth_hdr_map[pkt_type][i].get()->h_dest[4],eth_hdr_map[pkt_type][i].get()->h_dest[5]);*/
-	//printf("\t|-True Protocol : %d\n",eth_hdr_vec[i].get()->h_proto);
-	//printf("\t|-Map Protocol : %d\n",eth_hdr_map[pkt_type][i].get()->h_proto);
-
-        ssize_t num_bytes = 0;
-        if ((num_bytes = sendto(s_fd, packet.get(), packet_size, 0, (struct sockaddr*)(&sin), sizeof(sin))) < 0 || 
-                ((uint64_t)num_bytes != packet_size)) {
-            spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            spdlog::debug("Num bytes sent: {} vs. expected: {}", num_bytes, packet_size);
-	    sent_all = false;
-            continue;
-        }
-        spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
+    for (int j = 0; j < 6; j++) { // 48 bit mac address - local broadcast
+        send_eth_hdr.get()->h_dest[j] = dst_mac[j];
+        sin.sll_addr[j] = dst_mac[j];
     }
-    return sent_all;
-}
+    send_eth_hdr.get()->h_proto = htons(eth_type);
+    /* Running a raw socket based protocol */
+    //spdlog::debug("IP Address: {}", dst_ip);
+    size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
+    //spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
 
-
-
-
-bool Network::send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type) {
-    bool sent_all = true;
-    (void) eth_type; 
-    std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
-    /*std::vector<std::unique_ptr<struct ethhdr>> eth_hdr_vec;
-    for (size_t i = 0; i < send_fds.size(); i++) {
-	eth_hdr_vec.push_back(create_eth_hdr(send_fds[i], eth_type, i));
-    }
-
+    std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size); // TODO phase this out eventually
     
-    struct sockaddr_ll sin; // TODO: This is for packets where I'm not maually putting the header on them I think, I need to use sockaddr_ll
-    sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
-    sin.sll_halen = ETH_ALEN;*/
+    /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
+    memcpy(packet.get(), send_eth_hdr.get(), sizeof(struct ethhdr));
+    
+    /*Create IP header*/
+    send_ip_hdr.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
+    send_ip_hdr.get()->daddr = inet_addr(dst_ip.c_str()); // destination address
+    send_ip_hdr.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header
+    memcpy(packet.get() + sizeof(struct ethhdr), send_ip_hdr.get(), sizeof(struct iphdr));
+    memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet.get()), pkt_len);
 
-    // If socket_type UDP
-    if (socket_type == "UDP") {
-        spdlog::debug("Sending a UDP packet!");
-        for (size_t i = 0; i < pkt_type_to_ip[pkt_type].size(); i++) {
-        	int s_fd = pkt_type_to_fd[pkt_type][i];
-        	if (s_fd < 0) {
-                    spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", pkt_type);
-                    throw std::runtime_error("Can't create sending socket");
-                } 
-        	ssize_t num_bytes = sendto(s_fd, send_packet.get(), pkt_len, 0, fd_to_it[s_fd]->ai_addr, fd_to_it[s_fd]->ai_addrlen);
-        	if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
-                    spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-		    sent_all = false;
-		    continue;
-        	}
-        	spdlog::info("Successfully sent {} bytes to the receiver with packet value ???", std::to_string(num_bytes));
-        }
-        return sent_all;
+    /*printf("\nEthernet Header\n");
+    printf("\t|-True Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth_hdr_vec[i].get()->h_dest[0],eth_hdr_vec[i].get()->h_dest[1],eth_hdr_vec[i].get()->h_dest[2],eth_hdr_vec[i].get()->h_dest[3],eth_hdr_vec[i].get()->h_dest[4],eth_hdr_vec[i].get()->h_dest[5]);*/
+    /*printf("\t|-Map Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth_hdr_map[pkt_type][i].get()->h_dest[0],eth_hdr_map[pkt_type][i].get()->h_dest[1],eth_hdr_map[pkt_type][i].get()->h_dest[2],eth_hdr_map[pkt_type][i].get()->h_dest[3],eth_hdr_map[pkt_type][i].get()->h_dest[4],eth_hdr_map[pkt_type][i].get()->h_dest[5]);*/
+    //printf("\t|-True Protocol : %d\n",eth_hdr_vec[i].get()->h_proto);
+    //printf("\t|-Map Protocol : %d\n",eth_hdr_map[pkt_type][i].get()->h_proto);
+
+    ssize_t num_bytes = 0;
+    if ((num_bytes = sendto(send_socket, packet.get(), packet_size, 0, (struct sockaddr*)(&sin), sizeof(sin))) < 0 || 
+            ((uint64_t)num_bytes != packet_size)) {
+        spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        spdlog::debug("Num bytes sent: {} vs. expected: {}", num_bytes, packet_size);
+        sent_all = false;
     }
-
-    // If the packet type is a descriptive string to indicate header type
-    for (size_t i = 0; i < send_fds.size(); i++) {
-	int s_fd = send_fds[i];
-        if (s_fd < 0) {
-            spdlog::critical("No socket found, dropping buffers");
-            continue;
-        }
-        
-        /* Running a raw socket based protocol */
-        std::string ip_addr = pkt_type_to_ip[pkt_type][i];
-        //spdlog::debug("IP Address: {}", ip_addr);
-        size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
-        //spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
-
-        std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size); // TODO phase this out eventually
-        
-        /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
-        memcpy(packet.get(), eth_hdr_map[pkt_type][i].get(), sizeof(struct ethhdr));
-        
-        /*Create IP header*/
-        cli_send_ip.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
-        cli_send_ip.get()->daddr = inet_addr(ip_addr.c_str()); // destination address
-        cli_send_ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header
-        memcpy(packet.get() + sizeof(struct ethhdr), cli_send_ip.get(), sizeof(struct iphdr));
-        memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet.get()), pkt_len);
-
-        struct sockaddr_ll sin = sin_map[pkt_type];
-        for (int j = 0; j < 6; j++) { // 48 bit mac address - local broadcast
-            sin.sll_addr[j] = eth_hdr_map[pkt_type][i].get()->h_dest[j];
-        }
-	
-	/*printf("\nEthernet Header\n");
-	printf("\t|-True Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth_hdr_vec[i].get()->h_dest[0],eth_hdr_vec[i].get()->h_dest[1],eth_hdr_vec[i].get()->h_dest[2],eth_hdr_vec[i].get()->h_dest[3],eth_hdr_vec[i].get()->h_dest[4],eth_hdr_vec[i].get()->h_dest[5]);
-	printf("\t|-Map Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth_hdr_map[pkt_type][i].get()->h_dest[0],eth_hdr_map[pkt_type][i].get()->h_dest[1],eth_hdr_map[pkt_type][i].get()->h_dest[2],eth_hdr_map[pkt_type][i].get()->h_dest[3],eth_hdr_map[pkt_type][i].get()->h_dest[4],eth_hdr_map[pkt_type][i].get()->h_dest[5]);
-	printf("\t|-True Protocol : %d\n",eth_hdr_vec[i].get()->h_proto);
-	printf("\t|-Map Protocol : %d\n",eth_hdr_map[pkt_type][i].get()->h_proto);*/
-
-        ssize_t num_bytes = 0;
-        if ((num_bytes = sendto(s_fd, packet.get(), packet_size, 0, (struct sockaddr*)(&sin), sizeof(sin))) < 0 || 
-                ((uint64_t)num_bytes != packet_size)) {
-            spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            spdlog::debug("Num bytes sent: {} vs. expected: {}", num_bytes, packet_size);
-	    sent_all = false;
-            continue;
-        }
-        //spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
-    }
+    //spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
     return sent_all;
 }
 

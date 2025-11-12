@@ -63,20 +63,14 @@ void custom_client(std::string input_file, uint64_t thread_id) {
     std::string json_name = get_json_name(config);
     uint64_t batch_size = get_batch_size(config);
     bool batch_on = get_batch_on(config);
-    uint64_t max_duration = get_experiment_duration(config);
+    //uint64_t max_duration = get_experiment_duration(config);
     uint64_t payload_size = get_payload_size(config);
     uint64_t nonce = thread_id;
     uint64_t scale = 2;
 
     std::vector<int> eth_types = {ETH_APPEND_REQ};
-    std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
-    if (mac_addrs.size() < 1) {
-        spdlog::critical("Unable to parse mac address!");
-        throw;
-    }
 
-    std::unique_ptr<Network> net = std::make_unique<Network>(get_threads(config), 
-                                   get_send_port(config), 
+    std::unique_ptr<Network> net = std::make_unique<Network>(get_send_port(config), 
                                    get_recv_port(config),
 				   get_socket_type(config),
                                    get_log_level(config),
@@ -84,10 +78,8 @@ void custom_client(std::string input_file, uint64_t thread_id) {
 				   get_batch_on(config),
 				   get_interface(config),
 				   get_self_ip(config),
-				   get_packet_types(config),
-				   eth_types,
-				   mac_addrs,
-				   1, false); // TODO Need to do something else here??? Storage server could be faster
+				   get_num_pkt_types(config),
+				   false); // TODO Need to do something else here??? Storage server could be faster
     set_spdlog_level(get_log_level(config));
     spdlog::info("Simple Network: Sending/Receiving to remote host");
 
@@ -102,6 +94,8 @@ void custom_client(std::string input_file, uint64_t thread_id) {
     hdr.get()->num_entries = 1;
     uint64_t allocated_packet_size = size_of_hdr + payload_size + 1;
 
+    auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+    double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
     while (!end_thread) {
      	// Create packet buffer which will be sent  
      	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
@@ -112,10 +106,6 @@ void custom_client(std::string input_file, uint64_t thread_id) {
      	packet[allocated_packet_size - 1] = '\0';
 	//memcpy(packet.get() + size_of_hdr, reinterpret_cast<const char*>(&appInfo), sizeof(AppendInfo));
 	
-	char* entry = (char*)(packet.get() + sizeof(struct ring_append_entry));
-	spdlog::debug("Entry: {}", std::string(entry));
-
-
 	//spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, sizeof(AppendInfo), size_of_hdr);
 	net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, get_switch_mac(config), get_switch_ip(config));
 
@@ -139,12 +129,14 @@ void custom_client(std::string input_file, uint64_t thread_id) {
 	nonce *= scale;
 	scale += 1;
     }
+    auto end_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+    double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(end_duration_since_epoch).count();
+    double dur = end_time_s - start_time_s;
     spdlog::debug("Made it out of the loop!");
     stat->getAvgLatency();
-    stat->getThroughput(max_duration);
+    stat->getThroughput((uint64_t)dur);
     stat->getTotalOps();
     stat->exportResultsToJson();
-
     net->done();
 }
 

@@ -73,9 +73,9 @@ void custom_sequencer(std::unique_ptr<Network> net,
     (void) batch_size;
     (void) batch_on;
     //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
-    spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
+   /* spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
     spdlog::info("Simple Net Sequencer, cli_ip {}!", cli_ip);
-    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);
+    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);*/
 
     size_t size_of_hdr = get_ring_append_size();
     while (!end_thread) {
@@ -96,7 +96,7 @@ void custom_sequencer(std::unique_ptr<Network> net,
 		struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
 	    	size_t reply_pkt_size = size_of_hdr + append_entry->payload_size + 1;
 	    	size_t reply_pkt_offset = size_of_hdr;
-     	        spdlog::debug("Append entry: {}, {}", append_entry->nonce, append_entry->payload_size);
+     	        //spdlog::debug("Append entry: {}, {}", append_entry->nonce, append_entry->payload_size);
 
 		std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
             	memcpy(reply_packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
@@ -106,7 +106,7 @@ void custom_sequencer(std::unique_ptr<Network> net,
 		spdlog::debug("Nonce: {}, Entry: {}", append_info->nonce, append_info->entry);*/
 
 		memcpy(reply_packet.get() + reply_pkt_offset, reinterpret_cast<const char*>(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry)), append_entry->payload_size);
-		spdlog::debug("ETH_APPEND_REQ: {}, Append nonce: {}, Append payload size: {}", ETH_APPEND_REQ, append_entry->nonce, append_entry->payload_size);
+		//spdlog::debug("ETH_APPEND_REQ: {}, Append nonce: {}, Append payload size: {}", ETH_APPEND_REQ, append_entry->nonce, append_entry->payload_size);
      		if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
 		    net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_REQ, stor_mac, stor_ip);
 		} else if (ntohs(eth->h_proto) == ETH_APPEND_RESP) {
@@ -134,14 +134,7 @@ int main(int argc, char* argv[]) {
     std::string input_file = std::string(argv[1]);
     YAML::Node config = YAML::LoadFile(input_file);
     std::vector<int> eth_types = {ETH_APPEND_REQ};
-    std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
-    if (mac_addrs.size() < 1) {
-        spdlog::critical("Unable to parse mac address!");
-        throw;
-    }
-
-    std::unique_ptr<Network> net = std::make_unique<Network>(get_threads(config), 
-                                   get_send_port(config), 
+    std::unique_ptr<Network> net = std::make_unique<Network>(get_send_port(config), 
                                    get_recv_port(config),
 				   get_socket_type(config),
                                    get_log_level(config),
@@ -149,10 +142,8 @@ int main(int argc, char* argv[]) {
 				   get_batch_on(config),
 				   get_interface(config),
 				   get_self_ip(config),
-				   get_packet_types(config),
-				   eth_types,
-				   mac_addrs,
-				   1, false); 
+				   get_num_pkt_types(config),
+				   false); 
     set_spdlog_level(get_log_level(config));
     spdlog::info("Simple Network server");
     std::string json_name = "dummy";

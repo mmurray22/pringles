@@ -41,7 +41,9 @@ class LogStorage : public BaseStorage {
         std::unique_ptr<Network> net;
 	uint64_t num_pkt_types;
         
-	
+	std::array<uint8_t,6> switch_mac;
+	std::string switch_ip;
+
 	// In-memory Key-Value Store
         std::map<uint64_t, std::string> kv_store;
         // Key-Value Store Lock

@@ -11,6 +11,15 @@
 #include <utility>
 #include <map>
 #include <unordered_map>
+#include <netinet/if_ether.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <net/if.h>
+#include <net/ethernet.h>
+#include <sys/ioctl.h>
+#include <linux/ip.h>
+#include <linux/if_packet.h>
+#include <sys/epoll.h>
 
 #include "concurrentqueue.h"
 #include "readerwriterqueue.h"
@@ -44,8 +53,7 @@ class Network {
          * src_ip - the IP of the machine this network object currently lives on
          * pkt_types - these are the classes that packets will be sorted into when sent/received
          */
-        Network(uint64_t maxThreads,
-                std::string send_port, 
+        Network(std::string send_port, 
                 std::string recv_port,
                 std::string socket_type,
                 uint64_t log_level,
@@ -53,10 +61,8 @@ class Network {
                 bool batch_on,
                 std::string send_interface,
                 std::string self_ip,
-		std::map<uint64_t, std::vector<std::string>> pkt_type_to_ip,
-		std::vector<int> pkt_type_to_eth_type,
-		std::vector<std::array<uint8_t,6>> mac_addrs,
-		uint64_t num_send_threads, bool run_threads);
+		uint64_t num_pkt_type,
+		bool run_threads);
         ~Network();
 
         /*
@@ -82,7 +88,6 @@ class Network {
         void done();
 	
 	char* recv_packet();
-	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type);
 	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, std::string dst_ip);
  
         /*
@@ -93,17 +98,60 @@ class Network {
         bool remove_pkt_type(uint64_t pkt_type);
         
     private:
+
+	/* ALL THE ACTUALLY USED NETWORK VARS AND FXNS - MUCH SIMPLER*/ // TODO
+        int recv_socket;
+        int send_socket;
+        struct sockaddr_ll sin;
+	std::unique_ptr<struct iphdr> send_ip_hdr; 
+	std::unique_ptr<struct ethhdr> send_eth_hdr; 
+        std::string send_interface;
+        std::string self_ip;
+
+	bool run_threads; 
+	std::thread send_thread;
+	std::thread recv_thread;
+
+        char* norm_buf;
+        std::string socket_type; // Networking protocol you are running
+        bool check_socket_type(std::string socket_type);
+        const uint64_t BACKLOG = 5;
+        std::string SEND_PORT;
+        std::string RECV_PORT;
+        int setup_listener_socket(std::string curr_ip);
+        int setup_talker_socket(std::string curr_ip, std::shared_ptr<struct addrinfo>& it);
+        int setup_raw_talker_socket();
+        void destroy_socket(int s_fd);
+        std::shared_ptr<struct addrinfo> get_it(int s_fd);
+        std::string get_ip(uint64_t pkt_type, int idx);
+        std::unique_ptr<struct ethhdr> create_eth_hdr(int s_fd);
+        std::unique_ptr<struct iphdr> create_ip_hdr();
+
+        /** Batching **/
+        uint64_t batch_size;
+	bool batch_on;
+
+	// Boolean which indicates to sending and receiving threads to cease operation
+        bool terminate = false;
+
+	// Sender thread function, parameterized by the packet type the sender is responsible for
+        void run_send();
+        // Receiver thread 
+        void run_recv(int s_fd);
+	// checksum for IP packet header construction
+        unsigned short checksum(unsigned short *buf, int nwords);         
+        // Goes through the steps of stopping and cleaning up all the threads
+        void stop_threads();
+
+	/*OLD INFO*/
+
 	std::unordered_map<uint64_t, struct sockaddr_ll> sin_map;
 	std::unordered_map<uint64_t, std::vector<std::unique_ptr<struct ethhdr>>> eth_hdr_map; 
 
 
-        // checksum for IP packet header construction
-        unsigned short checksum(unsigned short *buf, int nwords);         
-
         // Lock to serialize access to terminate boolean
         std::mutex lock_terminate;
-        // Boolean which indicates to sending and receiving threads to cease operation
-        bool terminate = false;
+
 	bool rcv_q_available = false;
 	std::condition_variable rcv_cond;
 
@@ -111,17 +159,9 @@ class Network {
 	uint64_t num_sends_done = 0;
 	std::mutex lock_num_recv_done;
 	uint64_t num_recv_done = 0;
-	uint64_t MAX_RECV_THREADS = 1; // TODO: Change this eventually
 	uint64_t MAX_CLEANUP_TIME = 10;
-
-        // Goes through the steps of stopping and cleaning up all the threads
         uint64_t total_num_threads;
-        void stop_threads();
 
-        // Sender thread function, parameterized by the packet type the sender is responsible for
-        void run_send(uint64_t pkt_type, int eth_type);
-        // Receiver thread 
-        void run_recv(int s_fd);
 
         // Send Thread pool
         std::vector<std::thread> send_threads;
@@ -150,41 +190,17 @@ class Network {
 	std::unordered_map<uint64_t, std::vector<int>> pkt_type_to_fd;
 
 	std::vector<std::array<uint8_t,6>> mac_addrs;
-	//uint8_t mac_array[6]; // TODO add vector of these
 
         uint64_t num_pkt_type = 0;
-	std::unique_ptr<struct iphdr> cli_send_ip; 
-	std::unordered_map<int, std::shared_ptr<struct addrinfo>> fd_to_it;
+
+
+	std::unordered_map<uint64_t, std::shared_ptr<struct addrinfo>> fd_to_it;
         
         bool pkts_in_queue();
-        bool run_threads; 
-        char* norm_buf;
-        /** IP Address + Socket Management **/
-        std::string send_interface;
-        std::string self_ip;
-        
-	std::string seq_ip;
+        std::string seq_ip;
         std::string storage_multicast_addr;
         
-        int recv_socket;
         bool validate_ip_address(const std::string &ip_addr);
          
         /** Socket handling **/
-        std::string socket_type; // Networking protocol you are running
-        bool check_socket_type(std::string socket_type);
-        const uint64_t BACKLOG = 5;
-        std::string SEND_PORT;
-        std::string RECV_PORT;
-        int setup_listener_socket(std::string curr_ip);
-        int setup_talker_socket(std::string curr_ip, std::shared_ptr<struct addrinfo>& it);
-        int setup_raw_talker_socket();
-        void destroy_socket(int s_fd);
-        std::shared_ptr<struct addrinfo> get_it(int s_fd);
-        std::string get_ip(uint64_t pkt_type, int idx);
-        std::unique_ptr<struct ethhdr> create_eth_hdr(int s_fd, int eth_type, uint64_t idx);
-        std::unique_ptr<struct iphdr> create_ip_hdr();
-
-        /** Batching **/
-        uint64_t batch_size;
-	bool batch_on;
-};
+        };

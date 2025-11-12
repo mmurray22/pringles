@@ -114,3 +114,4 @@ Thumbs.db
 
 # Experiments
 experiments/results/run-*
+experiments/results/testing*
