@@ -26,6 +26,16 @@ pringles_seq = executable('net_seq', 'net_seq.cpp',
                           include_directories : inc,
                           dependencies: [yaml_cpp, spdlog, tbb_dep],
                           link_with : pringleslib)
+pringles_stor = executable('raw_cli', 'benchmark_raw_cli.cpp',
+                          include_directories : inc,
+                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+                          link_with : pringleslib)
+pringles_seq = executable('raw_serv', 'benchmark_raw_serv.cpp',
+                          include_directories : inc,
+                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+                          link_with : pringleslib)
+
+
 
 
 

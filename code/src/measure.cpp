@@ -57,6 +57,7 @@ void Stats::getDuration(double start_time) {
     auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
     double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
     double dur = end_time_s - start_time;
+    //spdlog::critical("Duration: {}", dur);
     latencies.push_back(dur);
 }
 

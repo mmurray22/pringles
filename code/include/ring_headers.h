@@ -34,6 +34,8 @@ struct ring_append_entry {
     uint32_t status;
     // FROM NETWORK: number of times control packet was seen
     uint32_t cntrl_pkt_it;
+    // FROM CLIENT
+    uint64_t thread_id;
 };
 
 // Append reply - from storage server

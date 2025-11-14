@@ -48,16 +48,6 @@ std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 bool end_thread = false;
 
-struct AppendInfo {
-    uint64_t nonce;
-    std::string entry;
-};
-
-struct ReturnInfo {
-    uint64_t nonce;
-};
-
-
 void custom_sequencer(std::unique_ptr<Network> net, 
 		      std::string json_name, 
 		      uint64_t thread_id, 
@@ -78,6 +68,8 @@ void custom_sequencer(std::unique_ptr<Network> net,
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);*/
 
     size_t size_of_hdr = get_ring_append_size();
+    in_addr_t stor_in_addr = inet_addr(stor_ip.c_str());
+    in_addr_t cli_in_addr = inet_addr(cli_ip.c_str());
     while (!end_thread) {
      	bool got_quorum = false;
         while (!got_quorum) {
@@ -108,9 +100,9 @@ void custom_sequencer(std::unique_ptr<Network> net,
 		memcpy(reply_packet.get() + reply_pkt_offset, reinterpret_cast<const char*>(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry)), append_entry->payload_size);
 		//spdlog::debug("ETH_APPEND_REQ: {}, Append nonce: {}, Append payload size: {}", ETH_APPEND_REQ, append_entry->nonce, append_entry->payload_size);
      		if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
-		    net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_REQ, stor_mac, stor_ip);
+		    net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_REQ, stor_mac, stor_in_addr);
 		} else if (ntohs(eth->h_proto) == ETH_APPEND_RESP) {
-     		    net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_mac, cli_ip);
+     		    net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_mac, cli_in_addr);
 		}
 
 	    }

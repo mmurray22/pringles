@@ -66,6 +66,8 @@ void custom_server(std::unique_ptr<Network> net,
     (void) thread_id;
     (void) batch_size;
     (void) batch_on;
+
+    in_addr_t switch_in_addr = inet_addr(switch_ip.c_str());
     //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
     spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
     size_t size_of_hdr = get_ring_append_size();
@@ -102,7 +104,7 @@ void custom_server(std::unique_ptr<Network> net,
      	    	std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
             	memcpy(reply_packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
 		//memcpy(reply_packet.get() + reply_pkt_offset, reinterpret_cast<const char*>(&ret), sizeof(struct ReturnInfo));
-     		net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_mac, switch_ip);
+     		net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_mac, switch_in_addr);
 	    
 	    }
 	}

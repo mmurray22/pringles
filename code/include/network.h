@@ -89,7 +89,9 @@ class Network {
 	
 	char* recv_packet();
 	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, std::string dst_ip);
+ 	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, in_addr_t dst_ip);
  
+
         /*
          * Update the packet classifiers
          * Useful if the classifiers are receiver IPs and some receivers fail/are changed

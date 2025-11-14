@@ -41,8 +41,6 @@
 #include <unordered_map>
 #include <condition_variable>
 
-#include <tbb/concurrent_queue.h>
-#include <tbb/concurrent_hash_map.h>
 #include "spdlog/spdlog.h"
 #include "utils.h"
 #include "measure.h"
@@ -55,15 +53,11 @@ std::string storage_pkt_type = "storage";
 bool end_thread = false;
 
 std::mutex recv_q_mutex;
-tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>> recv_q;
-
-//std::unordered_map<uint64_t, std::queue<char*>> recv_q;
+std::unordered_map<uint64_t, std::queue<char*>> recv_q;
 std::condition_variable cv;
 
 void receiver(int recv_socket,
               char* recv_ptr) {
-
-    spdlog::critical("Network Recv Thread starting with TID = {}", gettid());
     while (!end_thread) {
         int numbytes = 0;
         struct sockaddr_storage src_addr;
@@ -82,29 +76,15 @@ void receiver(int recv_socket,
         struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
 	char* pkt = (char*)std::malloc(sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry) + ring->payload_size);
         memcpy(pkt, recv_ptr, sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry) + ring->payload_size); 
-        
-	tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
-	if (!recv_q.find(acc, ring->thread_id % NUM_THREADS)) {
-	     spdlog::debug("UNKNOWN THREAD ID {}, skipping", ring->thread_id);
-	}
-        tbb::concurrent_queue<char*>& push_q = acc->second;
-	acc.release();
-	spdlog::debug("THREAD ID {}", ring->thread_id);
-
-	push_q.push(pkt);
         {
 	    std::unique_lock<std::mutex> lock(recv_q_mutex);
-	    //push_q.push(pkt);
-            //tbb::concurrent_hash_map<uint64_t, std::queue<char*>>::accessor acc;
-	    //if (recv_q.find(acc, ring->thread_id % NUM_THREADS)) {
-	    //    acc->second.push(pkt);
-	    //}
-            //recv_q[ring->thread_id % NUM_THREADS].push(pkt);
+            recv_q[ring->thread_id % NUM_THREADS].push(pkt);
         }
-	spdlog::debug("NOTFYING THE CONDITION VARIABLE!");
 	cv.notify_all();
     }
 }
+
+
 
 void custom_client(std::unique_ptr<Network> net, 
 		   uint64_t thread_id,
@@ -121,7 +101,6 @@ void custom_client(std::unique_ptr<Network> net,
 
 
     spdlog::info("Simple Network: Sending/Receiving to remote host");
-    spdlog::debug("INTERNAL THREAD ID {}", thread_id);
 
     spdlog::critical("Network Client Thread starting with TID = {}", gettid());
     std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
@@ -137,27 +116,17 @@ void custom_client(std::unique_ptr<Network> net,
 
     auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
     double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
-    
-    // Only need to read from the map once to get the queue
-    /*tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
-    if (!recv_q.find(acc, thread_id % NUM_THREADS)) {
-        spdlog::debug("QUEUE MISSING FOR THREAD ID {}", thread_id);
-	return;
-    }
-    tbb::concurrent_queue<char*>& check = acc->second;
-    acc.release();*/
-
     while (!end_thread) {
      	// Create packet buffer which will be sent  
      	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
 
         double start_time = stat->getStartLat();
-	hdr.get()->nonce = nonce;
 	memcpy(packet.get(), reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
 	memcpy(packet.get() + size_of_hdr, payload.c_str(), payload.length());
      	packet[allocated_packet_size - 1] = '\0';
-
-	spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, payload.length(), size_of_hdr);
+	//memcpy(packet.get() + size_of_hdr, reinterpret_cast<const char*>(&appInfo), sizeof(AppendInfo));
+	
+	//spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, sizeof(AppendInfo), size_of_hdr);
 	net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_mac, switch_ip);
 
      	bool got_quorum = false;
@@ -165,31 +134,23 @@ void custom_client(std::unique_ptr<Network> net,
 	    if (end_thread) {
                 break;
 	    }
-	    tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
-            if (!recv_q.find(acc, thread_id % NUM_THREADS)) {
-                spdlog::debug("QUEUE MISSING FOR THREAD ID {}", thread_id);
-                return;
-            }
-            tbb::concurrent_queue<char*>& check = acc->second;
-            acc.release();
-    
 	    char* recv_ptr = NULL;
-            {
-	        std::unique_lock<std::mutex> lock(recv_q_mutex);
-		cv.wait(lock, [thread_id, &check] { 
-				return !check.empty() || end_thread; });
 
-		//spdlog::debug("After the condition variable! {}", check.empty());
-		if (check.try_pop(recv_ptr)) {
-		    //spdlog::debug("Successfully dequeued entry!!"); 
+	    {
+	        std::unique_lock<std::mutex> lock(recv_q_mutex);
+		cv.wait(lock, [thread_id, NUM_THREADS] { return !recv_q[thread_id % NUM_THREADS].empty() || end_thread; });
+		if (end_thread) {
+		    break;
 		}
-            }
+	        recv_ptr = recv_q[thread_id % NUM_THREADS].front();
+	        recv_q[thread_id % NUM_THREADS].pop();
+	    }
 
             /* TODO old
-	     * char* recv_ptr = net->recv_packet();*/
+	     * char* recv_ptr = net->recv_packet();
 	    if (!recv_ptr) {
 	        continue;
-	    }
+	    }*/
 
 	    struct ethhdr* eth = (struct ethhdr*)recv_ptr;
    	    if (ntohs(eth->h_proto) == ETH_APPEND_RESP) {
@@ -228,52 +189,19 @@ int main(int argc, char* argv[]) {
     std::array<uint8_t, 6> switch_mac = get_switch_mac(config);
     std::string switch_ip = get_switch_ip(config);
     NUM_THREADS = get_num_client_threads(config);
-
-    // Receive
-    int recv_socket;
-    if ((recv_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
-        spdlog::critical("Unable to create raw socket! Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        return -1;
-    }
-    struct timeval timeout;
-    timeout.tv_sec = 1;  // 5 seconds timeout
-    timeout.tv_usec = 0;
-    if (setsockopt(recv_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        return -1;
-    }
-    if (setsockopt(recv_socket, SOL_SOCKET, SO_BINDTODEVICE, get_interface(config).c_str(), strlen(get_interface(config).c_str())) < 0) {
-        perror("Error binding socket to device. Interface name wrong or permissions failed.");
-        close(recv_socket);
-        return -1;
-    }
-    int ignore_outgoing = 1;
-    if (setsockopt(recv_socket, SOL_PACKET, PACKET_IGNORE_OUTGOING, &ignore_outgoing, sizeof(ignore_outgoing)) < 0) {
-        perror("Error binding socket to device. Interface name wrong or permissions failed.");
-        close(recv_socket);
-        return -1;
-    }
-
-
     for (uint64_t i = 0; i < NUM_THREADS; i++) {
-        tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
-        if (recv_q.insert(acc, i)) {
-	    spdlog::debug("New queue created!");
-	}
-	acc.release();
+	std::queue<char*> q;
+        recv_q.emplace(i, q);
     }
     char* norm_buf = (char*)std::malloc(MAX_PACKET_SIZE);
-    std::thread recv_thread(receiver, recv_socket, norm_buf);
-    pthread_t recv_native_handle = recv_thread.native_handle();
+    std::thread recv_thread(receiver, recv_socket, norm_buf, num_threads);
+    pthread_t native_handle = recv_thread.native_handle();
 
     // Create a CPU set and add the desired core
-    cpu_set_t recv_cpuset;
-    CPU_ZERO(&recv_cpuset);
-    CPU_SET(std::thread::hardware_concurrency() - 1, &recv_cpuset); // Pin to core 'i'
-    int recv_result = pthread_setaffinity_np(recv_native_handle, sizeof(cpu_set_t), &recv_cpuset);
-    if (recv_result != 0) {
-        std::cerr << "Error setting thread affinity for thread " << recv_thread.get_id() << ": " << recv_result << std::endl;
-    } 
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(std::thread::hardware_concurrency(), &cpuset); // Pin to core 'i'
+
     for (uint64_t i = 0; i < NUM_THREADS; i++) {
     	std::unique_ptr<Network> net = std::make_unique<Network>(get_send_port(config), 
                                   				 get_recv_port(config),
@@ -307,12 +235,10 @@ int main(int argc, char* argv[]) {
     std::this_thread::sleep_for(sleep_duration);
     end_thread = true;
     spdlog::debug("Thread done!");
-    cv.notify_all();
     for (uint64_t i = 0; i < client_threads.size(); i++) {
         client_threads[i].join();
     }
-    spdlog::debug("Done joining the clients!");
-    recv_thread.join();
+    receiver.join();
     free(norm_buf);
     return 0;
 }
