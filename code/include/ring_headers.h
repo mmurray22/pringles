@@ -13,6 +13,13 @@
 #define ETH_READ 0x870
 #define ETH_TAIL 0x840
 
+// The type indicator header
+// REQUIRED FOR ALL PACKETS
+struct ring_type {
+    uint16_t type; // TODO add to the P4 switch processing
+};
+
+
 // Append request - from client
 // Size: 224 bytes
 struct ring_append_entry {
@@ -60,3 +67,7 @@ struct ring_subscribe_entry {
 
 std::unique_ptr<struct ring_append_entry> create_ring_append_entry(uint32_t nonce, uint32_t cid);
 size_t get_ring_append_size();
+
+std::unique_ptr<struct ring_type> create_ring_type(uint16_t eth_type);
+size_t get_ring_type_size();
+ 

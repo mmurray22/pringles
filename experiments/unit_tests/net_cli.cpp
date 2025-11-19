@@ -60,6 +60,7 @@ tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>> recv_q;
 //std::unordered_map<uint64_t, std::queue<char*>> recv_q;
 std::condition_variable cv;
 
+// TODO need to batch by source - fine for a single physical client machines
 void receiver(int recv_socket,
               char* recv_ptr) {
 
@@ -79,29 +80,36 @@ void receiver(int recv_socket,
         if (ntohs(eth->h_proto) != ETH_APPEND_RESP) {
             continue;
         }
-        struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
-	char* pkt = (char*)std::malloc(sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry) + ring->payload_size);
-        memcpy(pkt, recv_ptr, sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry) + ring->payload_size); 
-        
-	tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
-	if (!recv_q.find(acc, ring->thread_id % NUM_THREADS)) {
-	     spdlog::debug("UNKNOWN THREAD ID {}, skipping", ring->thread_id);
-	}
-        tbb::concurrent_queue<char*>& push_q = acc->second;
-	acc.release();
-	spdlog::debug("THREAD ID {}", ring->thread_id);
 
-	push_q.push(pkt);
-        {
+	// Unpack batch
+        size_t size_of_hdr = get_ring_append_size();
+	struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
+	uint64_t recv_offset = sizeof(struct ethhdr) + sizeof(iphdr) + size_of_hdr;
+	//spdlog::debug("Received NEW packet with num entries = {}", append_entry->num_entries);
+	for (uint64_t i = 0; i < append_entry->num_entries; i++) {
+	    struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + recv_offset);
+	    //spdlog::debug("Received packet with num entries = {}, The payload size: {}, thread id: {}", ring->num_entries, ring->payload_size, ring->thread_id);
+	    char* pkt = (char*)std::malloc(sizeof(struct ring_append_entry) + ring->payload_size);
+            memcpy(pkt, (char*)(recv_ptr + recv_offset), sizeof(struct ring_append_entry) + ring->payload_size); 
+        
+    	    tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
+ 	    if (!recv_q.find(acc, ring->thread_id % NUM_THREADS)) {
+	    	spdlog::debug("UNKNOWN THREAD ID {}, skipping", ring->thread_id);
+	    }
+            tbb::concurrent_queue<char*>& push_q = acc->second;
+	    acc.release();
+	    //spdlog::debug("THREAD ID {}", ring->thread_id);
+
+
+	    push_q.push(pkt);
+	    recv_offset += (size_of_hdr + ring->payload_size);
+	}
+
+	//struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
+	{
 	    std::unique_lock<std::mutex> lock(recv_q_mutex);
-	    //push_q.push(pkt);
-            //tbb::concurrent_hash_map<uint64_t, std::queue<char*>>::accessor acc;
-	    //if (recv_q.find(acc, ring->thread_id % NUM_THREADS)) {
-	    //    acc->second.push(pkt);
-	    //}
-            //recv_q[ring->thread_id % NUM_THREADS].push(pkt);
         }
-	spdlog::debug("NOTFYING THE CONDITION VARIABLE!");
+	//spdlog::debug("NOTFYING THE CONDITION VARIABLE!");
 	cv.notify_all();
     }
 }
@@ -113,19 +121,26 @@ void custom_client(std::unique_ptr<Network> net,
 		   bool batch_on,
 		   uint64_t payload_size,
 		   std::array<uint8_t, 6> switch_mac,
-		   std::string switch_ip) {
+		   std::string switch_ip,
+		   std::array<uint8_t, 6> stor_mac,
+		   std::string stor_ip,
+		   std::string stor_receive_port,
+		   std::string switch_receive_port
+		   bool use_switch,
+		   bool use_stor) {
+    (void) switch_mac;
+    (void) stor_mac;
     uint64_t nonce = thread_id;
     uint64_t scale = 2;
+    uint64_t highest_idx = 0;
 
     std::vector<int> eth_types = {ETH_APPEND_REQ};
-
-
+    
+    std::unique_ptr<struct ring_type> ring_type_hdr = create_ring_type(ETH_APPEND_REQ);
     spdlog::info("Simple Network: Sending/Receiving to remote host");
-    spdlog::debug("INTERNAL THREAD ID {}", thread_id);
 
-    spdlog::critical("Network Client Thread starting with TID = {}", gettid());
+    spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid(), thread_id);
     std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
-    spdlog::info("Simple Net Client!");
 
     std::string payload(payload_size, 'x');
     size_t size_of_hdr = get_ring_append_size();
@@ -150,21 +165,27 @@ void custom_client(std::unique_ptr<Network> net,
     while (!end_thread) {
      	// Create packet buffer which will be sent  
      	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
-
         double start_time = stat->getStartLat();
 	hdr.get()->nonce = nonce;
 	memcpy(packet.get(), reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
-	memcpy(packet.get() + size_of_hdr, payload.c_str(), payload.length());
-     	packet[allocated_packet_size - 1] = '\0';
+	memcpy(packet.get() + size_of_hdr, payload.c_str(), payload.length() + 1);
 
-	spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, payload.length(), size_of_hdr);
-	net->send_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_mac, switch_ip);
+	//spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, payload.length(), size_of_hdr);
+	if (use_switch) {
+	    net->send_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port);
+	} else {
+	    //for (uint64_t i = 0; i < stor_ips.size(); i++) {
+	    net->send_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
+	    //}
+	}
 
      	bool got_quorum = false;
         while (!got_quorum) {
 	    if (end_thread) {
                 break;
 	    }
+	
+	    /*
 	    tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
             if (!recv_q.find(acc, thread_id % NUM_THREADS)) {
                 spdlog::debug("QUEUE MISSING FOR THREAD ID {}", thread_id);
@@ -181,23 +202,21 @@ void custom_client(std::unique_ptr<Network> net,
 
 		//spdlog::debug("After the condition variable! {}", check.empty());
 		if (check.try_pop(recv_ptr)) {
-		    //spdlog::debug("Successfully dequeued entry!!"); 
+		    //spdlog::debug("Successfully dequeued entry!! Where the receive pointer is: {}", recv_ptr != NULL); 
 		}
             }
+	    */
 
-            /* TODO old
-	     * char* recv_ptr = net->recv_packet();*/
+	    char* recv_ptr = net->recv_packet();
 	    if (!recv_ptr) {
 	        continue;
 	    }
-
-	    struct ethhdr* eth = (struct ethhdr*)recv_ptr;
-   	    if (ntohs(eth->h_proto) == ETH_APPEND_RESP) {
-		// TODO: Check nonce
-		stat->getDuration(start_time);
-		stat->addOp();
-	        got_quorum = true;
-	    }
+	    
+	    // TODO: Check nonce
+	    //spdlog::debug("Registering the time and operation!");
+	    stat->getDuration(start_time);
+	    stat->addOp();
+	    got_quorum = true;
         }
 	nonce *= scale;
 	scale += 1;
@@ -206,9 +225,11 @@ void custom_client(std::unique_ptr<Network> net,
     double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(end_duration_since_epoch).count();
     double dur = end_time_s - start_time_s;
     spdlog::debug("Made it out of the loop!");
-    stat->getAvgLatency();
-    stat->getThroughput((uint64_t)dur);
-    stat->getTotalOps();
+    spdlog::critical("Highest index seen is: {}", highest_idx);
+    spdlog::critical("For thread {}, the lat is: {}, tput: {}, total ops: {}", thread_id, stat->getAvgLatency(), stat->getThroughput((uint64_t)dur), stat->getTotalOps());
+    //stat->getAvgLatency();
+    //stat->getThroughput((uint64_t)dur);
+    //stat->getTotalOps();
     stat->exportResultsToJson();
     net->done();
 }
@@ -227,6 +248,9 @@ int main(int argc, char* argv[]) {
     uint64_t payload_size = get_payload_size(config);
     std::array<uint8_t, 6> switch_mac = get_switch_mac(config);
     std::string switch_ip = get_switch_ip(config);
+    std::array<uint8_t, 6> stor_mac = get_stor_mac(config);
+    std::string stor_ip = get_stor_ip(config);
+   
     NUM_THREADS = get_num_client_threads(config);
 
     // Receive
@@ -275,8 +299,11 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error setting thread affinity for thread " << recv_thread.get_id() << ": " << recv_result << std::endl;
     } 
     for (uint64_t i = 0; i < NUM_THREADS; i++) {
-    	std::unique_ptr<Network> net = std::make_unique<Network>(get_send_port(config), 
-                                  				 get_recv_port(config),
+        uint64_t send_port = get_send_port(config) + i;
+	uint64_t recv_port = get_recv_port(config) + + NUM_THREADS + i;	
+ 
+    	std::unique_ptr<Network> net = std::make_unique<Network>(std::to_string(send_port), 
+                                  				 std::to_string(recv_port),
 				  				 get_socket_type(config),
                                   				 get_log_level(config),
 				  				 get_batch_size(config),
@@ -285,15 +312,28 @@ int main(int argc, char* argv[]) {
 				  				 get_self_ip(config),
 				  				 get_num_pkt_types(config),
 				  				 false);
-    
-        client_threads.emplace_back(std::thread(&custom_client, std::move(net), i, json_name, batch_size, batch_on, payload_size, switch_mac, switch_ip));
+        client_threads.emplace_back(std::thread(&custom_client, 
+				                std::move(net), 
+						i, 
+						json_name, 
+						batch_size, 
+						batch_on, 
+						payload_size, 
+						switch_mac, 
+						switch_ip, 
+						stor_mac,
+						stor_ip,
+						get_stor_receive_port(config), 
+						get_switch_receive_port(config),
+						get_use_switch(config),
+						get_use_stor(config)));
 
         pthread_t native_handle = client_threads[i].native_handle();
 
     	// Create a CPU set and add the desired core
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-    	CPU_SET(i % (std::thread::hardware_concurrency() - 1), &cpuset); // Pin to core 'i'
+    	CPU_SET((i+1) % (std::thread::hardware_concurrency() - 1), &cpuset); // Pin to core 'i'
 
         // Set thread affinity
         int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);

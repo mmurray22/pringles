@@ -72,40 +72,58 @@ void custom_server(std::unique_ptr<Network> net,
     spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
     size_t size_of_hdr = get_ring_append_size();
     uint64_t idx = 1;
+    uint64_t max_received_idx = 1;
     while (!end_thread) {
      	bool got_quorum = false;
+        std::unique_ptr<struct ring_append_entry> resp_hdr = create_ring_append_entry(1, thread_id);
+        resp_hdr.get()->num_entries = 0;
+	resp_hdr.get()->payload_size = 0;
+
         while (!got_quorum) {
 	     if (end_thread) {
 	         break;
 	     }
 
-            char* recv_ptr = net->recv_packet();
+            char* recv_ptr = net->recv_packet(); // Make receive separate thread TODO
 	    if (!recv_ptr) {
 	        continue;
 	    }
 
 	    struct ethhdr* eth = (struct ethhdr*)recv_ptr;
-	    //spdlog::debug("Ethernet type: {} and then ntohs: {}", eth->h_proto, ntohs(eth->h_proto));
    	    if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
 	        got_quorum = true;
+		
+		// Unpack the batch
 		struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
-	    	size_t reply_pkt_size = size_of_hdr; // + sizeof(struct ReturnInfo);
-	    	//size_t reply_pkt_offset = size_of_hdr;
+		resp_hdr.get()->num_entries = append_entry->num_entries;
+		resp_hdr.get()->payload_size = 0;
+		uint64_t reply_pkt_size = size_of_hdr + (size_of_hdr + resp_hdr.get()->payload_size) * append_entry->num_entries;
+     	        std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
 
-		char* entry = (char*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct ring_append_entry));
-		//spdlog::debug("Nonce: {}, Entry: {}", append_entry->nonce, std::string(entry));
-		
-		std::string dummy(entry); // = "entry";
-		store(idx, dummy); // TODO placeholder
-		idx += 1;
-		
-		// TODO: store(append_entry->g_idx, append_info->entry);
-
-     	    	std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
-            	memcpy(reply_packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
-		//memcpy(reply_packet.get() + reply_pkt_offset, reinterpret_cast<const char*>(&ret), sizeof(struct ReturnInfo));
-     		net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_mac, switch_in_addr);
+                memcpy(reply_packet.get(), reinterpret_cast<const char*>(resp_hdr.get()), size_of_hdr);
+		uint64_t recv_offset = sizeof(struct ethhdr) + sizeof(iphdr) + size_of_hdr;
+		uint64_t send_offset = size_of_hdr;
+		//spdlog::debug("Number of entries received: {}", append_entry->num_entries);
+		for (uint64_t i = 0; i < append_entry->num_entries; i++) {
+		    //spdlog::debug("WE ARE ON ITERATION: {} with offset {}", i, recv_offset);
+		    struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset);
+	            char* entry = (char*)(recv_ptr + recv_offset + sizeof(struct ring_append_entry));
 	    
+	    	    std::string dummy(entry); 
+		    //spdlog::debug("Dummy entry length: {}", dummy.length());
+	    	    store(idx, dummy);
+	    	    idx += 1;
+		    //spdlog::debug("The updated index is: {}, Entry: {}", idx, dummy);
+		    //spdlog::debug("Batch append entry payload size: {}, num entries: {}", batch_append_entry->payload_size, batch_append_entry->num_entries);
+		    recv_offset += (size_of_hdr + batch_append_entry->payload_size + 1);
+		    batch_append_entry->payload_size = 0;
+                    memcpy(reply_packet.get() + send_offset, reinterpret_cast<const char*>(batch_append_entry), size_of_hdr);
+		    send_offset += size_of_hdr;
+
+		}
+
+		//spdlog::debug("Send packet response with size {}!", reply_pkt_size);
+     	    	net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_mac, switch_in_addr);
 	    }
 	}
 
@@ -115,6 +133,8 @@ void custom_server(std::unique_ptr<Network> net,
 	}
     }
     net->done();
+    spdlog::critical("The number of indices given out is: {}", idx);
+    spdlog::critical("The max received indices given out is: {}", max_received_idx);
 }
 
 int main(int argc, char* argv[]) {
@@ -154,7 +174,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error setting thread affinity for thread " << server_thread.get_id() << ": " << result << std::endl;
     } 
 
-    uint64_t max_duration = get_experiment_duration(config) + 5;
+    uint64_t max_duration = get_experiment_duration(config);
 
     std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);

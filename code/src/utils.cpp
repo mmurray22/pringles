@@ -84,14 +84,14 @@ uint64_t get_batch_size(YAML::Node config) {
 }
 
 /* Network Ports */
-std::string get_send_port(YAML::Node config) {
-    spdlog::debug("Port: {}", config["send_port"].as<std::string>());
-    return config["send_port"].as<std::string>();
+uint64_t get_send_port(YAML::Node config) {
+    spdlog::debug("Port: {}", config["send_port"].as<uint64_t>());
+    return config["send_port"].as<uint64_t>();
 }
 
-std::string get_recv_port(YAML::Node config) {
-    spdlog::debug("Port: {}", config["recv_port"].as<std::string>());
-    return config["recv_port"].as<std::string>();
+uint64_t get_recv_port(YAML::Node config) {
+    spdlog::debug("Port: {}", config["recv_port"].as<uint64_t>());
+    return config["recv_port"].as<uint64_t>();
 }
 
 /* Socket type */
@@ -310,4 +310,20 @@ std::string get_json_name(YAML::Node config) {
 
 uint64_t get_num_failures(YAML::Node config) {
     return config["num_failures"].as<uint64_t>();
+}
+
+std::string get_stor_receive_port(YAML::Node config) {
+    return config["stor_recv_port"].as<std::string>();
+}
+
+std::string get_switch_receive_port(YAML::Node config) {
+    return config["switch_recv_port"].as<std::string>();
+}
+
+uint64_t get_use_switch(YAML::Node config) {
+    return config["use_switch"].as<uint64_t>();
+}
+
+uint64_t get_use_stor(YAML::Node config) {
+    return config["use_store"].as<uint64_t>();
 }

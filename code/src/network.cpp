@@ -79,6 +79,10 @@ Network::~Network() {
 	// TODO cleanup???
 }
 
+std::string Network::get_recv_port() {
+    return RECV_PORT;
+}
+
 unsigned short Network::checksum(unsigned short *buf, int nwords) {
     unsigned long sum;
     for(sum=0; nwords>0; nwords--) {
@@ -361,31 +365,6 @@ int Network::setup_listener_socket(std::string curr_ip) {
 	    close(s_fd);
 	    return -1;
 	}
-
-
-	/*struct ifreq ifr;
-	memset(&ifr, 0, sizeof(ifr));
-	strncpy(ifr.ifr_name, send_interface.c_str(), IFNAMSIZ - 1);
-	// a. Get original flags
-
-        // b. Set new flags including IFF_PROMISC
-        ifr.ifr_flags = IFF_PROMISC;
-        if (ioctl(s_fd, SIOCSIFFLAGS, &ifr) < 0) {
-            perror("SIOCSIFFLAGS (setting PROMISC) error");
-            return 1;
-        }
-	spdlog::debug("Now setting the interface into promiscuous mode!!!");
-	*/
-        /*if (setsockopt(s_fd, IPPROTO_IP, SO_REUSEADDR | IP_HDRINCL, &yes, sizeof(int)) == -1) {
-            spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            return -1;
-        }*/
-        /*int flags = fcntl(s_fd, F_GETFL, 0);
-        if (flags == -1) return false;
-        flags = flags | O_NONBLOCK;
-        if (fcntl(s_fd, F_SETFL, flags) != 0) {
-            spdlog::critical("UNABLE TO SET FCNTL FLAGS");
-        }*/
         return s_fd;
     }
     memset(&hints, 0, sizeof hints);
@@ -428,14 +407,14 @@ int Network::setup_listener_socket(std::string curr_ip) {
     return s_fd;
 }
 
-/*Sets up a datagram UDP socket for curr_ip*/  
-int Network::setup_talker_socket(std::string curr_ip, std::shared_ptr<struct addrinfo>& it) {
+/*Sets up a datagram UDP socket for destination IP */  
+int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, std::shared_ptr<struct addrinfo>& it) {
     struct addrinfo hints, *servinfo, *temp;
     int s_fd;
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM; // Normal UDP Datagram Socket
-    int64_t status = getaddrinfo(curr_ip.c_str(), SEND_PORT.c_str(), &hints, &servinfo);
+    int64_t status = getaddrinfo(dst_ip.c_str(), dst_port.c_str(), &hints, &servinfo);
     if (status != 0) {
         spdlog::debug("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), status, gai_strerror(status));
         return -1;
@@ -501,72 +480,32 @@ bool Network::send_packet(std::unique_ptr<char[]> send_packet,
     return sent_all;
 }
 
-bool Network::send_packet(std::unique_ptr<char[]> send_packet, 
+bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet, 
 		          uint64_t pkt_len, 
 			  uint64_t pkt_type, 
 			  int eth_type,
-			  std::array<uint8_t,6> dst_mac,
-			  std::string dst_ip) {
+			  std::string dst_ip,
+			  std::string dst_port) {
     bool sent_all = true;
-    //spdlog::debug("The dst ip is: {}", dst_ip);
-    //std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
 
-    // If socket_type UDP
-    if (socket_type == "UDP") { // TODO need to move into the for loop?
-        spdlog::debug("Sending a UDP packet!");
-	std::shared_ptr<struct addrinfo> socket_it = std::make_shared<struct addrinfo>();
-        int s_fd = setup_talker_socket(dst_ip, socket_it);
-        if (s_fd < 0) {
-            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", pkt_type);
-            throw std::runtime_error("Can't create sending socket");
-        } 
-        ssize_t num_bytes = sendto(send_socket, send_packet.get(), pkt_len, 0, socket_it->ai_addr, socket_it->ai_addrlen);
-        if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
-            spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            sent_all = false;
-        }
-        spdlog::info("Successfully sent {} bytes to the receiver with packet value ???", std::to_string(num_bytes));
-        return sent_all;
+    // If socket_type is not UDP
+    if (socket_type != "UDP") {
+        return false;
     }
-
-    // If the packet type is a descriptive string to indicate header type
-    //std::unique_ptr<struct ethhdr> eth = eth_hdr_map[pkt_type][i];
-    for (int j = 0; j < 6; j++) { // 48 bit mac address - local broadcast
-        send_eth_hdr.get()->h_dest[j] = dst_mac[j];
-        sin.sll_addr[j] = dst_mac[j];
-    }
-    send_eth_hdr.get()->h_proto = htons(eth_type);
-    /* Running a raw socket based protocol */
-    //spdlog::debug("IP Address: {}", dst_ip);
-    size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
-    //spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
-
-    std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size); // TODO phase this out eventually
     
-    /*Create ethernet header - dest addr will currently indicate multicast TODO unicast*/
-    memcpy(packet.get(), send_eth_hdr.get(), sizeof(struct ethhdr));
-    
-    /*Create IP header*/
-    send_ip_hdr.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
-    send_ip_hdr.get()->daddr = inet_addr(dst_ip.c_str()); // destination address
-    send_ip_hdr.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header
-    memcpy(packet.get() + sizeof(struct ethhdr), send_ip_hdr.get(), sizeof(struct iphdr));
-    memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet.get()), pkt_len);
-
-    /*printf("\nEthernet Header\n");
-    printf("\t|-True Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth_hdr_vec[i].get()->h_dest[0],eth_hdr_vec[i].get()->h_dest[1],eth_hdr_vec[i].get()->h_dest[2],eth_hdr_vec[i].get()->h_dest[3],eth_hdr_vec[i].get()->h_dest[4],eth_hdr_vec[i].get()->h_dest[5]);*/
-    /*printf("\t|-Map Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth_hdr_map[pkt_type][i].get()->h_dest[0],eth_hdr_map[pkt_type][i].get()->h_dest[1],eth_hdr_map[pkt_type][i].get()->h_dest[2],eth_hdr_map[pkt_type][i].get()->h_dest[3],eth_hdr_map[pkt_type][i].get()->h_dest[4],eth_hdr_map[pkt_type][i].get()->h_dest[5]);*/
-    //printf("\t|-True Protocol : %d\n",eth_hdr_vec[i].get()->h_proto);
-    //printf("\t|-Map Protocol : %d\n",eth_hdr_map[pkt_type][i].get()->h_proto);
-
-    ssize_t num_bytes = 0;
-    if ((num_bytes = sendto(send_socket, packet.get(), packet_size, 0, (struct sockaddr*)(&sin), sizeof(sin))) < 0 || 
-            ((uint64_t)num_bytes != packet_size)) {
-        spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        spdlog::debug("Num bytes sent: {} vs. expected: {}", num_bytes, packet_size);
+    spdlog::debug("Sending a UDP packet!");
+    std::shared_ptr<struct addrinfo> socket_it = std::make_shared<struct addrinfo>();
+    int s_fd = setup_talker_socket(dst_ip, dst_port, socket_it);
+    if (s_fd < 0) {
+        spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
+        throw std::runtime_error("Can't create sending socket");
+    } 
+    ssize_t num_bytes = sendto(s_fd, send_packet.get(), pkt_len, 0, socket_it->ai_addr, socket_it->ai_addrlen);
+    if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
+        spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
         sent_all = false;
     }
-    //spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
+    spdlog::info("Successfully sent {} bytes to the receiver with packet value ???", std::to_string(num_bytes));
     return sent_all;
 }
 
@@ -575,7 +514,20 @@ char* Network::recv_packet() { // do you need to memset? TODO
     struct sockaddr_storage src_addr;
     socklen_t addr_len = sizeof src_addr;
 
+    //TODO epoll    
     if ((numbytes = recvfrom(recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
+        return NULL;
+    }
+    return norm_buf;
+}
+
+char* Network::recv_packet(int udp_recv_socket) { // do you need to memset? TODO
+    int numbytes = 0;
+    struct sockaddr_storage src_addr;
+    socklen_t addr_len = sizeof src_addr;
+
+    //TODO epoll    
+    if ((numbytes = recvfrom(udp_recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
         return NULL;
     }
     return norm_buf;

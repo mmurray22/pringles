@@ -74,8 +74,8 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         'cli_ips': cli_ips,
         'stor_macs': stor_macs,
         'stor_ips': stor_ips,
-        'send_port': send_port,
-        'recv_port': recv_port,
+        'send_port': QuotedString(send_port),
+        'recv_port': QuotedString(recv_port),
         'send_threads': 1,  # [INACTIVE]
         # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
         'socket_type': QuotedString(exp_params['socket_type']),
@@ -89,6 +89,8 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         # Use the calculated final duration (adjusted for servers)
         'experiment_duration': final_duration, 
         'payload_size': exp_params['message_size'],
+        'use_switch': exp_params['use_switch'],
+        'use_store': exp_params['use_store']
     }
     
     # Pre-calculate and wrap client destination MACs (used by both client to send, and server to reply)
@@ -101,7 +103,6 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         client_ips = [QuotedString(ip) for ip in route_params['list_client_dest_ips']]
         
         yaml_config.update({
-            'use_switch': exp_params['use_switch'],
             'sequencer_type': proto_params['sequencer_type'],
             'num_client_threads': exp_params['num_client_threads'],
             'cli_id': entity_id, # Integer
@@ -111,12 +112,6 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             
             # Add num_failures to client config
             'num_failures': num_failures, 
-
-            # packet_types holds only the quoted IPs
-            #'packet_types': [{'ips': client_ips}],
-            
-            # packet_types_macs holds only the quoted MACs
-            #'packet_types_macs': [{'macs': client_macs}],
 
             # warm up time
             'warm_up': warm_up,
@@ -140,12 +135,6 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'shard_switch_id': shard_switch_id,
             'stor_id': entity_id, # Integer
             'use_switch': exp_params['use_switch']
-            #'dst_mac': QuotedString(dst_mac), # WRAPPED: Ensures server dst_mac is quoted
-            # Each server uses one packet type that targets the quoted client IP
-            #'packet_types': [{'ips': server_ips}],
-            
-            # Add packet_types_macs to server config, using the client MACs for the return path
-            #'packet_types_macs': [{'macs': server_macs}]
         })
 
     return yaml_config

@@ -2,12 +2,13 @@
 client_ip = "10.10.1.2"
 sequencer_ip = "10.10.1.5"
 server_ips = ["10.10.1.4"]
-
 stor_ips = ["10.10.1.4"]
+stor_recv_port = "30002"
 stor_macs = ["0c:42:a1:dd:58:80"]
 cli_ips = ["10.10.1.2"]
 cli_macs = ["0c:42:a1:dd:5f:88"]
 switch_ip = "10.10.1.5"
+switch_recv_port = "30002"
 switch_mac = "0c:42:a1:dd:5c:18"
 network_interface = "enp65s0f0np0" # TODO: MAKE THIS A LIST FOR CLIENTS AND SERVERS!!!!
 ssh_key = "/proj/ove-PG0/murray/cloudlab"
@@ -23,19 +24,20 @@ run_setup_script = "False"
 log_level = 6
 warm_up = 5 # seconds
 cool_down = 5 # seconds
-experiment_duration = 60 # seconds
-socket_type = "RAW" # or "UDP"
+experiment_duration = 30 # seconds
+socket_type = "UDP" # "RAW"
 message_size = 100 # 100 # bytes
 num_client_threads = 1
 json_name = "increase_client"
 experiment_name = "100_byte_payload"
 num_failures = 0 # NEW
-git_hash = ""
-use_switch = 1
+git_hash = "" # TODO
+use_switch = 1 # TODO
+use_store = 1 # TODO
 
 [protocol_batching]
-batch_on = false
-batch_size = 8192 # bytes TODO
+batch_on = true
+batch_size = 1 # Number of packets
 num_packet_types = 1
 sequencer_type = 0 
 storage_server_type = 0 
@@ -48,52 +50,60 @@ server_dest_macs = ["ec:b1:d7:85:6a:93"] # TODO Change name this is so confusing
 
 [[experiment]]
 num_client_threads = 1
+batch_size = 1 # Number of packets
 json_name = "one_client"
-#
-#[[experiment]]
-#num_client_threads = 2
-#json_name = "two_client"
-#
+
+[[experiment]]
+num_client_threads = 2
+batch_size = 2 # Number of packets
+json_name = "two_client"
+
 #[[experiment]]
 #num_client_threads = 4
+#batch_size = 2 # Number of packets
 #json_name = "four_client"
-#
+
 #[[experiment]]
 #num_client_threads = 6
 #json_name = "six_client"
-#
+
 #[[experiment]]
 #num_client_threads = 8
+#batch_size = 2 # Number of packets
 #json_name = "eight_client"
-#
+
 #[[experiment]]
 #num_client_threads = 10
 #json_name = "ten_client"
-#
+
 #[[experiment]]
 #num_client_threads = 12
+#batch_size = 2 # Number of packets
 #json_name = "twelve_client"
-#
+
 #[[experiment]]
 #num_client_threads = 14
 #json_name = "fourteen_client"
-#
+
 #[[experiment]]
 #num_client_threads = 16
+#batch_size = 2 # Number of packets
 #json_name = "sixteen_client"
-#
+
 #[[experiment]]
 #num_client_threads = 18
 #json_name = "eighteen_client"
-#
+
 #[[experiment]]
 #num_client_threads = 20
+#batch_size = 2 # Number of packets
 #json_name = "twozero_client"
-#
+
 #[[experiment]]
 #num_client_threads = 22
 #json_name = "twotwo_client"
-#
+
 #[[experiment]]
 #num_client_threads = 24
+#batch_size = 2 # Number of packets
 #json_name = "twofour_client"

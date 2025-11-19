@@ -15,8 +15,8 @@ uint32_t generate_nonce(); // na
 uint64_t get_threads(YAML::Node config);
 
 std::string get_self_ip(YAML::Node config); // covered
-std::string get_send_port(YAML::Node config); // covered
-std::string get_recv_port(YAML::Node config); //covered
+uint64_t get_send_port(YAML::Node config); // covered
+uint64_t get_recv_port(YAML::Node config); //covered
 std::string get_socket_type(YAML::Node config); // covered
 std::string get_interface(YAML::Node config); // covered
 
@@ -55,7 +55,10 @@ std::string get_cli_ip(YAML::Node config);
 std::array<uint8_t,6> get_stor_mac(YAML::Node config);
 std::string get_stor_ip(YAML::Node config);
 
-
+std::string get_stor_receive_port(YAML::Node config);
+std::string get_switch_receive_port(YAML::Node config);
+uint64_t get_use_switch(YAML::Node config);
+uint64_t get_use_stor(YAML::Node config);
 
 /*INACTIVE*/
 std::string get_string_entry_payload(YAML::Node config);

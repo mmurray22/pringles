@@ -79,7 +79,7 @@ bool Stats::endLatTimer(uint64_t nonce) {
 double Stats::getAvgLatency() {
     final_avg_latency = std::accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
     final_avg_latency *= 1000;
-    spdlog::critical("Average latency: {}ms", final_avg_latency);
+    //spdlog::critical("Average latency: {}ms", final_avg_latency);
     return final_avg_latency;
 }
 
@@ -90,13 +90,13 @@ void Stats::addOp() {
 }
 
 uint64_t Stats::getTotalOps() {
-    spdlog::critical("Number of ops: {}", numOps);
+    //spdlog::critical("Number of ops: {}", numOps);
     return numOps;
 }
 
 double Stats::getThroughput(uint64_t elapsed) {
     final_throughput = (double) numOps / elapsed;
-    spdlog::critical("Throughput: {}", final_throughput);
+    //spdlog::critical("Throughput: {}", final_throughput);
     return final_throughput;
 }
 
