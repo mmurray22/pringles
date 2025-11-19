@@ -88,7 +88,7 @@ class Network {
         void done();
 	
 	char* recv_packet();
-
+        char* recv_packet(int udp_recv_socket);
 
 	std::string get_recv_port();
 

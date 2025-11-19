@@ -175,12 +175,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		    uint64_t size_of_reply_pkt = size_of_hdr + (1 + append_entry->payload_size + size_of_hdr) * append_entry->num_entries;
                     std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(size_of_reply_pkt);
             	    memcpy(reply_packet.get(), (char*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr)), size_of_reply_pkt);
-
-            	    //spdlog::debug("ETH_APPEND_RESP: {}, Append nonce: {}, Append payload size: {}, Append Thread ID: {}", ETH_APPEND_RESP, append_entry->nonce, append_entry->payload_size, append_entry->thread_id);
-
-            	    //spdlog::debug("Final respond num append entries: {}, Append payload size: {}, Batch size {}, Num entries: {}", append_entry->num_entries, append_entry->payload_size, size_of_hdr, append_entry->num_entries);
-         	    
-		    net->send_packet(std::move(reply_packet), size_of_reply_pkt, 0, ETH_APPEND_RESP, cli_mac, cli_in_addr); // TODO
+		    net->send_udp_packet(std::move(reply_packet), size_of_reply_pkt, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->reply_port)); // TODO
 
                     got_quorum = true;
                     start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
@@ -379,8 +374,8 @@ int main(int argc, char* argv[]) {
     std::string input_file = std::string(argv[1]);
     YAML::Node config = YAML::LoadFile(input_file);
     std::vector<int> eth_types = {ETH_APPEND_REQ};
-    std::unique_ptr<Network> net = std::make_unique<Network>(get_send_port(config), 
-                                   get_recv_port(config),
+    std::unique_ptr<Network> net = std::make_unique<Network>(std::to_string(get_send_port(config)), 
+                                   std::to_string(get_recv_port(config)),
 				   get_socket_type(config),
                                    get_log_level(config),
 				   get_batch_size(config),
@@ -393,7 +388,7 @@ int main(int argc, char* argv[]) {
     spdlog::info("Simple Network server");
     std::string json_name = "dummy";
     uint64_t max_duration = get_experiment_duration(config);
-    std::thread server_thread(custom_udp_sequencer, std::move(net), json_name, 0, get_batch_size(config), get_batch_on(config), get_cli_mac(config), get_cli_ip(config), get_stor_mac(config), get_stor_ip(config), get_stor_receive_port(config), get_payload_size(config), max_duration);
+    std::thread server_thread(custom_udp_sequencer, std::move(net), json_name, 0, get_batch_size(config), get_batch_on(config), get_cli_ip(config), get_stor_ip(config), get_stor_receive_port(config), get_payload_size(config), max_duration);
 
     pthread_t native_handle = server_thread.native_handle();
 

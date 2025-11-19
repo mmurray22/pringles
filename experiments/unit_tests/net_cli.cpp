@@ -125,11 +125,12 @@ void custom_client(std::unique_ptr<Network> net,
 		   std::array<uint8_t, 6> stor_mac,
 		   std::string stor_ip,
 		   std::string stor_receive_port,
-		   std::string switch_receive_port
+		   std::string switch_receive_port,
 		   bool use_switch,
 		   bool use_stor) {
     (void) switch_mac;
     (void) stor_mac;
+    (void) use_stor;
     uint64_t nonce = thread_id;
     uint64_t scale = 2;
     uint64_t highest_idx = 0;

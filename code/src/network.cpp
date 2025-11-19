@@ -416,7 +416,7 @@ int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, std::
     hints.ai_socktype = SOCK_DGRAM; // Normal UDP Datagram Socket
     int64_t status = getaddrinfo(dst_ip.c_str(), dst_port.c_str(), &hints, &servinfo);
     if (status != 0) {
-        spdlog::debug("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), status, gai_strerror(status));
+        spdlog::debug("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", dst_ip.c_str(), status, gai_strerror(status));
         return -1;
     }
     for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
@@ -487,7 +487,8 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
 			  std::string dst_ip,
 			  std::string dst_port) {
     bool sent_all = true;
-
+    (void) pkt_type;
+    (void) eth_type;
     // If socket_type is not UDP
     if (socket_type != "UDP") {
         return false;
