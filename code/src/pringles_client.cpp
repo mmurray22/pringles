@@ -23,3 +23,15 @@ LogClient::~LogClient() {
 }
 
 /* Custom function */
+uint64_t LogClient::append(std::unique_ptr<std::string> entry) {
+    pending_append_entries(id(entry));
+    net->add_to_send_queue(entry);
+    // wait until id(entry)
+    return wait_for_append(entry);
+}
+
+/*** Helper functions ***/
+uint64_t wait_for_append(std::unique_ptr<std::string> entry) {
+    
+
+}

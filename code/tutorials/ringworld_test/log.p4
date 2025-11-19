@@ -142,6 +142,8 @@ header tail_req_t {
     bit<32> cid;
     // Unique nonce used to detect duplicates of the message
     bit<32> nonce;
+    // Sequence number that is the current tail - filled in by the switches
+    bit<32> tail;
 }
 
 // Header for tail reply 
@@ -164,7 +166,6 @@ header LargestShardIdx {
     // Largest global index from a shard
     bit<32> g_idx;
 }
-
 
 // Header for tunnelling 
 header myTunnel_t {
@@ -201,7 +202,6 @@ parser MyParser(packet_in packet,
         transition parse_ipv4;
         transition select(hdr.ethernet.etherType) {
             TYPE_CONTROL: parse_control;
-            TYPE_CLI_SEQ: parse_client_seq;
             TYPE_TUNNEL: parse_tunnel;
             TYPE_APPEND: parse_append;
 	    default: accept;
@@ -224,11 +224,6 @@ parser MyParser(packet_in packet,
             TYPE_IPV4: parse_ipv4;
             default: accept;
         }
-    }
-
-    state parse_client_seq {
-        packet.extract(hdr.client_req);
-        transition parse_ipv4;
     }
 
     state parse_ipv4 {
@@ -552,9 +547,8 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
         packet.emit(hdr.ethernet);
-	packet.emit(hdr.cntrl);
-	packet.emit(hdr.client_req);
-	packet.emit(hdr.myTunnel);
+	    packet.emit(hdr.cntrl);
+	    packet.emit(hdr.myTunnel);
         packet.emit(hdr.ipv4);
     }
 }

@@ -18,15 +18,12 @@
  *
  * It is designed to have multiple senders and one receiver.
  */
-
-const uint64_t MAX_PACKET_SIZE = 1024;
-
 class Network {
     public:
         /*
          * Network object constructor
          *
-         * Arguments TODO update this comment
+         * Arguments
          * ---------
          * maxThreads - Size of the threadpool for sending threads TODO might be deprecated
          * seq_ip - IP address of the sequencer
@@ -41,15 +38,16 @@ class Network {
          * pkt_types - these are the classes that packets will be sorted into when sent/received
          */
         Network(uint64_t maxThreads,
+                std::string seq_ip,
+                std::string storage_multicast_addr,
                 std::string send_port, 
                 std::string recv_port,
                 std::string socket_type,
                 uint64_t log_level,
                 uint64_t batch_size,
-                bool batch_on,
                 std::string send_interface,
-                std::string self_ip,
-		std::map<std::string, std::vector<std::string>> pkt_type_to_ip); 
+                std::string src_ip,
+                std::vector<std::string> pkt_types);
         ~Network();
 
         /*
@@ -91,15 +89,10 @@ class Network {
         std::mutex lock_terminate;
         // Boolean which indicates to sending and receiving threads to cease operation
         bool terminate = false;
-	std::mutex lock_num_sends_done;
-	uint64_t num_sends_done = 0;
-	std::mutex lock_num_recv_done;
-	uint64_t num_recv_done = 0;
-	uint64_t MAX_RECV_THREADS = 1; // TODO: Change this eventually
-	uint64_t MAX_CLEANUP_TIME = 10;
+        
+        uint64_t total_num_threads;
 
         // Goes through the steps of stopping and cleaning up all the threads
-        uint64_t total_num_threads;
         void stop_threads();
 
         // Sender thread function, parameterized by the packet type the sender is responsible for
@@ -128,26 +121,20 @@ class Network {
         
         std::queue<std::unique_ptr<std::string>> rcv_pkt;
         std::mutex rcv_queue_mutex;
-
-	std::map<std::string, std::vector<std::string>> pkt_type_to_ip;
-	std::map<std::string, std::vector<uint64_t>> pkt_type_to_skt;
-
-        	uint64_t num_pkts_type = 0;
-	
-	std::map<int, std::shared_ptr<struct addrinfo>> fd_to_it;
         
         bool pkts_in_queue();
         
         /** IP Address + Socket Management **/
         std::string send_interface;
-        std::string self_ip;
+        std::string src_ip;
         std::shared_ptr<struct addrinfo> seq_it; 
         std::string seq_ip;
         std::string storage_multicast_addr;
         std::shared_ptr<struct addrinfo> storage_it;
-        int storage_socket; // TODO delete?
-        int recv_socket;
-        int seq_socket; // TODO delete?
+        int storage_socket;
+        int storage_recv_socket;
+        int seq_socket;
+        int seq_recv_socket;
         bool validate_ip_address(const std::string &ip_addr);
          
         /** Socket handling **/
@@ -168,5 +155,4 @@ class Network {
 
         /** Batching **/
         uint64_t batch_size;
-	bool batch_on;
 };

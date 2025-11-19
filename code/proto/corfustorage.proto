@@ -1,0 +1,113 @@
+syntax="proto3";
+
+package corfustorage;
+
+// Write request to storage server
+message WriteRequest {
+    uint64 page = 1;
+    bytes data = 2;
+    uint64 epoch = 3;
+    uint32 timeout_ms = 4;
+}
+
+// Write response from storage server
+message WriteResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+// Read request to storage server
+message ReadRequest {
+    uint64 page = 1;
+    uint64 epoch = 2;
+    uint32 timeout_ms = 3;
+}
+
+// Read response from storage server
+message ReadResponse {
+    bool success = 1;
+    bytes data = 2;
+    uint64 epoch_written = 3;
+    string error_message = 4;
+}
+
+// Trim request to storage server
+message TrimRequest {
+    uint64 page = 1;
+    uint64 epoch = 2;
+    uint32 timeout_ms = 3;
+}
+
+// Trim response from storage server
+message TrimResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+// Fill request to storage server
+message FillRequest {
+    uint64 page = 1;
+    uint64 epoch = 2;
+    uint32 timeout_ms = 3;
+}
+
+// Fill response from storage server
+message FillResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+// Seal request to storage server
+message SealRequest {
+    uint64 epoch = 1;
+    uint32 timeout_ms = 2;
+}
+
+// Seal response from storage server
+message SealResponse {
+    bool success = 1;
+    uint64 sealed_epoch = 2;
+    string error_message = 3;
+}
+
+// Legacy payload structure (kept for compatibility)
+message Payload {
+    int64 packet_type = 1;
+    optional Ack ack = 2;
+    optional errSealed err_sealed = 3;
+    optional errUnwritten err_unwritten = 4;
+    optional errWritten err_written = 5;
+    optional Read read = 6;
+    optional Seal seal = 7;
+    optional errDeleted err_deleted = 8;
+}
+
+message Ack {
+    bool ack_code = 1;
+}
+
+message errSealed {
+    bool err_code = 1;
+}
+
+message errUnwritten {
+    bool err_code = 1;
+}
+
+message errWritten {
+    bool err_code = 1;
+    string content = 2;
+}
+
+message Read {
+    string content = 2;
+}
+
+message Seal {
+    bool sealed = 1;
+    int64 highaddr = 2;
+}
+
+message errDeleted {
+    bool err_code = 1;
+}

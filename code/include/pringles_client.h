@@ -15,6 +15,10 @@ class LogClient : public BaseClient {
         ~LogClient();
 
     private:
+        /* Hash/ID of pending append entries */
+        std::vector<uint64_t> pending_append_entries;
+        std::vector<uint64_t> pending_read_entries;
+
         /* Local list of appended and read log entries and corresponding lock*/
 	    std::vector<LogEntry> cached_log_entries;
 	    std::mutex cached_log_lock;

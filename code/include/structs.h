@@ -8,9 +8,16 @@
 #include <memory>
 #include <string>
 
-#define UDP 0
-#define CORFU 1
-#define RING 2
+/*** Structs, enums, etc. ***/
+enum ClientType {
+	SIMPLE,
+	RING,
+	CORFU,
+	NONE
+};
+
+/*** Helper function: converts string type to client type ***/
+ClientType fromStringToClientType(std::string type);
 
 /*New ethernet header types*/
 #define ETH_CLI_SEQ 0x1414
@@ -73,9 +80,9 @@ struct ring_append_success {
 /*Helper functions*/
 /*template <typename T>
 std::unique_ptr<T> get_ptr_and_size(std::string pkt_type, size_t &size_of_hdr, int64_t nonce = 0, int64_t cid = 0);*/
-size_t get_size_of_hdr(std::string pkt_type, uint64_t protocol_id);
-size_t get_size_of_hdr_int(int pkt_type, uint64_t protocol_id);
-int get_eth_type(std::string pkt_type, uint64_t protocol_id);
+size_t get_size_of_hdr(std::string pkt_type, ClientType protocol);
+size_t get_size_of_hdr_int(int pkt_type, ClientType protocol);
+int get_eth_type(std::string pkt_type, ClientType protocol);
 
 //Creation functions
 std::unique_ptr<struct get_sequence_number> create_get_sequence_num(int64_t cid);
