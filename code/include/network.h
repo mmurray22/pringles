@@ -96,6 +96,8 @@ class Network {
  	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, in_addr_t dst_ip);
  
 
+	int get_recv_socket();
+        int setup_talker_socket(std::string dst_ip, std::string dst_port, std::shared_ptr<struct addrinfo>& it);
         /*
          * Update the packet classifiers
          * Useful if the classifiers are receiver IPs and some receivers fail/are changed
@@ -125,7 +127,7 @@ class Network {
         std::string SEND_PORT;
         std::string RECV_PORT;
         int setup_listener_socket(std::string curr_ip);
-        int setup_talker_socket(std::string dst_ip, std::string dst_port, std::shared_ptr<struct addrinfo>& it);
+
         int setup_raw_talker_socket();
         void destroy_socket(int s_fd);
         std::shared_ptr<struct addrinfo> get_it(int s_fd);

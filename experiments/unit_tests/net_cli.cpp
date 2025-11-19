@@ -126,6 +126,7 @@ void custom_client(std::unique_ptr<Network> net,
 		   std::string stor_ip,
 		   std::string stor_receive_port,
 		   std::string switch_receive_port,
+		   uint64_t client_recv_port,
 		   bool use_switch,
 		   bool use_stor) {
     (void) switch_mac;
@@ -135,8 +136,6 @@ void custom_client(std::unique_ptr<Network> net,
     uint64_t scale = 2;
     uint64_t highest_idx = 0;
 
-    std::vector<int> eth_types = {ETH_APPEND_REQ};
-    
     std::unique_ptr<struct ring_type> ring_type_hdr = create_ring_type(ETH_APPEND_REQ);
     spdlog::info("Simple Network: Sending/Receiving to remote host");
 
@@ -145,37 +144,36 @@ void custom_client(std::unique_ptr<Network> net,
 
     std::string payload(payload_size, 'x');
     size_t size_of_hdr = get_ring_append_size();
+    size_t size_of_type_hdr = get_ring_type_size();
     std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(nonce, thread_id);
+    std::unique_ptr<struct ring_type> type_hdr = create_ring_type(ETH_APPEND_REQ);
+    spdlog::debug("Type header: {}, size of: {} and type hdr: {}", type_hdr.get()->type, size_of_hdr, size_of_type_hdr);
     hdr.get()->payload_size = payload_size;
     hdr.get()->num_entries = 1;
     hdr.get()->thread_id = thread_id;
-    uint64_t allocated_packet_size = size_of_hdr + payload_size + 1;
+    hdr.get()->recv_port = client_recv_port;
+    uint64_t allocated_packet_size = size_of_type_hdr + size_of_hdr + payload_size + 1;
 
     auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
     double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
     
     // Only need to read from the map once to get the queue
-    /*tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
-    if (!recv_q.find(acc, thread_id % NUM_THREADS)) {
-        spdlog::debug("QUEUE MISSING FOR THREAD ID {}", thread_id);
-	return;
-    }
-    tbb::concurrent_queue<char*>& check = acc->second;
-    acc.release();*/
-
     while (!end_thread) {
      	// Create packet buffer which will be sent  
      	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
         double start_time = stat->getStartLat();
 	hdr.get()->nonce = nonce;
-	memcpy(packet.get(), reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
-	memcpy(packet.get() + size_of_hdr, payload.c_str(), payload.length() + 1);
+	memcpy(packet.get(), reinterpret_cast<const char*>(type_hdr.get()), size_of_type_hdr);
+	memcpy(packet.get() + size_of_type_hdr, reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
+	memcpy(packet.get() + size_of_type_hdr + size_of_hdr, payload.c_str(), payload.length() + 1);
 
-	//spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, payload.length(), size_of_hdr);
+	spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, payload.length(), size_of_hdr);
 	if (use_switch) {
+	    spdlog::debug("Sending to the SWITCH at IP {} and port {}", switch_ip, switch_receive_port);
 	    net->send_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port);
 	} else {
 	    //for (uint64_t i = 0; i < stor_ips.size(); i++) {
+	    spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {}", stor_ip, stor_receive_port);
 	    net->send_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
 	    //}
 	}
@@ -186,28 +184,6 @@ void custom_client(std::unique_ptr<Network> net,
                 break;
 	    }
 	
-	    /*
-	    tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
-            if (!recv_q.find(acc, thread_id % NUM_THREADS)) {
-                spdlog::debug("QUEUE MISSING FOR THREAD ID {}", thread_id);
-                return;
-            }
-            tbb::concurrent_queue<char*>& check = acc->second;
-            acc.release();
-    
-	    char* recv_ptr = NULL;
-            {
-	        std::unique_lock<std::mutex> lock(recv_q_mutex);
-		cv.wait(lock, [thread_id, &check] { 
-				return !check.empty() || end_thread; });
-
-		//spdlog::debug("After the condition variable! {}", check.empty());
-		if (check.try_pop(recv_ptr)) {
-		    //spdlog::debug("Successfully dequeued entry!! Where the receive pointer is: {}", recv_ptr != NULL); 
-		}
-            }
-	    */
-
 	    char* recv_ptr = net->recv_packet();
 	    if (!recv_ptr) {
 	        continue;
@@ -326,6 +302,7 @@ int main(int argc, char* argv[]) {
 						stor_ip,
 						get_stor_receive_port(config), 
 						get_switch_receive_port(config),
+						recv_port,
 						get_use_switch(config),
 						get_use_stor(config)));
 

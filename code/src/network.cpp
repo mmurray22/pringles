@@ -57,7 +57,7 @@ Network::Network(std::string send_port,
     recv_socket = setup_listener_socket(self_ip);
     if (recv_socket < 0) {
         spdlog::critical("SENDER Socket creation unsuccessful. Aborting");
-        throw std::runtime_error("Can't create sending socket");
+        throw std::runtime_error("Can't create receiving socket");
     }
     spdlog::debug("The socket fd is {}", recv_socket);
 
@@ -367,11 +367,12 @@ int Network::setup_listener_socket(std::string curr_ip) {
 	}
         return s_fd;
     }
+    spdlog::debug("USING UDP with RECV PORT: {} with curr ip: {}!", RECV_PORT, curr_ip);
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags = AI_PASSIVE;
-    int64_t status = getaddrinfo(curr_ip.c_str(), RECV_PORT.c_str(), &hints, &servinfo);
+    int64_t status = getaddrinfo(NULL /*curr_ip.c_str()*/, RECV_PORT.c_str(), &hints, &servinfo);
     if (status != 0) {
         spdlog::critical("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), std::to_string(status), gai_strerror(status));
         return -1;
@@ -386,6 +387,15 @@ int Network::setup_listener_socket(std::string curr_ip) {
             freeaddrinfo(servinfo);
             return -1;
         }
+       
+       	struct timeval timeout;
+        timeout.tv_sec = 0;  // 5 seconds timeout
+        timeout.tv_usec = 10;	
+	if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+	    spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+            return -1;
+	}
+
         if (bind(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
             close(s_fd);
             spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
@@ -400,10 +410,10 @@ int Network::setup_listener_socket(std::string curr_ip) {
     freeaddrinfo(servinfo);
     int flags = fcntl(s_fd, F_GETFL, 0); // TODO abstract into a helper function
     if (flags == -1) return false;
-    flags = flags | O_NONBLOCK;
+    /*flags = flags | O_NONBLOCK;
     if (fcntl(s_fd, F_SETFL, flags) != 0) {
         spdlog::critical("UNABLE TO SET FCNTL FLAGS");
-    }
+    }*/
     return s_fd;
 }
 
@@ -505,8 +515,10 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
         spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
         sent_all = false;
+    } else {
+         spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
     }
-    spdlog::info("Successfully sent {} bytes to the receiver with packet value ???", std::to_string(num_bytes));
+    close(s_fd);
     return sent_all;
 }
 
@@ -517,9 +529,15 @@ char* Network::recv_packet() { // do you need to memset? TODO
 
     //TODO epoll    
     if ((numbytes = recvfrom(recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
+        //spdlog::warn("Receiver Error {} occurred: {}", std::to_string(errno), strerror(errno));
         return NULL;
     }
+    spdlog::debug("Returning unrelated buffer!");
     return norm_buf;
+}
+
+int Network::get_recv_socket() {
+    return recv_socket;
 }
 
 char* Network::recv_packet(int udp_recv_socket) { // do you need to memset? TODO
@@ -527,8 +545,7 @@ char* Network::recv_packet(int udp_recv_socket) { // do you need to memset? TODO
     struct sockaddr_storage src_addr;
     socklen_t addr_len = sizeof src_addr;
 
-    //TODO epoll    
-    if ((numbytes = recvfrom(udp_recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
+    while ((numbytes = recvfrom(udp_recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
         return NULL;
     }
     return norm_buf;

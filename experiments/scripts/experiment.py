@@ -55,7 +55,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
 
     if entity_type == 'server':
         # Servers run longer than the client to ensure no early termination
-        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY
+        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY + SWITCH_START_DELAY
     elif entity_type == 'switch':
         final_duration = exp_duration + warm_up + cool_down + SWITCH_START_DELAY
     else:
@@ -76,6 +76,8 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         'stor_ips': stor_ips,
         'send_port': QuotedString(send_port),
         'recv_port': QuotedString(recv_port),
+        'stor_recv_port': QuotedString(net_params['stor_recv_port']),
+        'switch_recv_port': QuotedString(net_params['switch_recv_port']),
         'send_threads': 1,  # [INACTIVE]
         # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
         'socket_type': QuotedString(exp_params['socket_type']),
