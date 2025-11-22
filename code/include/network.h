@@ -97,7 +97,7 @@ class Network {
  
 
 	int get_recv_socket();
-        int setup_talker_socket(std::string dst_ip, std::string dst_port, std::shared_ptr<struct addrinfo>& it);
+        int setup_talker_socket(std::string dst_ip, std::string dst_port);
         /*
          * Update the packet classifiers
          * Useful if the classifiers are receiver IPs and some receivers fail/are changed
@@ -120,7 +120,9 @@ class Network {
 	std::thread send_thread;
 	std::thread recv_thread;
 
-        char* norm_buf;
+	std::unordered_map<std::string, int> port_to_fd;
+        
+	char* norm_buf;
         std::string socket_type; // Networking protocol you are running
         bool check_socket_type(std::string socket_type);
         const uint64_t BACKLOG = 5;

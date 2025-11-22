@@ -67,11 +67,6 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);
     spdlog::info("Batch on: {}!", batch_on);
 	
-    int efd = epoll_create(net->get_recv_socket());
-    if (efd < 0) {
-        spdlog::critical("Epoll creation unsuccessful. Aborting");
-	return;
-    }
     uint64_t nonce = 1;
     if (true) {
         // Request header
@@ -96,14 +91,6 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
                  if (end_thread) {
                      break;
                  }
- 		/*struct epoll_event ev;
-        	ev.data.fd = net->get_recv_socket();
-        	ev.events = 0;
-        	epoll_ctl(efd, EPOLL_CTL_ADD, net->get_recv_socket(), &ev);
-        	int ret = epoll_wait(efd, &ev, 1, MAX_POLL_TIME);
-		if (ret == -1) {
-		    spdlog::debug("epoll_wait failed!");
-		}*/
 
 		// Wait to receive the packet 
                 char* recv_ptr = net->recv_packet(); // TODO add epoll
@@ -122,7 +109,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 
 		// Isolate the ethernet header from the receive ptr
                 struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
-		spdlog::debug("I got the type: {}", type_hdr->type);
+		//spdlog::debug("I got the type: {}", type_hdr->type);
 
 		// If the packet is of type ETH_APPEND_REQ
                 if (type_hdr->type == ETH_APPEND_REQ) { // TODO
@@ -140,11 +127,12 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		    // Copy batch header into the reply packet, and the batch content 
                     memcpy(reply_packet.get(), recv_ptr, pkt_size);
 		    // Send the network packet
-		    spdlog::debug("Send size: {}", pkt_size);
+		    //spdlog::debug("Send size: {}", pkt_size);
 		    if (use_store) {
             	        net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
 		    } else {
-            	        net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_REQ, cli_ip, std::to_string(append_entry->recv_port));
+			((struct ring_type*)reply_packet.get())->type = ETH_APPEND_RESP;
+            	        net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->recv_port));
 		    }
 
 		    stat->getDuration(lat_start_time);
@@ -155,7 +143,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
        		    start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
                     start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
                 } else if (type_hdr->type == ETH_APPEND_RESP) { // send to client TODO 
-		    spdlog::debug("IN THE ETH RESPONDER!");
+		    //spdlog::debug("IN THE ETH RESPONDER!");
                     // Get the append entry header from the storage reply
 		    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
 		    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
@@ -163,7 +151,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		    // Copy batch header into the reply packet, and the batch content 
                     memcpy(reply_packet.get(), recv_ptr, pkt_size);
 		    // Send the network packet
-		    spdlog::debug("Send size: {} to IP {} at port {}", pkt_size, cli_ip, std::to_string(append_entry->recv_port));
+		    //spdlog::debug("Send size: {} to IP {} at port {}", pkt_size, cli_ip, std::to_string(append_entry->recv_port));
             	    net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->recv_port));
 
                     got_quorum = true;

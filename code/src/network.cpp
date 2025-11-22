@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdexcept>
+#include <unordered_map>
 
 #include "network.h"
 #include "yaml-cpp/yaml.h"
@@ -367,7 +368,7 @@ int Network::setup_listener_socket(std::string curr_ip) {
 	}
         return s_fd;
     }
-    spdlog::debug("USING UDP with RECV PORT: {} with curr ip: {}!", RECV_PORT, curr_ip);
+    //spdlog::debug("USING UDP with RECV PORT: {} with curr ip: {}!", RECV_PORT, curr_ip);
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
@@ -418,7 +419,7 @@ int Network::setup_listener_socket(std::string curr_ip) {
 }
 
 /*Sets up a datagram UDP socket for destination IP */  
-int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, std::shared_ptr<struct addrinfo>& it) {
+int Network::setup_talker_socket(std::string dst_ip, std::string dst_port) {
     struct addrinfo hints, *servinfo, *temp;
     int s_fd;
     memset(&hints, 0, sizeof hints);
@@ -434,7 +435,12 @@ int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, std::
             spdlog::debug("No socket created! Error {} occurred: {}. Still searching...", std::to_string(errno), strerror(errno));
             continue;
         }
-        memcpy(it.get(), temp, sizeof (struct addrinfo));
+        if (connect(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
+            close(s_fd);
+            spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+            continue;
+        }
+        //memcpy(it.get(), temp, sizeof (struct addrinfo));
         break;
     }
     if (temp == NULL) {
@@ -499,26 +505,36 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     bool sent_all = true;
     (void) pkt_type;
     (void) eth_type;
+    
     // If socket_type is not UDP
     if (socket_type != "UDP") {
         return false;
     }
     
-    spdlog::debug("Sending a UDP packet!");
-    std::shared_ptr<struct addrinfo> socket_it = std::make_shared<struct addrinfo>();
-    int s_fd = setup_talker_socket(dst_ip, dst_port, socket_it);
-    if (s_fd < 0) {
-        spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
-        throw std::runtime_error("Can't create sending socket");
-    } 
-    ssize_t num_bytes = sendto(s_fd, send_packet.get(), pkt_len, 0, socket_it->ai_addr, socket_it->ai_addrlen);
+    //spdlog::debug("Sending a UDP packet!");
+
+    int s_fd;
+    if (port_to_fd.count(dst_port) > 0) {
+        s_fd = port_to_fd[dst_port];
+	if (s_fd < 0) {
+            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
+            throw std::runtime_error("Can't create sending socket");
+	}
+    } else {
+        s_fd = setup_talker_socket(dst_ip, dst_port);
+        if (s_fd < 0) {
+            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
+            throw std::runtime_error("Can't create sending socket");
+        } 
+        port_to_fd.insert({dst_port, s_fd});
+    }
+    ssize_t num_bytes = send(s_fd, send_packet.get(), pkt_len, 0);
     if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
         spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
         sent_all = false;
     } else {
-         spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+         //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
     }
-    close(s_fd);
     return sent_all;
 }
 
@@ -532,7 +548,7 @@ char* Network::recv_packet() { // do you need to memset? TODO
         //spdlog::warn("Receiver Error {} occurred: {}", std::to_string(errno), strerror(errno));
         return NULL;
     }
-    spdlog::debug("Returning unrelated buffer!");
+    //spdlog::debug("Returning unrelated buffer!");
     return norm_buf;
 }
 
@@ -583,6 +599,9 @@ void Network::stop_threads() {
     }*/
     spdlog::debug("The threads are being cleaned up!");
     mutex_condition.notify_all();
+    for (auto it = port_to_fd.begin(); it != port_to_fd.end(); ++it) {
+        close(it->second);
+    }
     for (uint64_t i = 0; i < send_threads.size(); i++) {
         send_threads[i].join();
     }

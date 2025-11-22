@@ -17,6 +17,7 @@
 // REQUIRED FOR ALL PACKETS
 struct ring_type {
     uint16_t type; // TODO add to the P4 switch processing
+    uint64_t num_entries;
 };
 
 

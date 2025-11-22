@@ -24,16 +24,16 @@ run_setup_script = "False"
 log_level = 6
 warm_up = 5 # seconds
 cool_down = 5 # seconds
-experiment_duration = 30 # seconds
+experiment_duration = 35 # seconds
 socket_type = "UDP" # "RAW"
 message_size = 100 # 100 # bytes
 num_client_threads = 1
 json_name = "increase_client"
-experiment_name = "100byte_payload_udp_both"
+experiment_name = "test_net_store_only" # "100byte_payload_udp_both"
 num_failures = 0 # NEW
 git_hash = "" # TODO
 use_switch = 1
-use_store = 1
+use_store = 0
 
 [protocol_batching]
 batch_on = false
@@ -57,19 +57,20 @@ json_name = "one_client"
 num_client_threads = 2
 batch_size = 2 # Number of packets
 json_name = "two_client"
-
+#
 [[experiment]]
 num_client_threads = 4
-batch_size = 2 # Number of packets
+batch_size = 4 # Number of packets
 json_name = "four_client"
 
 #[[experiment]]
 #num_client_threads = 6
+#batch_size = 6
 #json_name = "six_client"
 
 [[experiment]]
 num_client_threads = 8
-batch_size = 2 # Number of packets
+batch_size = 8 # Number of packets
 json_name = "eight_client"
 
 #[[experiment]]
@@ -78,7 +79,7 @@ json_name = "eight_client"
 
 [[experiment]]
 num_client_threads = 12
-batch_size = 2 # Number of packets
+batch_size = 12 # Number of packets
 json_name = "twelve_client"
 
 #[[experiment]]
@@ -87,7 +88,7 @@ json_name = "twelve_client"
 
 [[experiment]]
 num_client_threads = 16
-batch_size = 2 # Number of packets
+batch_size = 16 # Number of packets
 json_name = "sixteen_client"
 
 #[[experiment]]
@@ -96,7 +97,7 @@ json_name = "sixteen_client"
 
 [[experiment]]
 num_client_threads = 20
-batch_size = 2 # Number of packets
+batch_size = 20 # Number of packets
 json_name = "twozero_client"
 
 #[[experiment]]
@@ -105,5 +106,20 @@ json_name = "twozero_client"
 
 [[experiment]]
 num_client_threads = 24
-batch_size = 2 # Number of packets
+batch_size = 24 # Number of packets
 json_name = "twofour_client"
+
+[[experiment]]
+num_client_threads = 30
+batch_size = 30 # Number of packets
+json_name = "thirty_client"
+#
+[[experiment]]
+num_client_threads = 40
+batch_size = 40 # Number of packets
+json_name = "forty_client"
+#
+#[[experiment]]
+#num_client_threads = 50
+#batch_size = 50 # Number of packets
+#json_name = "fifty_client"

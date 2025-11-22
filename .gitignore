@@ -2,6 +2,11 @@
 cloudlab
 cloudlab.pub
 
+# Don't include any perf files
+*.perf
+*.data
+*.old
+
 # Personal tasks list
 todo.md
 

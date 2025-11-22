@@ -24,12 +24,12 @@ run_setup_script = "False"
 log_level = 6
 warm_up = 5 # seconds
 cool_down = 5 # seconds
-experiment_duration = 60 # seconds
+experiment_duration = 30 # seconds
 socket_type = "UDP" # "RAW"
 message_size = 100 # 100 # bytes
 num_client_threads = 1
 json_name = "increase_client"
-experiment_name = "100byte_payload_udp_all"
+experiment_name = "100byte_payload_udp_both"
 num_failures = 0 # NEW
 git_hash = "" # TODO
 use_switch = 1
@@ -51,7 +51,7 @@ server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
 [[experiment]]
 num_client_threads = 1
 batch_size = 1 # Number of packets
-json_name = "four_client"
+json_name = "one_client"
 
 [[experiment]]
 num_client_threads = 2
