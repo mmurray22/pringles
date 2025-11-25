@@ -7,13 +7,14 @@
 #include <iostream>
 #include <thread>
 
-Stats::Stats(uint64_t batch_size, bool batch_on, std::string json_name, uint64_t thread_id) {
+Stats::Stats(uint64_t batch_size, bool batch_on, std::string json_name, uint64_t thread_id, std::string client_ip) {
     this->batch_size = batch_size;
     this->batch_on = batch_on;
     this->json_name = json_name;
     this->thread_id = thread_id; //default
     this->latencies = {};
     this->numOps = 0;
+    this->client_ip = client_ip;
 }
 
 Stats::~Stats() {
@@ -102,7 +103,7 @@ double Stats::getThroughput(uint64_t elapsed) {
 
 // Written with the help of LLMs
 void Stats::exportResultsToJson() {
-    std::string filename = json_name + std::to_string(thread_id) + ".json";
+    std::string filename = json_name + std::to_string(thread_id) + "_" + client_ip + ".json";
 
     // NOTE: In a robust C++ project, you MUST use a dedicated JSON library
     // (like nlohmann/json.hpp) to ensure proper formatting and handle complex

@@ -111,20 +111,16 @@ server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
 
 [[experiment]]
 num_client_threads = 25
-num_storage_threads = 1
 json_name = "twofive_client"
 
 [[experiment]]
 num_client_threads = 30
-num_storage_threads = 1
 json_name = "thirty_client"
 
 [[experiment]]
 num_client_threads = 35
-num_storage_threads = 1
 json_name = "threefive_client"
 
 [[experiment]]
 num_client_threads = 40
-num_storage_threads = 1
 json_name = "forty_client"

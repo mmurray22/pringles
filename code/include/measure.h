@@ -7,7 +7,7 @@
 
 class Stats {
 	public:
-	    Stats(uint64_t batch_size, bool batch_on, std::string json_name, uint64_t thread_id);
+	    Stats(uint64_t batch_size, bool batch_on, std::string json_name, uint64_t thread_id, std::string client_ip);
 	    ~Stats();
 
 	    // Latency
@@ -29,6 +29,7 @@ class Stats {
 
 	private:
 	    uint64_t thread_id;
+	    std::string client_ip;
 
 	    std::atomic<uint64_t> numOps;
 	    //std::mutex num_ops_lock;

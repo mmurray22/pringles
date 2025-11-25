@@ -52,17 +52,24 @@ bool end_thread = false;
 
 std::unordered_map<uint64_t, std::string> storage = {};
 
+std::mutex recv_q_mutex;
+std::condition_variable cv;
 tbb::concurrent_hash_map<uint64_t, std::string> concurrent_stor;
 tbb::concurrent_queue<char*> recv_q;
 
 void store(uint64_t idx, std::string entry) {
-    storage.try_emplace(idx, entry);
+    tbb::concurrent_hash_map<uint64_t, std::string>::accessor accessor;
+    bool insert_succ = concurrent_stor.insert(accessor, idx);
+    if (insert_succ) {
+        accessor->second = entry;
+    }
+    accessor.release();
 }
 
-/*void receiver(std::shared_ptr<Network> net) {
+void receiver(std::shared_ptr<Network> net) {
     spdlog::critical("Network Recv Thread starting with TID = {}", gettid());
     while (!end_thread) {
-        char* recv_ptr = net->recv_packet(); // Make receive separate thread TODO
+        char* recv_ptr = net->recv_packet();
 	if (!recv_ptr) {
 	    continue;
 	}
@@ -72,11 +79,17 @@ void store(uint64_t idx, std::string entry) {
 	}
 
         struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
+	spdlog::debug("Sending to IP address: {}", ring->cli_idx);
 	char* pkt = (char*)std::malloc(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ring->payload_size);
         memcpy(pkt, recv_ptr, sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ring->payload_size); 
+
         recv_q.push(pkt);
+        {
+	    std::unique_lock<std::mutex> lock(recv_q_mutex);
+        }
+	cv.notify_all();
     }
-}*/
+}
 
 void custom_udp_server(std::shared_ptr<Network> net, 
 		   std::string json_name, 
@@ -86,7 +99,7 @@ void custom_udp_server(std::shared_ptr<Network> net,
 		   bool use_switch,
 		   std::string switch_ip,
 		   std::string switch_recv_port,
-		   std::string cli_ip) {
+		   std::vector<std::string> cli_ips) {
     spdlog::critical("Network Storage Thread starting with TID = {}", gettid());
     (void) json_name;
     (void) thread_id;
@@ -111,15 +124,20 @@ void custom_udp_server(std::shared_ptr<Network> net,
 	         break;
 	     }
 
-            char* recv_ptr = net->recv_packet(); // Make receive separate thread TODO
+	     /////
+            /*char* recv_ptr = net->recv_packet(); // Make receive separate thread TODO
 	    if (!recv_ptr) {
 	        continue;
-	    }
-	    /////
-	    /*char* recv_ptr;
-	    if (!recv_q.try_pop(recv_ptr)) {
-	        continue;
 	    }*/
+	    /////
+	    char* recv_ptr;
+	    {
+		std::unique_lock<std::mutex> lock(recv_q_mutex);
+		cv.wait(lock, [] {return end_thread || !recv_q.empty();});
+		if (!recv_q.try_pop(recv_ptr) || !recv_ptr) {
+	            continue;
+	        }
+	    }
 	    /////
 
 	    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
@@ -131,12 +149,7 @@ void custom_udp_server(std::shared_ptr<Network> net,
 		resp_hdr.get()->num_entries = append_entry->num_entries;
 		resp_hdr.get()->payload_size = 0;
 		
-		//uint64_t reply_pkt_size = size_of_hdr + (size_of_hdr + resp_hdr.get()->payload_size) * append_entry->num_entries;
-     	        //std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
-                //memcpy(reply_packet.get(), reinterpret_cast<const char*>(resp_hdr.get()), size_of_hdr);
-		
 		uint64_t recv_offset = size_of_type_hdr;
-		//uint64_t send_offset = size_of_hdr;
 		//spdlog::debug("Number of entries received: {}", append_entry->num_entries);
 		for (uint64_t i = 0; i < 1 /*append_entry->num_entries*/; i++) {
  		    uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr;
@@ -147,25 +160,22 @@ void custom_udp_server(std::shared_ptr<Network> net,
 	            char* entry = (char*)(recv_ptr + recv_offset + sizeof(struct ring_append_entry));
 	    
 	    	    std::string dummy(entry); 
-		    spdlog::debug("Dummy entry length: {}", dummy.length());
-	    	    store(idx, dummy);
+		    //spdlog::debug("Dummy entry length: {}", dummy.length());
+	    	    store(idx, dummy); //TODO
 	    	    idx += 1;
 		    batch_append_entry->g_idx = idx;
 		    type_hdr->type = ETH_APPEND_RESP;
 		    //spdlog::debug("The updated index is: {}, Entry: {}", idx, dummy);
 		    //spdlog::debug("Batch append entry payload size: {}, num entries: {}", batch_append_entry->payload_size, batch_append_entry->num_entries);
-		    //recv_offset += (size_of_hdr + batch_append_entry->payload_size + 1);
-		    //batch_append_entry->payload_size = 0;
                     memcpy(reply_packet.get(), recv_ptr, reply_pkt_size);
 		    if (use_switch) {
      	    	         net->send_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_ip, switch_recv_port);
 		    } else {
-     	    	         net->send_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(batch_append_entry->recv_port));
+		        //spdlog::debug("Sending to IP address: {}", cli_ips[batch_append_entry->cli_idx]);
+     	    	        net->send_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[batch_append_entry->cli_idx], std::to_string(batch_append_entry->recv_port));
 		    }
 		}
-
 		//spdlog::debug("Send packet response with size {}!", reply_pkt_size);
-     	    	//net->send_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_mac, switch_in_addr);
 	    }
 	}
 
@@ -272,6 +282,7 @@ int main(int argc, char* argv[]) {
     std::string input_file = std::string(argv[1]);
     YAML::Node config = YAML::LoadFile(input_file);
     std::vector<int> eth_types = {ETH_APPEND_REQ};
+    std::vector<std::thread> server_threads;
     std::shared_ptr<Network> net = std::make_unique<Network>(std::to_string(get_send_port(config)), 
                                    get_stor_receive_port(config),
 				   get_socket_type(config),
@@ -284,7 +295,7 @@ int main(int argc, char* argv[]) {
 				   false); 
     set_spdlog_level(get_log_level(config));
     
-    /*std::thread recv_thread(&receiver, net);
+    std::thread recv_thread(&receiver, net);
     pthread_t recv_native_handle = recv_thread.native_handle();
     // Create a CPU set and add the desired core
     cpu_set_t recv_cpuset;
@@ -293,33 +304,39 @@ int main(int argc, char* argv[]) {
     int recv_result = pthread_setaffinity_np(recv_native_handle, sizeof(cpu_set_t), &recv_cpuset);
     if (recv_result != 0) {
         std::cerr << "Error setting thread affinity for thread " << recv_thread.get_id() << ": " << recv_result << std::endl;
-    }*/
+    }
 
     spdlog::info("Simple Network server");
     std::string json_name = "dummy";
-    std::thread server_thread(custom_udp_server, std::move(net), json_name, 0, get_batch_size(config), get_batch_on(config), get_use_switch(config), get_switch_ip(config), get_switch_receive_port(config), get_cli_ip(config));
+    uint64_t NUM_THREADS = get_storage_server(config);
 
-    pthread_t native_handle = server_thread.native_handle();
+    for (uint64_t i = 0; i < NUM_THREADS; i++) {
+        server_threads.emplace_back(std::thread(custom_udp_server, net, json_name, 0, get_batch_size(config), get_batch_on(config), get_use_switch(config), get_switch_ip(config), get_switch_receive_port(config), get_cli_ip(config)));
 
-    // Create a CPU set and add the desired core
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(0, &cpuset); // Pin to core 'i'
+        pthread_t native_handle = server_threads[i].native_handle();
 
-    // Set thread affinity
-    int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
-    if (result != 0) {
-        std::cerr << "Error setting thread affinity for thread " << server_thread.get_id() << ": " << result << std::endl;
-    } 
+        // Create a CPU set and add the desired core
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(i % NUM_THREADS, &cpuset); // Pin to core 'i'
+
+        // Set thread affinity
+        int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
+        if (result != 0) {
+            std::cerr << "Error setting thread affinity for thread " << server_threads[i].get_id() << ": " << result << std::endl;
+        }
+    }
 
     uint64_t max_duration = get_experiment_duration(config);
 
     std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);
     end_thread = true;
-
-    server_thread.join();
-    //recv_thread.join();
+    cv.notify_all();
+    for (uint64_t i = 0; i < server_threads.size(); i++) {
+         server_threads[i].join();
+    }
+    recv_thread.join();
     return 0;
 }
 

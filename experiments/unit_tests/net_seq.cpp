@@ -55,15 +55,19 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		      uint64_t batch_size, 
 		      bool batch_on,
 		      bool use_store,
-		      std::string cli_ip,
+		      std::vector<std::string> cli_ips,
 		      std::string stor_ip,
 		      std::string stor_receive_port,
 		      uint64_t payload_size,
 		      uint64_t max_duration) {
+    (void) batch_size;
+    (void) batch_on;
+    (void) json_name;
+    (void) thread_id;
+    (void) max_duration;
     spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
-    std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
+    //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
     spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
-    spdlog::info("Simple Net Sequencer, cli_ip {}!", cli_ip);
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);
     spdlog::info("Batch on: {}!", batch_on);
 	
@@ -85,7 +89,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
             auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
             double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
 
-            double lat_start_time = stat->getStartLat();
+            //double lat_start_time = stat->getStartLat();
             while (!got_quorum) {
 		 // Stop receiving/sending messages since the experiment is over
                  if (end_thread) {
@@ -132,11 +136,13 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
             	        net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
 		    } else {
 			((struct ring_type*)reply_packet.get())->type = ETH_APPEND_RESP;
-            	        net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->recv_port));
+			for (std::string cli_ip : cli_ips) {
+            	            net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->recv_port));
+			}
 		    }
 
-		    stat->getDuration(lat_start_time);
-		    stat->addOp();
+		    /*stat->getDuration(lat_start_time);
+		    stat->addOp();*/
                     got_quorum = true;
 
             	    // Reset the timeout durations
@@ -152,7 +158,9 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
                     memcpy(reply_packet.get(), recv_ptr, pkt_size);
 		    // Send the network packet
 		    //spdlog::debug("Send size: {} to IP {} at port {}", pkt_size, cli_ip, std::to_string(append_entry->recv_port));
-            	    net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->recv_port));
+            	    for (std::string cli_ip : cli_ips) {
+		        net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->recv_port));
+		    }
 
                     got_quorum = true;
                     start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
@@ -173,9 +181,9 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
     net->done();
 
     spdlog::debug("Stats results:");
-    stat->getAvgLatency();
+    /*stat->getAvgLatency();
     stat->getThroughput(max_duration);
-    stat->getTotalOps();
+    stat->getTotalOps();*/
     
 }
 
@@ -190,8 +198,10 @@ void custom_sequencer(std::unique_ptr<Network> net,
 		      std::string stor_ip,
 		      uint64_t payload_size,
 		      uint64_t max_duration) {
+    (void) max_duration;
+    (void) json_name;
     spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
-    std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
+    //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
     spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
     spdlog::info("Simple Net Sequencer, cli_ip {}!", cli_ip);
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);
@@ -224,7 +234,6 @@ void custom_sequencer(std::unique_ptr<Network> net,
 	    // Buffer that stores each received packet while waiting for batch to fill up
             std::unique_ptr<char[]> batch_packet = std::make_unique<char[]>(actual_batch_size + padding);
 
-            double lat_start_time = stat->getStartLat();
             while (!got_quorum) {
 		 // Stop receiving/sending messages since the experiment is over
                  if (end_thread) {
@@ -285,8 +294,6 @@ void custom_sequencer(std::unique_ptr<Network> net,
             	        net->send_packet(std::move(reply_packet), size_of_hdr + append_req_running_pkt_size, 0, ETH_APPEND_REQ, stor_mac, stor_in_addr);
 
         		req_hdr.get()->num_entries = 0;
-			stat->getDuration(lat_start_time);
-			stat->addOp();
             	    }	
                     got_quorum = true;
             	    // Reset the timeout durations
@@ -337,9 +344,6 @@ void custom_sequencer(std::unique_ptr<Network> net,
     net->done();
 
     spdlog::debug("Stats results:");
-    stat->getAvgLatency();
-    stat->getThroughput(max_duration);
-    stat->getTotalOps();
 }
 
 int main(int argc, char* argv[]) {

@@ -46,7 +46,8 @@ struct ring_append_entry {
     uint64_t thread_id;
     // FROM CLIENT
     uint64_t recv_port;
-
+    // FROM CLIENT
+    uint64_t cli_idx;
 };
 
 // Append reply - from storage server

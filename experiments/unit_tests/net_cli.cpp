@@ -104,7 +104,6 @@ void receiver(int recv_socket,
 	    recv_offset += (size_of_hdr + ring->payload_size);
 	}
 
-	//struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
 	{
 	    std::unique_lock<std::mutex> lock(recv_q_mutex);
         }
@@ -127,7 +126,9 @@ void custom_client(std::unique_ptr<Network> net,
 		   std::string switch_receive_port,
 		   uint64_t client_recv_port,
 		   bool use_switch,
-		   bool use_stor) {
+		   bool use_stor,
+		   std::string self_ip,
+		   uint64_t cli_idx) {
     (void) switch_mac;
     (void) stor_mac;
     (void) use_stor;
@@ -138,7 +139,7 @@ void custom_client(std::unique_ptr<Network> net,
     
     spdlog::info("Simple Network: Sending/Receiving to remote host");
     spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid(), thread_id);
-    std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
+    std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
 
     std::string payload(payload_size, 'x');
     size_t size_of_hdr = get_ring_append_size();
@@ -151,6 +152,7 @@ void custom_client(std::unique_ptr<Network> net,
     hdr.get()->thread_id = thread_id;
     hdr.get()->recv_port = client_recv_port;
     hdr.get()->nonce = nonce;
+    hdr.get()->cli_idx = cli_idx;
     uint64_t allocated_packet_size = size_of_type_hdr + size_of_hdr + payload_size + 1;
 
     auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
@@ -167,11 +169,11 @@ void custom_client(std::unique_ptr<Network> net,
 
 	//spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, payload.length(), size_of_hdr);
 	if (use_switch) {
-	    //spdlog::debug("Sending to the SWITCH at IP {} and port {}", switch_ip, switch_receive_port);
+	    spdlog::debug("Sending to the SWITCH at IP {} and port {}", switch_ip, switch_receive_port);
 	    net->send_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port);
 	} else {
 	    //for (uint64_t i = 0; i < stor_ips.size(); i++) {
-	    //spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {}", stor_ip, stor_receive_port);
+	    spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {}", stor_ip, stor_receive_port);
 	    net->send_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
 	    //}
 	}
@@ -187,7 +189,7 @@ void custom_client(std::unique_ptr<Network> net,
 	        continue;
 	    }
 	    
-	    //spdlog::debug("Registering the time and operation!");
+	    spdlog::debug("Registering the time and operation!");
 	    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
             struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
 	    if (type_hdr->type == ETH_APPEND_RESP && append_entry->nonce == nonce) {
@@ -260,7 +262,7 @@ int main(int argc, char* argv[]) {
 	acc.release();
     }
     
-        for (uint64_t i = 0; i < NUM_THREADS; i++) {
+    for (uint64_t i = 0; i < NUM_THREADS; i++) {
         uint64_t send_port = get_send_port(config) + i;
 	uint64_t recv_port = get_recv_port(config) + + NUM_THREADS + i;	
  
@@ -289,7 +291,9 @@ int main(int argc, char* argv[]) {
 						get_switch_receive_port(config),
 						recv_port,
 						get_use_switch(config),
-						get_use_stor(config)));
+						get_use_stor(config),
+						get_self_ip(config),
+						get_cli_idx(config)));
 
         pthread_t native_handle = client_threads[i].native_handle();
 

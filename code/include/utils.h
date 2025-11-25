@@ -51,7 +51,7 @@ uint64_t get_num_failures(YAML::Node config);
 std::array<uint8_t,6> get_switch_mac(YAML::Node config);
 std::string get_switch_ip(YAML::Node config);
 std::array<uint8_t,6> get_cli_mac(YAML::Node config);
-std::string get_cli_ip(YAML::Node config);
+std::vector<std::string> get_cli_ip(YAML::Node config);
 std::array<uint8_t,6> get_stor_mac(YAML::Node config);
 std::string get_stor_ip(YAML::Node config);
 
@@ -59,6 +59,9 @@ std::string get_stor_receive_port(YAML::Node config);
 std::string get_switch_receive_port(YAML::Node config);
 uint64_t get_use_switch(YAML::Node config);
 uint64_t get_use_stor(YAML::Node config);
+
+uint64_t get_storage_server(YAML::Node config);
+uint64_t get_cli_idx(YAML::Node config);
 
 /*INACTIVE*/
 std::string get_string_entry_payload(YAML::Node config);

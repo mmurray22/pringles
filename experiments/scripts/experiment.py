@@ -34,7 +34,7 @@ SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
 COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
 RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
 
-def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, dst_mac=None, json_name=None, num_failures=None):
+def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None):
     """Generates the configuration dictionary for a client or server."""
     
     # Base port calculation to ensure uniqueness
@@ -84,7 +84,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         # WRAPPED: Ensures self_ip is quoted
         'self_ip': QuotedString(entity_ip),
         # WRAPPED: Ensures interface name is quoted
-        'interface': QuotedString(net_params['network_interface']),
+
         'batch_size': proto_params['batch_size'], # [INACTIVE]
         'batch_on': proto_params['batch_on'],
         'num_pkt_types': proto_params['num_packet_types'],
@@ -119,7 +119,9 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'warm_up': warm_up,
 
             # cool down time
-            'cool_down': cool_down
+            'cool_down': cool_down,
+            'interface': QuotedString(network_interface),
+            'cli_idx': entity_idx
         })
     
     # --- Storage Server Specific Fields ---
@@ -136,7 +138,14 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'shard_id': shard_id,
             'shard_switch_id': shard_switch_id,
             'stor_id': entity_id, # Integer
-            'use_switch': exp_params['use_switch']
+            'use_switch': exp_params['use_switch'],
+            'num_storage_threads': exp_params['num_storage_threads'],
+            'interface': QuotedString(network_interface)
+        })
+
+    elif entity_type == 'switch':
+        yaml_config.update({
+            'interface': QuotedString(network_interface)
         })
 
     return yaml_config
@@ -623,12 +632,15 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
     # Extract run-specific parameters from the merged config
     ssh_key = config['network_setup']['ssh_key']
     ssh_user = config['network_setup']['ssh_user']
-    client_ip = config['network_setup']['client_ip'] # TODO SEQ make plural?
-    switch_ip = config['network_setup']['switch_ip'] # TODO SEQ
-    server_ips = config['network_setup']['server_ips']
+    client_ips = config['network_setup']['cli_ips'] # TODO SEQ make plural?
+    cli_net_ifs = config['network_setup']['cli_net_ifs'] # TODO SEQ make plural?
+    switch_ip = config['network_setup']['switch_ip']
+    switch_net_if = config['network_setup']['switch_net_if']
+    server_ips = config['network_setup']['stor_ips']
+    server_net_ifs = config['network_setup']['stor_net_ifs']
     path_client = config['program_paths']['path_client']
     path_server = config['program_paths']['path_server']
-    path_switch = config['program_paths']['path_switch'] # TODO SEQ
+    path_switch = config['program_paths']['path_switch']
     
     json_output_name = config['experiment_parameters']['json_name']
     num_failures = config['experiment_parameters']['num_failures']
@@ -639,6 +651,8 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
     print(f"========================================================")
     
     server_processes = []
+    client_log_files = []
+    client_processes = []
     server_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
     switch_processes = []
     switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
@@ -662,7 +676,9 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 ip, 
                 port_offset, 
                 entity_id=server_id,
-                dst_mac=server_dst_mac_for_all 
+                entity_idx=i,
+                dst_mac=server_dst_mac_for_all,
+                network_interface=server_net_ifs[i]
             )
             
             # Write YAML file locally
@@ -702,7 +718,8 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             switch_port_offset,
             entity_id=switch_id,
             json_name=json_output_name,
-            num_failures=num_failures
+            num_failures=num_failures,
+            network_interface=switch_net_if
         )
         
         # Write YAML file locally
@@ -732,51 +749,55 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
 
         # --- 9. Generate Client Configuration and Start Process ---
         print("\n--- Starting Client ---")
-        client_id = random.randint(100000, 999999)
-        client_config_filename = f"client_config_{json_output_name}.yaml" # Unique filename
-        client_port_offset = len(server_ips) * 2
-        
-        client_config = generate_yaml_config(
-            config, 
-            'client',
-            client_ip,
-            client_port_offset,
-            entity_id=client_id,
-            json_name=json_output_name,
-            num_failures=num_failures
-        )
-        
-        # Write YAML file locally
-        with open(client_config_filename, 'w') as f:
-            yaml.dump(client_config, f, default_flow_style=False)
-        print(f"Generated client config: {client_config_filename}")
+        for i, ip in enumerate(client_ips):
+            client_id = random.randint(100000, 999999) 
+            config_filename = f"client_config_{json_output_name}_{i}.yaml" # Unique filename
+            client_port_offset = len(server_ips) * 2
+            client_config = generate_yaml_config(
+                 config, 
+                 'client',
+                 ip,
+                 client_port_offset,
+                 entity_id=client_id,
+                 entity_idx=i,
+                 json_name=json_output_name,
+                 num_failures=num_failures,
+                 network_interface=cli_net_ifs[i]
+            )
 
-        # TRANSFER THE YAML CONFIG FILE TO THE REMOTE CLIENT
-        if not transfer_file(client_config_filename, client_ip, ssh_user, ssh_key):
-            raise Exception(f"Failed to transfer config to client {client_ip}")
+            # Write YAML file locally
+            with open(config_filename, 'w') as f:
+                yaml.dump(client_config, f, default_flow_style=False)
+            print(f"Generated server config: {config_filename}")
 
-        # Cleanup old JSON files on client machine (important for correct file naming)
-        cleanup_remote_json_files(client_ip, ssh_key, ssh_user, json_output_name)
-        
-        # Start remote process
-        client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
-            client_ip, 
-            path_client, 
-            client_config_filename, 
-            ssh_key, 
-            ssh_user
-        )
-        
-        if client_process:
-            print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
-            print("This script is now waiting for the client process to finish...")
+            # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+            if not transfer_file(config_filename, ip, ssh_user, ssh_key):
+                raise Exception(f"Failed to transfer config to server {ip}")
             
+            cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name)
+            client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
+                ip, 
+                path_client, 
+                config_filename, 
+                ssh_key, 
+                ssh_user
+            )
+            if client_process:
+                print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
+                print("This script is now waiting for the client process to finish...")
+                client_processes.append(client_process)
+                client_log_files.append(client_log_filename)
+            else: # TODO more error handling?
+                raise Exception("Failed to start client process.")
+        i = 0 
+        for proc in client_processes: 
             # Wait for the client process to finish
-            client_process.wait()
+            print("Waiting for the client process {proc.id} to finish!")
+            proc.wait()
             
             # --- 8. Copy JSON Results Back ---
             copy_results_back(
-                client_ip, 
+                client_ips[i], 
                 ssh_user, 
                 ssh_key, 
                 json_output_name, 
@@ -785,15 +806,14 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             
             # NEW: Copy Client Log File Back
             copy_log_file_back(
-                client_ip,
+                client_ips[i],
                 ssh_user,
                 ssh_key,
-                client_log_filename,
+                client_log_files[i],
                 local_results_dir
             )
+            i += 1
             
-        else:
-            raise Exception("Failed to start client process.")
             
     except Exception as e:
         print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
@@ -874,7 +894,7 @@ def main(config_file="config.toml"):
     client_ips = base_config['network_setup']['cli_ips']
     stor_ips = base_config['network_setup']['stor_ips']
     switch_ip = base_config['network_setup']['switch_ip']
-    all_ips = client_ips + stor_ips + [switch_ip]  # TODO SEQ
+    all_ips = client_ips + stor_ips + [switch_ip]
     ssh_key = base_config['network_setup']['ssh_key']
     ssh_user = base_config['network_setup']['ssh_user']
     

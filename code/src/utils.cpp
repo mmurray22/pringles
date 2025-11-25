@@ -256,8 +256,8 @@ std::array<uint8_t,6> get_cli_mac(YAML::Node config) {
     return mac_final_form;
 }
 
-std::string get_cli_ip(YAML::Node config) {
-    return config["cli_ips"].as<std::vector<std::string>>()[0]; // TODO
+std::vector<std::string> get_cli_ip(YAML::Node config) {
+    return config["cli_ips"].as<std::vector<std::string>>();
 }
 
 std::array<uint8_t,6> get_stor_mac(YAML::Node config) {
@@ -326,4 +326,12 @@ uint64_t get_use_switch(YAML::Node config) {
 
 uint64_t get_use_stor(YAML::Node config) {
     return config["use_store"].as<uint64_t>();
+}
+
+uint64_t get_storage_server(YAML::Node config) {
+    return config["num_storage_threads"].as<uint64_t>();
+}
+
+uint64_t get_cli_idx(YAML::Node config) {
+    return config["cli_idx"].as<uint64_t>();
 }
