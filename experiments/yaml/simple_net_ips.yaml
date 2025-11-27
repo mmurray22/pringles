@@ -1,5 +1,5 @@
 ip_addr:
-  - "127.0.0.1"
+  - "10.10.1.1"
 log_level: 1
 port: 4950
 threads: 0

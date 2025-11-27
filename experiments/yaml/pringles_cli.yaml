@@ -1,0 +1,20 @@
+---
+log_level: 1
+send_port: "9405"
+recv_port: "4950"
+send_threads: 1
+socket_type: "UDP"
+self_ip: "128.110.218.121"
+interface: "eno49np0"
+batch_size: 5
+batch_on: false
+packet_types:
+  - type: "sequencer" 
+  - ips: ["128.110.218.152"]
+  - type: "storage"
+  - ips: ["128.110.218.152"]
+protocol_type: "SIMPLE"
+sequencer_type: 1
+storage_type: 1
+trace_file: "/proj/ove-PG0/murray/pringles/experiments/traces/unit_test_datagram.txt"
+...

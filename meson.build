@@ -3,16 +3,25 @@ project('pringles', 'cpp',
   default_options : ['warning_level=3', 'cpp_std=c++17', 'werror=true'])
 # flags + address sanitizers
 add_global_arguments('-DSOME_TOKEN=value', language : 'cpp')
+add_project_arguments(
+  '-mno-omit-leaf-frame-pointer',
+  language: 'cpp'
+)
+add_project_arguments(
+  '-fno-omit-frame-pointer',
+  language: 'cpp'
+)
 yaml_cpp = dependency('yaml-cpp')
 protoc = find_program('protoc')
 protobuf = dependency('protobuf')
 spdlog = dependency('spdlog')
+tbb_dep = dependency('tbb', required: true) 
 add_project_link_arguments(['-lprotobuf'], language: ['cpp'])
 
 # Generate protobuf library
 gen = generator(protoc,
   output : ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
-  arguments : ['--proto_path=../code/proto', '--cpp_out=@BUILD_DIR@', '@INPUT@']) # Generalize path?
+  arguments : ['--proto_path=../code/proto', '--cpp_out=@BUILD_DIR@', '@INPUT@', '--experimental_allow_proto3_optional']) # Generalize path?
 generated = gen.process(['code/proto/ringclient.proto'])
 
 inc = include_directories('code/include/')
