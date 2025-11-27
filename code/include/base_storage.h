@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <mutex> 
 #include <map>
+#include <string>
 
 class BaseStorage {
     public:

@@ -2,25 +2,17 @@
 This document is a guide for setting up the infrastructure necessary to run experiments.
 
 ## Config files
-All experiment clusters will be created based on a YAML specification. This YAML spec will include the following information:
- - Platform (Cloudlab, AWS, Azure)
- - Number of storage servers
- - Type of storage server machines
- - Number of clients
- - Type of client machines
- - Number of ordering nodes
- - Type of ordering machines
- - Location of machines (optional)
- - Machine Image (to be used for all machines)
- - System we are testing (e.g. Scalog, Ringer, etc.)
- - Workload we are running (directory)
- - File where workload stats should be written
 
 ## Workload
 
-## Experiments on Cloudlab
+## Experiments on a dedicated cluster of machines
 
-### Setting up cloudlab remote instantiation
+### Write your toml file [TODO]
+
+### Run the experiment
+To run your experiment, run `python3 experiment.py config.toml`.
+
+## Setting up cloudlab remote instantiation [DEPRECATED]
 Setting up a cloudlab cluster via the command line requires usage of a python library called geni-lib.One note about geni-lib is that it is compatible with *python2.7*. This means that geni-lib must be installed in a python2.7 environment. In order to successfully install geni-lib on the machine, the following steps need to be taken:
 
 1. Install `libssl`, `libxml2`, `python2.7`. To install `python2.7` on Debian:
@@ -44,4 +36,19 @@ Congratulations! geni-lib has been successfully installed. The next step will be
 3. Navigate to your experiments directory (in our case, ringlog/experiments). 
 4. Run `cp template_personal.yaml personal.yaml`. Then open `personal.yaml`.
 5. Fill in all the empty fields with the appropriate values or directories.
+
+All experiment clusters will be created based on a YAML specification. This YAML spec will include the following information:
+ - Platform (Cloudlab, AWS, Azure)
+ - Number of storage servers
+ - Type of storage server machines
+ - Number of clients
+ - Type of client machines
+ - Number of ordering nodes
+ - Type of ordering machines
+ - Location of machines (optional)
+ - Machine Image (to be used for all machines)
+ - System we are testing (e.g. Scalog, Ringer, etc.)
+ - Workload we are running (directory)
+ - File where workload stats should be written
+
 

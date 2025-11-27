@@ -8,12 +8,14 @@
 class BaseClient {
 	public:
         /*** Virtual functions ***/
-
-        /** API Functions **/
+	virtual ~BaseClient() {
+	}
+        
+	/** API Functions **/
         // Append entries to the log
-        virtual uint64_t append(std::string entry) = 0;
+        virtual uint32_t append(std::string entry) = 0;
         // Read from idx in the log
-        virtual std::unique_ptr<std::string> read(uint64_t idx) = 0;
+        virtual std::string read(uint64_t idx) = 0;
         // Get latest committed entry
         virtual uint64_t getTail() = 0;
         // Subscribe to get all log updates after supplied index
@@ -21,11 +23,12 @@ class BaseClient {
         // Garbage collect all log entries up to some index
         virtual bool trim(uint64_t idx) = 0;
 
-	private:
-	    /*** Variables ***/
+	/*** Variables ***/
         uint64_t cid;
+	std::thread subscribe_thread;
+
         std::unique_ptr<Network> net;
-        //std::unique_ptr<Trace<T>> trace;
-        ClientType cli_type;
+        
+	//std::unique_ptr<Trace<T>> trace;
         bool local;
 };

@@ -36,7 +36,7 @@ Key components of the codebase:
 See setup.sh for all relevant packages. C++17 at minimum required. If you are using cloudlab for testing, you can use the Cloudlab profile `run-pringles` which already has the appropriate packages.
 
 To compile, follow these steps:
-1. `cd /path/to/ringlog`
+1. `cd /path/to/pringles`
 2.  `meson setup build && cd build`
 3. `meson compile`
 
