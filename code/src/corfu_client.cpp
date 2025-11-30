@@ -86,7 +86,7 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
 
     for (CorfuStorage& sm : send_machines) {
         std::unique_ptr<std::string> write_packet = corfu_client_serialize_str_entry(entry, CORFU_APPEND_PROTO_TYPE, client_id, log_idx, curr_epoch);
-        net->add_to_send_queue(write_packet, sm.IP);
+        net->add_to_send_queue(write_packet, sm.ssid);
 
         std::string msg;
 
@@ -94,7 +94,7 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto read_time = std::chrono::high_resolution_clock::duration::zero();
         while (read_time < TIMEOUT && msg.empty()) {
-            msg = net->read_from_recv_queue(sm.IP);
+            msg = net->read_from_recv_queue(sm.ssid);
             read_time = std::chrono::high_resolution_clock::now() - start_time;
         }
 
@@ -164,14 +164,14 @@ bool CorfuClient::trim(uint64_t log_idx) {
 
     for (CorfuStorage& sm : send_machines) {
         std::unique_ptr<std::string> delete_packet = corfu_client_serialize_str_entry("", CORFU_TRIM_PROTO_TYPE, client_id, log_idx, 0);
-        net->add_to_send_queue(delete_packet, sm.IP);
+        net->add_to_send_queue(delete_packet, sm.ssid);
 
         std::unique_ptr<std::string> msg;
         // start timer
         auto start_time = std::chrono::high_resolution_clock::now();
         auto read_time = std::chrono::high_resolution_clock::duration::zero();
         while (read_time < TIMEOUT && msg.empty()) {
-            msg = net->read_from_recv_queue(sm.IP);
+            msg = net->read_from_recv_queue(sm.ssid);
             read_time = std::chrono::high_resolution_clock::now() - start_time;
         }
 
