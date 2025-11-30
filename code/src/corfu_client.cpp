@@ -1,16 +1,20 @@
 #include "corfu_client.h"
+#include "corfu_sequencer.h"
+// #include "network.h"
+#include "spdlog/spdlog.h"
 
 CorfuClient::CorfuClient(YAML::Node config) {
     // Create network
-    net = std::make_shared<Network>(get_threads(config), 
-                                    get_seq_ip(config),
-                                    get_storage_ips(config), 
-                                    get_send_port(config), 
-                                    get_recv_port(config),
-                                    get_protocol(config), 
-                                    get_log_level(config),
-                                    get_batch_size(config),
-                                    get_interface(config));
+    net = std::make_unique<Network>(get_threads(config), 
+                                                                    get_send_port(config), 
+                                                                    get_recv_port(config),
+								    get_socket_type(config),
+                                                                    get_log_level(config),
+								    get_batch_size(config),
+								    get_batch_on(config),
+								    get_interface(config),
+								    get_self_ip(config),
+								    get_packet_types(config));
 
     // Create trace
     trace = std::make_shared<Trace<std::string>>(get_trace_file(config));
@@ -33,7 +37,7 @@ CorfuClient::~CorfuClient() {
     recv.join();
 }
 
-void reconfigure(uint64_t log_idx, CorfuStorage failing_unit) {
+void CorfuClient::reconfigure(uint64_t log_idx, CorfuStorage failing_unit) {
     return;
 }
 
@@ -80,7 +84,7 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
         return 1; // return 1 indicates there was a failure and we should try again
     }
 
-    for (CorfuStorage sm : send_machines) {
+    for (CorfuStorage& sm : send_machines) {
         std::unique_ptr<std::string> write_packet = corfu_client_serialize_str_entry(entry, CORFU_APPEND_PROTO_TYPE, client_id, log_idx, curr_epoch);
         net->add_to_send_queue(write_packet, sm.IP);
 
@@ -131,7 +135,7 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
     return log_idx;
 }
 
-std::unique_ptr<std::string> SimpleClient::read(uint64_t idx) {
+std::unique_ptr<std::string> CorfuClient::read(uint64_t idx) {
     return nullptr;
 }
 
@@ -158,7 +162,7 @@ bool CorfuClient::trim(uint64_t log_idx) {
         return 1; // return 1 indicates there was a failure and we should try again
     }
 
-    for (CorfuStorage sm : send_machines) {
+    for (CorfuStorage& sm : send_machines) {
         std::unique_ptr<std::string> delete_packet = corfu_client_serialize_str_entry("", CORFU_TRIM_PROTO_TYPE, client_id, log_idx, 0);
         net->add_to_send_queue(delete_packet, sm.IP);
 

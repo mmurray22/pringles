@@ -21,7 +21,7 @@ class BaseClient {
         // Garbage collect all log entries up to some index
         virtual bool trim(uint64_t idx) = 0;
 
-	private:
+	protected:
 	    /*** Variables ***/
         uint64_t cid;
         std::unique_ptr<Network> net;

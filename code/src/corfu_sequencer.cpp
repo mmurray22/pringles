@@ -1,37 +1,55 @@
 #include "corfu_sequencer.h"
+#include "utils.h"
+#include "spdlog/spdlog.h"
+#include "trace.h"
+// #include "network.h"
 
-CorfuSequencer::CorfuSequencer() {
+CorfuSequencer::CorfuSequencer(YAML::Node config) {
+    net = std::make_unique<Network>(get_threads(config), 
+                                                                    get_send_port(config), 
+                                                                    get_recv_port(config),
+								    get_socket_type(config),
+                                                                    get_log_level(config),
+								    get_batch_size(config),
+								    get_batch_on(config),
+								    get_interface(config),
+								    get_self_ip(config),
+								    get_packet_types(config));
+
     sequencer_thread = std::thread(&CorfuSequencer::run_sequencer_thread, this);
 }
 
 CorfuSequencer::~CorfuSequencer() {
     terminate = true;
+    net->done();
     sequencer_thread.join();
 }
 
 void CorfuSequencer::run_sequencer_thread() {
     std::unique_ptr<std::string> rcv_str;
     uint64_t wait_time = 10;
-    while (true) {
+    while (!terminate) {
         if (wait_time >= MAX_WAIT_TIME) {
             spdlog::debug("!!!!!!!!!!!!!!No more packets to receive.");
             break;
         }
+
         std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
         wait_time += 10;
+
         rcv_str = net->read_from_recv_queue();
         if (!rcv_str) {
             continue;
         }
+
         corfuclient::Payload packet_contents = corfu_client_deserialize_str_entry(rcv_str);
-        if (packet_contents.token_req().reqToken()) {
+
+        if (packet_contents.token_req().reqtoken()) {
             spdlog::info("sequencer received a token request");
             uint64_t idx = assign_next_idx();
 
             std::unique_ptr<std::string> token_packet = corfu_sequencer_serialize_str_entry(CORFU_GETTOKEN_REPLY_PROTO_TYPE, idx);
-            std::string client_ip = packet_contents.clientID(); // each packet comes with a client ip, but better solution should be found
-
-            net->add_to_send_queue(token_packet, client_ip);
+            net->add_to_send_queue(token_packet, packet_contents.clientid());
         }
         wait_time = 10;
     }

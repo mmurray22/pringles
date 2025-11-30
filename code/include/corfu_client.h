@@ -1,15 +1,16 @@
 
 #include "base_client.h"
-#include "corfu_sequencer.h"
-#include <vector>
-#include <map>
-#include <cstdint>
-#include <cstddef>
-#include <chrono>
 #include "corfu_storage.h"
-#include "trace.h"
+// #include <vector>
+// #include <map>
+// #include <cstdint>
+// #include <cstddef>
+// #include <chrono>
 
-#define TIMEOUT 10
+#define TIMEOUT std::chrono::seconds(10)
+
+class Network;
+class CorfuSequencer;
 
 class CorfuClient : public BaseClient {
     protected:

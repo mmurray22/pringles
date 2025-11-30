@@ -1,6 +1,13 @@
 #include <cstdint>
 #include <mutex> 
 #include <map>
+#include <string>
+#include <memory>
+#include <thread>
+#include "yaml-cpp/yaml.h"
+
+
+class Network;
 
 class BaseStorage {
     public:

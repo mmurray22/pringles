@@ -28,16 +28,15 @@ void dummy_client(std::string cli_input) {
     // make it so each object has its own network object :o
     // so put this init in the corfu sequencer and storage constructors
     std::unique_ptr<Network> net = std::make_unique<Network>(get_threads(config), 
-                                                                get_send_port(config), 
-                                                                get_recv_port(config),
-                                get_socket_type(config),
-                                                                get_log_level(config),
-                                get_batch_size(config),
-                                get_batch_on(config),
-                                get_interface(config),
-                                get_self_ip(config),
-                                get_packet_types(config));
-    set_spdlog_level(get_log_level(config));
+                                                                    get_send_port(config), 
+                                                                    get_recv_port(config),
+								    get_socket_type(config),
+                                                                    get_log_level(config),
+								    get_batch_size(config),
+								    get_batch_on(config),
+								    get_interface(config),
+								    get_self_ip(config),
+								    get_packet_types(config));
     
     // get the trace
     std::unique_ptr<Trace<std::string>> trace = std::make_unique<Trace<std::string>>(get_trace_file(config));
@@ -110,14 +109,15 @@ void dummy_storage() {
 
 
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
+    if (argc < 2) {
         spdlog::critical("Not enough arguments provided! Need YAML file");
     }
     std::string cli_input_file = std::string(argv[1]);
-    std::string seq_input_file = std::string(argv[2]);
+    // std::string seq_input_file = std::string(argv[2]);
     // std::string stor_input_file = std::string(argv[3]);
     
-    std::unique_ptr<CorfuSequencer> seq = std::make_unique<CorfuSequencer>();
+    YAML::Node config = YAML::LoadFile(cli_input_file);
+    std::unique_ptr<CorfuSequencer> seq = std::make_unique<CorfuSequencer>(config);
 
     spdlog::info("creating dummy client thread");
     std::thread cli_thread(dummy_client, cli_input_file);

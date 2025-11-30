@@ -1,12 +1,18 @@
-#include <cstdint>
-#include <string>
-#include <mutex>
+// #include <cstdint>
+// #include <string>
 #include <atomic>
+// #include <memory>
+// #include <spdlog/spdlog.h>
+#include "yaml-cpp/yaml.h"
+#include <thread>
 
+constexpr uint64_t MAX_WAIT_TIME = 1000;
+
+class Network;
 
 class CorfuSequencer {
     public:
-        CorfuSequencer();
+        CorfuSequencer(YAML::Node config);
         ~CorfuSequencer();
         
         uint64_t assign_next_idx(); // Assigns the next sequence number
@@ -16,7 +22,8 @@ class CorfuSequencer {
         void run_sequencer_thread();
 
     private:
+        std::shared_ptr<Network> net;
         std::thread sequencer_thread;
         std::atomic<uint64_t> curr_idx{0};
-        bool terminate = false;
+        std::atomic<bool> terminate{false};
 };

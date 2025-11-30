@@ -1,12 +1,19 @@
-#include <string>
-#include <cstdint>
+// #include <string>
+// #include <cstdint>
 #include <unordered_map>
 #include "base_storage.h"
+#include <atomic>
+
+// #include <thread>
+// #include <chrono>
+// #include <memory>
+
+// #include <spdlog/spdlog.h>
 
 
 class CorfuStorage : public BaseStorage {
     public:
-        CorfuStorage(uint64_t ssid);
+        CorfuStorage(uint64_t ssid, std::shared_ptr<Network> net);
         ~CorfuStorage();
 
         bool sync_store(uint64_t idx, std::string entry) override;
@@ -20,7 +27,7 @@ class CorfuStorage : public BaseStorage {
         void storage_delete(std::string msg);
         void seal(std::string msg);
 
-        void server(std::shared_ptr<Network> net);
+        void server();
 
     protected:
         struct map_entry {
@@ -28,7 +35,13 @@ class CorfuStorage : public BaseStorage {
             std::string contents;
         };
 
-        uint64_t s_epoch = 0;      // initially 0, used to tell client if their mapping is out of date
-        std::unordered_map<uint64_t, map_entry> storage_map;     // maps log pos -> status bit + content
-        uint64_t mark = 0;      // before this address, there are no unwritten addresses (updated in write, used for seal)
+        uint64_t ssid = 0;  // storage server ID
+        uint64_t s_epoch = 0;  // current epoch
+        uint64_t mark = 0;  // highest written address
+
+        std::unordered_map<uint64_t, map_entry> storage_map;
+
+        std::shared_ptr<Network> net;
+        std::thread server_thread;
+        std::atomic<bool> terminate{false};
 };
