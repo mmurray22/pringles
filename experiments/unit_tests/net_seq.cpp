@@ -76,6 +76,8 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
         // Request header
         std::unique_ptr<struct ring_append_entry> req_hdr = create_ring_append_entry(nonce, thread_id);
         req_hdr.get()->num_entries = 0;
+        uint64_t num_entries = 1;
+
         while (!end_thread) {
             bool got_quorum = false;
 
@@ -113,7 +115,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 
 		// Isolate the ethernet header from the receive ptr
                 struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
-		//spdlog::debug("I got the type: {}", type_hdr->type);
+	        spdlog::debug("I got the type: {}", type_hdr->type);
 
 		// If the packet is of type ETH_APPEND_REQ
                 if (type_hdr->type == ETH_APPEND_REQ) { // TODO
@@ -121,25 +123,37 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		    // Get the correct header (ring append entry) from the received packet
             	    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
 
+		    append_entry->num_entries = batch_size; // TODO there must be a better way...
+		    
             	    // Copy new packet into the batch and update the running packet size for the append request batch
 
             	    // If the batch isn't full and the timeout not expired exceed
 		    // Create the packet to send to the storage server with the running packet size and the additional header
-            	    //spdlog::debug("Final request packet size: {}", append_req_running_pkt_size);
+            	    spdlog::debug("Final request packet size: {}, Payload sz: {}, Nonce: {}, Port: {}", append_entry->num_entries, append_entry->payload_size, append_entry->nonce, append_entry->recv_port);
                     std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
 
 		    // Copy batch header into the reply packet, and the batch content 
                     memcpy(reply_packet.get(), recv_ptr, pkt_size);
 		    // Send the network packet
 		    //spdlog::debug("Send size: {}", pkt_size);
+                    bool res = false;
 		    if (use_store) {
-            	        net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
+			spdlog::debug("Sending multiple packets!");
+            	        res = net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
 		    } else {
+			spdlog::debug("Only sending a single packet!");
 			((struct ring_type*)reply_packet.get())->type = ETH_APPEND_RESP;
-			for (std::string cli_ip : cli_ips) {
-            	            net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->recv_port));
-			}
+            	        net->send_client_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ips[append_entry->cli_idx], std::to_string(append_entry->recv_port));
+			res = true;
 		    }
+
+	       	   if (!res) {
+	       	       num_entries += 1;
+	       	       continue;
+	       	   } else {
+	       	      num_entries = 1;
+	       	   }
+
 
 		    /*stat->getDuration(lat_start_time);
 		    stat->addOp();*/
@@ -149,10 +163,32 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
        		    start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
                     start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
                 } else if (type_hdr->type == ETH_APPEND_RESP) { // send to client TODO 
-		    //spdlog::debug("IN THE ETH RESPONDER!");
+		    spdlog::debug("IN THE ETH RESPONDER!");
                     // Get the append entry header from the storage reply
 		    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-		    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+		    spdlog::debug("Number of entries received: {}", append_entry->num_entries);
+		    uint64_t num_entries = append_entry->num_entries;
+		    uint64_t recv_offset = 0;
+		    for (uint64_t i = 0; i < num_entries; i++) {
+			// Create reply buffer packet
+ 		        uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr;
+     	                std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
+
+		        spdlog::debug("WE ARE ON ITERATION: {} with offset {}", i, recv_offset);
+		        struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
+	    
+		        type_hdr->type = ETH_APPEND_RESP;
+		        spdlog::debug("Batch append entry payload size: {}, num entries: {} going to IP {} and port {}", batch_append_entry->payload_size, batch_append_entry->num_entries, cli_ips[batch_append_entry->cli_idx], batch_append_entry->recv_port); // TODO next steps: Batch isn't being created properly
+
+			// Copy contents into the packet
+                        memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
+		        net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[batch_append_entry->cli_idx], std::to_string(batch_append_entry->recv_port));
+
+		        recv_offset += reply_pkt_size;
+		        spdlog::debug("Send packet response with size {}!", reply_pkt_size);
+		    }
+
+		    /*std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
 
 		    // Copy batch header into the reply packet, and the batch content 
                     memcpy(reply_packet.get(), recv_ptr, pkt_size);
@@ -160,7 +196,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		    //spdlog::debug("Send size: {} to IP {} at port {}", pkt_size, cli_ip, std::to_string(append_entry->recv_port));
             	    for (std::string cli_ip : cli_ips) {
 		        net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->recv_port));
-		    }
+		    }*/
 
                     got_quorum = true;
                     start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();

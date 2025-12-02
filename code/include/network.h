@@ -92,6 +92,7 @@ class Network {
 
 	std::string get_recv_port();
 
+	bool send_client_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::string dst_ip, std::string dst_port);
 	bool send_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::string dst_ip, std::string dst_port);
  	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, in_addr_t dst_ip);
  
@@ -123,6 +124,7 @@ class Network {
 	std::unordered_map<std::string, int> port_to_fd;
         
 	char* norm_buf;
+	char* final_send_packet;
         std::string socket_type; // Networking protocol you are running
         bool check_socket_type(std::string socket_type);
         const uint64_t BACKLOG = 5;
@@ -140,6 +142,12 @@ class Network {
         /** Batching **/
         uint64_t batch_size;
 	bool batch_on;
+	uint64_t running_pkt_size;
+	uint64_t num_pkts;
+	double batch_timer;
+	double batch_timeout;
+	std::unordered_map<std::string, char*> port_to_batch;
+
 
 	// Boolean which indicates to sending and receiving threads to cease operation
         bool terminate = false;
