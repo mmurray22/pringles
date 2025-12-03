@@ -68,10 +68,18 @@ void store(uint64_t idx, std::string entry) {
 
 void receiver(std::shared_ptr<Network> net, std::string switch_ip, std::string switch_receive_port) {
     spdlog::critical("Network Recv Thread starting with TID = {}", gettid());
+    (void) switch_ip;
+    (void) switch_receive_port;
     while (!end_thread) {
         char* recv_ptr = net->recv_packet();
 	if (!recv_ptr) {
-            net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port); // TODO use_stor or?
+	    recv_q.push(NULL);
+            {
+	        std::unique_lock<std::mutex> lock(recv_q_mutex);
+            }
+	    cv.notify_all();
+
+            //net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port); // TODO TEST IF THIS IS THE ISSUE
 	    continue;
 	}
         struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
@@ -84,7 +92,9 @@ void receiver(std::shared_ptr<Network> net, std::string switch_ip, std::string s
 	uint64_t recv_offset = 0;
         size_t size_of_hdr = get_ring_append_size();
         size_t size_of_type_hdr = get_ring_type_size();
+	spdlog::debug("IN THE RECEIVE THREAD: Num entries {}, Payload size: {}", ring->num_entries, ring->payload_size);
 	for (uint64_t i = 0; i < num_entries; i++) {
+	    spdlog::debug("Batch append entry payload size: {}, num entries: {}",  ((struct ring_append_entry*)(recv_ptr + recv_offset + sizeof(struct ring_type)))->payload_size, ((struct ring_append_entry*)(recv_ptr + recv_offset + sizeof(struct ring_type)))->recv_port);
 	    char* pkt = (char*)std::malloc(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ring->payload_size + 1);
             memcpy(pkt, recv_ptr + recv_offset, sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ring->payload_size + 1); 
  	    recv_q.push(pkt);
@@ -138,7 +148,7 @@ void custom_udp_server(std::shared_ptr<Network> net,
 		std::unique_lock<std::mutex> lock(recv_q_mutex);
 		cv.wait(lock, [] {return end_thread || !recv_q.empty();});
 		if (!recv_q.try_pop(recv_ptr) || !recv_ptr) {
-
+            	    net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, switch_ip, switch_recv_port); // TODO TEST IF THIS IS THE ISSUE
 	            continue;
 	        }
 	    }
@@ -150,58 +160,52 @@ void custom_udp_server(std::shared_ptr<Network> net,
 		
 		// Unpack the batch
 		struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-		uint64_t recv_offset = 0;
-		spdlog::debug("Number of entries received: {}", append_entry->num_entries);
-		spdlog::debug("!!!!CLIENT INDEX RECEIVED: {}", append_entry->cli_idx);
+		//spdlog::debug("Number of entries received: {}", append_entry->num_entries);
+		//spdlog::debug("!!!!CLIENT INDEX RECEIVED: {}", append_entry->cli_idx);
 		uint64_t num_entries = append_entry->num_entries;
 
 		// Update the type of the type header
 		type_hdr->type = ETH_APPEND_RESP;
 
-		// Iterate through each entry	
-		for (uint64_t i = 0; i < 1; i++) {
+		// Iterate through each entry	 TODO DEPRECATED
+		//for (uint64_t i = 0; i < num_entries; i++) {
 		    
-		    // Size of the reply packet
- 		    uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr;
-     	            std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
+		// Create reply packet
+ 		uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr;
+     	        std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
 
-		    // Get the next append entry header to process and its payload
-		    spdlog::debug("WE ARE ON ITERATION: {} with offset {}", i, recv_offset);
-		    spdlog::debug("THIS PACKET HAS TYPE {}", ((struct ring_type*)(recv_ptr + recv_offset))->type);
-		    struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
-	            char* entry = (char*)(recv_ptr + recv_offset + size_of_type_hdr + sizeof(struct ring_append_entry));
-	    	    
-		    // Actually store the entry
-	    	    std::string dummy(entry); 
-		    spdlog::debug("Dummy entry length: {}", dummy.length());
-	    	    store(idx, dummy);
-		    spdlog::debug("The updated index is: {}, Entry: {}, Recv port: {}", idx, dummy, batch_append_entry->recv_port);
-		    
-		    // Update append entry header with the assigned index
-		    batch_append_entry->g_idx = idx;
-	    	    idx += 1;
+		// Get the next append entry header to process and its payload
+		//spdlog::debug("WE ARE ON ITERATION: {} with offset {}", i, recv_offset);
+		//spdlog::debug("THIS PACKET HAS TYPE {}", ((struct ring_type*)(recv_ptr + recv_offset))->type);
+		struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + size_of_type_hdr);
+	        char* entry = (char*)(recv_ptr + size_of_type_hdr + size_of_hdr);
+	    	
+		// Actually store the entry
+	    	std::string dummy(entry); 
+		//spdlog::debug("Dummy entry length: {}", dummy.length());
+	    	store(idx, dummy);
+		//spdlog::debug("The updated index is: {}, Entry: {}, Recv port: {}", idx, dummy, batch_append_entry->recv_port);
+		
+		// Update append entry header with the assigned index
+		batch_append_entry->g_idx = idx;
+	    	idx += 1;
 
-		    // Copy both the type header and the append entry header into the reply packet buffer
-		    spdlog::debug("Batch append entry payload size: {}, num entries: {}", batch_append_entry->payload_size, batch_append_entry->num_entries);
-		    uint64_t old_payload_sz = batch_append_entry->payload_size;
-		    batch_append_entry->payload_size = 0;
-		    batch_append_entry->num_entries = num_entries; // make sure the header has the right number of entries
-                    memcpy(reply_packet.get(), recv_ptr, size_of_type_hdr);
-                    memcpy(reply_packet.get() + size_of_type_hdr, recv_ptr + recv_offset + size_of_type_hdr, size_of_hdr);
-		    spdlog::debug("Eth header type: {}", ((struct ring_type*)recv_ptr)->type);
-		    // Send the packet to the network library to send out
-		    if (use_switch) {
-     	    	         net->send_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_ip, switch_recv_port);
-		    } else {
-		        //spdlog::debug("Sending to IP address: {}", cli_ips[batch_append_entry->cli_idx]);
-     	    	        net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[batch_append_entry->cli_idx], std::to_string(batch_append_entry->recv_port));
-		    }
-
-		    // Update the receive offset
-		    spdlog::debug("Offset information: {}, {}", size_of_hdr, old_payload_sz);
-		    recv_offset += (size_of_type_hdr + size_of_hdr + old_payload_sz + 1);
-		    spdlog::debug("Send packet response with size {}!", reply_pkt_size);
+		// Copy both the type header and the append entry header into the reply packet buffer
+		//spdlog::debug("Batch append entry payload size: {}, num entries: {}", batch_append_entry->payload_size, batch_append_entry->num_entries);
+		batch_append_entry->payload_size = 0;
+		batch_append_entry->num_entries = num_entries; // make sure the header has the right number of entries
+                memcpy(reply_packet.get(), recv_ptr, reply_pkt_size);
+		
+		//spdlog::debug("Eth header type: {}", ((struct ring_type*)recv_ptr)->type);
+		// Send the packet to the network library to send out
+		if (use_switch) {
+     	    	     net->send_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_ip, switch_recv_port);
+		} else {
+		    //spdlog::debug("Sending to IP address: {}", cli_ips[batch_append_entry->cli_idx]);
+     	    	    net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[batch_append_entry->cli_idx], std::to_string(batch_append_entry->recv_port));
 		}
+
+		//}
 
 	    }
 	}

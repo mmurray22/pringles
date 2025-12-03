@@ -30,21 +30,21 @@ run_setup_script = "False"
 log_level = 6
 warm_up = 5 # seconds
 cool_down = 5 # seconds
-experiment_duration = 10 # seconds
+experiment_duration = 15 # seconds
 socket_type = "UDP" # "RAW"
 message_size = 100 # 100 # bytes
 num_client_threads = 1
 num_storage_threads = 1
-json_name = "increase_client"
-experiment_name = "100byte_1_cli_machine_stor_only_no_map"
+json_name = "increase_batch"
+experiment_name = "100byte_30cli_batch"
 num_failures = 0 # NEW
 git_hash = "" # TODO
 use_switch = 1
-use_store = 1
+use_store = 0
+batch_size = 1 # Number of packets
 
 [protocol_batching]
 batch_on = true
-batch_size = 1 # Number of packets
 num_packet_types = 1
 sequencer_type = 0 
 storage_server_type = 0 
@@ -67,7 +67,7 @@ server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
 #
 #[[experiment]]
 #num_client_threads = 4
-#batch_size = 4 # Number of packets
+#batch_size = 1 # Number of packets
 #json_name = "four_client"
 
 #[[experiment]]
@@ -81,6 +81,7 @@ server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
 
 #[[experiment]]
 #num_client_threads = 10
+#batch_size = 1 # Numbeyyr of packets
 #json_name = "ten_client"
 
 #[[experiment]]
@@ -89,8 +90,9 @@ server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
 #json_name = "twelve_client"
 
 #[[experiment]]
-#num_client_threads = 14
-#json_name = "fourteen_client"
+#num_client_threads = 15
+#batch_size = 1 # Numbeyyr of packets
+#json_name = "fifteen_client"
 
 #[[experiment]]
 #num_client_threads = 16
@@ -103,40 +105,101 @@ server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
 
 #[[experiment]]
 #num_client_threads = 20
-#batch_size = 2 # Number of packets
+#batch_size = 1 # Number of packets
 #json_name = "twozero_client"
 
 #[[experiment]]
 #num_client_threads = 22
 #json_name = "twotwo_client"
 
-#[[experiment]]
-#num_client_threads = 25
-#num_storage_threads = 1
-#batch_size = 1 # Numbeyyr of packets
-#json_name = "twofive_client"
+[[experiment]]
+num_client_threads = 25
+num_storage_threads = 1
+batch_size = 1 # Numbeyyr of packets
+json_name = "twofive_client"
 #
+#[[experiment]]
+#num_client_threads = 30
+#num_storage_threads = 1
+#batch_size = 2 # Number of packets
+#json_name = "thirty_client"
+#json_name = "thirty_client"
+#[[experiment]]
+#num_client_threads = 40
+#num_storage_threads = 1
+#batch_size = 2 # Numbeyyr of packets
+#json_name = "two_batch"
+#[[experiment]]
+#num_client_threads = 40
+#num_storage_threads = 1
+#batch_size = 5 # Numbeyyr of packets
+#json_name = "three_batch"
+#[[experiment]]
+#num_client_threads = 40
+#num_storage_threads = 1
+#batch_size = 10 # Numbeyyr of packets
+#json_name = "four_batch"
+#[[experiment]]
+#num_client_threads = 40
+#num_storage_threads = 1
+#batch_size = 15 # Numbeyyr of packets
+#json_name = "five_batch"
+#[[experiment]]
+#num_client_threads = 40
+#num_storage_threads = 1
+#batch_size = 20 # Numbeyyr of packets
+#json_name = "six_batch"
 [[experiment]]
 num_client_threads = 30
 num_storage_threads = 1
 batch_size = 2 # Numbeyyr of packets
 json_name = "thirty_client"
-#
-#[[experiment]]
-#num_client_threads = 35
-#num_storage_threads = 1
-#batch_size = 1 # Numbeyyr of packets
-#json_name = "threefive_client"
-#
-#[[experiment]]
-#num_client_threads = 40
-#num_storage_threads = 1
-#batch_size = 1 # Numbeyyr of packets
-#json_name = "forty_client"
 
-#[[experiment]]
-#num_client_threads = 50
-#num_storage_threads = 1
-#batch_size = 1 # Numbeyyr of packets
-#json_name = "fifty_client"
+[[experiment]]
+num_client_threads = 35
+num_storage_threads = 1
+batch_size = 5 # Numbeyyr of packets
+json_name = "threefive_client"
+#
+[[experiment]]
+num_client_threads = 40
+num_storage_threads = 1
+batch_size = 5 # Numbeyyr of packets
+json_name = "forty_client"
+
+[[experiment]]
+num_client_threads = 50
+num_storage_threads = 1
+batch_size = 6 # Numbeyyr of packets
+json_name = "fifty_client"
+
+[[experiment]]
+num_client_threads = 60
+num_storage_threads = 1
+batch_size = 5 # Numbeyyr of packets
+json_name = "sixty_client"
+
+[[experiment]]
+num_client_threads = 70
+num_storage_threads = 1
+batch_size = 12 # Numbeyyr of packets
+json_name = "seventy_client"
+
+[[experiment]]
+num_client_threads = 80
+num_storage_threads = 1
+batch_size = 12 # Numbeyyr of packets
+json_name = "eight_client"
+
+[[experiment]]
+num_client_threads = 90
+num_storage_threads = 1
+batch_size = 12 # Numbeyyr of packets
+json_name = "ninety_client"
+
+[[experiment]]
+num_client_threads = 100
+num_storage_threads = 15
+batch_size = 12 # Numbeyyr of packets
+json_name = "hundred_client"
 

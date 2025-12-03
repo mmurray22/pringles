@@ -395,7 +395,7 @@ int Network::setup_listener_socket(std::string curr_ip) {
        
        	struct timeval timeout;
         timeout.tv_sec = 0;  // 5 seconds timeout
-        timeout.tv_usec = 800;	
+        timeout.tv_usec = 600;	
 	if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
 	    spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
             return -1;
@@ -518,7 +518,7 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
     //spdlog::debug("Sending a UDP packet!");
 
     int s_fd;
-    spdlog::debug("Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
+    //spdlog::debug("SINGLE CLIENT Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
     std::string combined_addr = dst_ip + ":" + dst_port;
     if (port_to_fd.count(combined_addr) > 0) {
         s_fd = port_to_fd[combined_addr];
@@ -542,8 +542,6 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
     } else {
          //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
     }
-    running_pkt_size = 0;
-    num_pkts = 0;
     return sent_all;
 }
 
@@ -563,10 +561,8 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
         return false;
     }
     
-    //spdlog::debug("Sending a UDP packet!");
-
     int s_fd;
-    spdlog::debug("Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
+    //spdlog::debug("Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
     std::string combined_addr = dst_ip + ":" + dst_port;
     if (port_to_fd.count(combined_addr) > 0) {
         s_fd = port_to_fd[combined_addr];
@@ -584,7 +580,7 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     }
 
     if (batch_on && pkt_len > 0) {
-	spdlog::debug("Packet length: {}, Num pkts: {}", running_pkt_size, num_pkts);
+	//spdlog::debug("Packet length: {}, Num pkts: {}", running_pkt_size, num_pkts);
         memcpy(final_send_packet + running_pkt_size, send_packet.get(), pkt_len);
         running_pkt_size += pkt_len; 
 	num_pkts += 1;
@@ -596,7 +592,7 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     auto curr_time = (std::chrono::steady_clock::now()).time_since_epoch();
     double curr_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(curr_time).count();
     double dur = curr_time_s - batch_timer;
-    spdlog::debug("Packet length: {}, Packet length: {}, Num pkts: {}, Batch size: {}, Batch timeout: {}, Duration: {}, Batch on: {}", running_pkt_size, pkt_len, num_pkts, batch_size, batch_timeout, dur, batch_on);
+    //spdlog::debug("Packet length: {}, Packet length: {}, Num pkts: {}, Batch size: {}, Batch timeout: {}, Duration: {}, Batch on: {}", running_pkt_size, pkt_len, num_pkts, batch_size, batch_timeout, dur, batch_on);
     if (batch_on && num_pkts < batch_size && (running_pkt_size + pkt_len) < MAX_PACKET_SIZE && dur < batch_timeout) {
         // Copy new packet into the batch and update the running packet size for the append request batch
 	return false;
@@ -607,16 +603,18 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
   
     // TODO TODO TODO SPECIALIZED HEADER REFERENCE
     ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries = num_pkts; 
+    //spdlog::debug("The number of entries in this send are: {} with number of packets {}", ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries, num_pkts); 
     char* actual_test_send = (char*)std::malloc(running_pkt_size);    
     memcpy(actual_test_send, final_send_packet, running_pkt_size);
+    spdlog::debug("The number of entries in this send are: {} with total number of packets received {}", ((struct ring_append_entry*)(actual_test_send + sizeof(struct ring_type)))->num_entries, num_pkts); 
     ssize_t num_bytes = send(s_fd, actual_test_send, running_pkt_size, 0);
     
     if (num_bytes < 0 || ((uint64_t)num_bytes != running_pkt_size)) {
         spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
         sent_all = false;
     } else {
-        spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
-	memset(final_send_packet, 0, MAX_PACKET_SIZE);
+        //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+	//memset(final_send_packet, 0, MAX_PACKET_SIZE);
     }
     running_pkt_size = 0;
     num_pkts = 0;

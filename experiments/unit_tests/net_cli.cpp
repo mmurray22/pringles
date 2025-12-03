@@ -180,6 +180,8 @@ void custom_client(std::shared_ptr<Network> net,
 		   bool use_stor,
 		   std::string self_ip,
 		   uint64_t cli_idx) {
+    std::chrono::seconds sleep_duration(2);
+    std::this_thread::sleep_for(sleep_duration);
     (void) switch_mac;
     (void) stor_mac;
     (void) use_stor;
@@ -217,8 +219,6 @@ void custom_client(std::shared_ptr<Network> net,
      	// Create packet buffer which will be sent  
      	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
         double start_time = stat->getStartLat();
-	/*auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-        hdr.get()->start_time = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();*/
 	hdr.get()->num_entries = num_entries;
 	hdr.get()->nonce = nonce;
 	memcpy(packet.get(), reinterpret_cast<const char*>(type_hdr.get()), size_of_type_hdr);
@@ -228,11 +228,11 @@ void custom_client(std::shared_ptr<Network> net,
 	//spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, payload.length(), size_of_hdr);
 	bool res = false;
 	if (use_switch) {
-	    spdlog::debug("Sending to the SWITCH at IP {} and port {}", switch_ip, switch_receive_port);
+	    spdlog::debug("Sending to the SWITCH at IP {} and port {} at port {} and idx {}", switch_ip, switch_receive_port, client_recv_port, cli_idx);
 	    res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port);
 	} else {
 	    //for (uint64_t i = 0; i < stor_ips.size(); i++) {
-	    spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {}", stor_ip, stor_receive_port);
+	    spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {} at port {} and idx {}", stor_ip, stor_receive_port, client_recv_port, cli_idx);
 	    res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
 	    //}
 	}
@@ -297,7 +297,7 @@ int main(int argc, char* argv[]) {
     NUM_THREADS = get_num_client_threads(config);
 
     // Receive
-    int recv_socket;
+    /*int recv_socket;
     if ((recv_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
         spdlog::critical("Unable to create raw socket! Error {} occurred: {}", std::to_string(errno), strerror(errno));
         return -1;
@@ -328,11 +328,12 @@ int main(int argc, char* argv[]) {
 	    spdlog::debug("New queue created!");
 	}
 	acc.release();
-    }
+    }*/
     
     for (uint64_t i = 0; i < NUM_THREADS; i++) {
         uint64_t send_port = get_send_port(config) + i;
 	uint64_t recv_port = get_recv_port(config) + NUM_THREADS + i;	
+	spdlog::debug("Creating client with send port: {} and receive port: {}", send_port, recv_port);
         uint64_t client_batch_size = get_num_failures(config) + 1;	
     	std::shared_ptr<Network> net = std::make_shared<Network>(std::to_string(send_port), 
                                   				 std::to_string(recv_port),
@@ -348,7 +349,7 @@ int main(int argc, char* argv[]) {
 				                net, 
 						i, 
 						json_name, 
-						client_batch_size, 
+						get_batch_size(config), 
 						batch_on, 
 						payload_size, 
 						switch_mac, 

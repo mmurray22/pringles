@@ -64,6 +64,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
     (void) batch_on;
     (void) json_name;
     (void) thread_id;
+    (void) payload_size;
     (void) max_duration;
     spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
     //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
@@ -83,8 +84,6 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
             // Calculate the batch size for this type of packet
             size_t size_of_hdr = get_ring_append_size();
             size_t size_of_type_hdr = get_ring_type_size();
-            uint64_t pkt_size = size_of_type_hdr + size_of_hdr + payload_size + 1;
-
 
             //double lat_start_time = stat->getStartLat();
             while (!got_quorum) {
@@ -98,13 +97,14 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		
 		// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
                 if (!recv_ptr) {
+	            spdlog::debug("TIMEOUT SEND THE BATCH");
                     net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port); // TODO use_seq?
                     continue;
                 }
 
 		// Isolate the ethernet header from the receive ptr
                 struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
-	        spdlog::debug("I got the type: {}", type_hdr->type);
+	        //spdlog::debug("I got the type: {}", type_hdr->type);
 
 		// If the packet is of type ETH_APPEND_REQ
                 if (type_hdr->type == ETH_APPEND_REQ) {
@@ -113,11 +113,12 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
             	    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
 		    append_entry->num_entries = batch_size; // TODO there must be a better way...
 		    
+                    uint64_t pkt_size = size_of_type_hdr + size_of_hdr + append_entry->payload_size + 1;
             	    // Copy new packet into the batch and update the running packet size for the append request batch
 
             	    // If the batch isn't full and the timeout not expired exceed
 		    // Create the packet to send to the storage server with the running packet size and the additional header
-            	    spdlog::debug("Final request packet size: {}, Payload sz: {}, Nonce: {}, Port: {}", append_entry->num_entries, append_entry->payload_size, append_entry->nonce, append_entry->recv_port);
+            	    spdlog::debug("Final request packet number of entries: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", append_entry->num_entries, append_entry->payload_size, append_entry->nonce, append_entry->recv_port, pkt_size);
                     std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
 
 		    // Copy batch header into the reply packet, and the batch content 
@@ -126,10 +127,10 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		    //spdlog::debug("Send size: {}", pkt_size);
                     bool res = false;
 		    if (use_store) {
-			spdlog::debug("Sending multiple packets!");
+			//spdlog::debug("Sending multiple packets!");
             	        res = net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
 		    } else {
-			spdlog::debug("Only sending a single packet!");
+			//spdlog::debug("Only sending a single packet!");
 			((struct ring_type*)reply_packet.get())->type = ETH_APPEND_RESP;
             	        net->send_client_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ips[append_entry->cli_idx], std::to_string(append_entry->recv_port));
 			res = true;
@@ -148,10 +149,9 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 
             	    // Reset the timeout durations
                 } else if (type_hdr->type == ETH_APPEND_RESP) { // send to client TODO 
-		    spdlog::debug("IN THE ETH RESPONDER!");
                     // Get the append entry header from the storage reply
 		    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-		    spdlog::debug("Number of entries received: {}", append_entry->num_entries);
+		    //spdlog::debug("Number of entries received: {}", append_entry->num_entries);
 		    uint64_t num_entries = append_entry->num_entries;
 		    uint64_t recv_offset = 0;
 		    for (uint64_t i = 0; i < num_entries; i++) {
@@ -159,18 +159,18 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
  		        uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr;
      	                std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
 
-		        spdlog::debug("WE ARE ON ITERATION: {} with offset {}", i, recv_offset);
+		        //spdlog::debug("WE ARE ON ITERATION: {} with offset {}", i, recv_offset);
 		        struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
 	    
 		        type_hdr->type = ETH_APPEND_RESP;
-		        spdlog::debug("Batch append entry payload size: {}, num entries: {} going to IP {} and port {}", batch_append_entry->payload_size, batch_append_entry->num_entries, cli_ips[batch_append_entry->cli_idx], batch_append_entry->recv_port); // TODO next steps: Batch isn't being created properly
+		        spdlog::debug("Sending append response with payload size: {}, and out of {} number of entries and total {} entries, this is entry #{}. This is going to cli ID {} at IP {} and port {}", batch_append_entry->payload_size, batch_append_entry->num_entries, num_entries, i, batch_append_entry->cli_idx, cli_ips[batch_append_entry->cli_idx], batch_append_entry->recv_port); // TODO next steps: Batch isn't being created properly
 
 			// Copy contents into the packet
                         memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
 		        net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[batch_append_entry->cli_idx], std::to_string(batch_append_entry->recv_port));
 
 		        recv_offset += reply_pkt_size;
-		        spdlog::debug("Send packet response with size {}!", reply_pkt_size);
+		        //spdlog::debug("Send packet response with size {}!", reply_pkt_size);
 		    }
 
 		    /*std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
