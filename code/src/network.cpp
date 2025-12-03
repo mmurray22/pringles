@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
+#include "ring_headers.h"
 #include "network.h"
 #include "yaml-cpp/yaml.h"
 #include "utils.h"
@@ -51,7 +52,7 @@ Network::Network(std::string send_port,
     this->pkt_type_to_fd = {};
     this->running_pkt_size = 0;
     this->num_pkts = 0;
-    this->batch_timeout = 10; // TODO config
+    this->batch_timeout = .001; // TODO config
     auto start_time = (std::chrono::steady_clock::now()).time_since_epoch();
     this->batch_timer = std::chrono::duration_cast<std::chrono::duration<double>>(start_time).count();
     send_socket = setup_raw_talker_socket();
@@ -351,8 +352,8 @@ int Network::setup_listener_socket(std::string curr_ip) {
         }
         spdlog::debug("Created raw receive socket of fd {}", s_fd);
 	struct timeval timeout;
-	timeout.tv_sec = 1;  // 5 seconds timeout
-	timeout.tv_usec = 0;
+	timeout.tv_sec = 0;  // 5 seconds timeout
+	timeout.tv_usec = 800;
 	
 	if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
 	    spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
@@ -394,7 +395,7 @@ int Network::setup_listener_socket(std::string curr_ip) {
        
        	struct timeval timeout;
         timeout.tv_sec = 0;  // 5 seconds timeout
-        timeout.tv_usec = 10;	
+        timeout.tv_usec = 800;	
 	if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
 	    spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
             return -1;
@@ -582,12 +583,12 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
         port_to_fd.insert({combined_addr, s_fd});
     }
 
-    if (batch_on) {
+    if (batch_on && pkt_len > 0) {
 	spdlog::debug("Packet length: {}, Num pkts: {}", running_pkt_size, num_pkts);
         memcpy(final_send_packet + running_pkt_size, send_packet.get(), pkt_len);
         running_pkt_size += pkt_len; 
 	num_pkts += 1;
-    } else {
+    } else if (!batch_on && pkt_len > 0) {
         memcpy(final_send_packet, send_packet.get(), pkt_len);
 	running_pkt_size = pkt_len;
     }
@@ -598,12 +599,18 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     spdlog::debug("Packet length: {}, Packet length: {}, Num pkts: {}, Batch size: {}, Batch timeout: {}, Duration: {}, Batch on: {}", running_pkt_size, pkt_len, num_pkts, batch_size, batch_timeout, dur, batch_on);
     if (batch_on && num_pkts < batch_size && (running_pkt_size + pkt_len) < MAX_PACKET_SIZE && dur < batch_timeout) {
         // Copy new packet into the batch and update the running packet size for the append request batch
-        spdlog::debug("GETTING TO FALSE?");
 	return false;
     }
+    if (running_pkt_size == 0 || num_pkts == 0) {
+        return false;
+    }
+  
+    // TODO TODO TODO SPECIALIZED HEADER REFERENCE
+    ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries = num_pkts; 
     char* actual_test_send = (char*)std::malloc(running_pkt_size);    
     memcpy(actual_test_send, final_send_packet, running_pkt_size);
     ssize_t num_bytes = send(s_fd, actual_test_send, running_pkt_size, 0);
+    
     if (num_bytes < 0 || ((uint64_t)num_bytes != running_pkt_size)) {
         spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
         sent_all = false;

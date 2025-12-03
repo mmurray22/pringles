@@ -71,11 +71,8 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);
     spdlog::info("Batch on: {}!", batch_on);
 	
-    uint64_t nonce = 1;
     if (true) {
         // Request header
-        std::unique_ptr<struct ring_append_entry> req_hdr = create_ring_append_entry(nonce, thread_id);
-        req_hdr.get()->num_entries = 0;
         uint64_t num_entries = 1;
 
         while (!end_thread) {
@@ -88,8 +85,6 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
             size_t size_of_type_hdr = get_ring_type_size();
             uint64_t pkt_size = size_of_type_hdr + size_of_hdr + payload_size + 1;
 
-            auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-            double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
 
             //double lat_start_time = stat->getStartLat();
             while (!got_quorum) {
@@ -99,30 +94,23 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
                  }
 
 		// Wait to receive the packet 
-                char* recv_ptr = net->recv_packet(); // TODO add epoll
-		// Get the current elapsed duration
-                auto end_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-                double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(end_duration_since_epoch).count();
-                double dur = end_time_s - start_time_s;
-
+                char* recv_ptr = net->recv_packet();
+		
 		// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
-                if (!recv_ptr && (dur < MAX_TIMEOUT)) {
+                if (!recv_ptr) {
+                    net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port); // TODO use_seq?
                     continue;
-                } else if (!recv_ptr) {
-		    //spdlog::debug("Sequencer timed out!");
-		    continue;
-		}
+                }
 
 		// Isolate the ethernet header from the receive ptr
                 struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
 	        spdlog::debug("I got the type: {}", type_hdr->type);
 
 		// If the packet is of type ETH_APPEND_REQ
-                if (type_hdr->type == ETH_APPEND_REQ) { // TODO
+                if (type_hdr->type == ETH_APPEND_REQ) {
              	    	
 		    // Get the correct header (ring append entry) from the received packet
             	    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-
 		    append_entry->num_entries = batch_size; // TODO there must be a better way...
 		    
             	    // Copy new packet into the batch and update the running packet size for the append request batch
@@ -154,14 +142,11 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 	       	      num_entries = 1;
 	       	   }
 
-
 		    /*stat->getDuration(lat_start_time);
 		    stat->addOp();*/
                     got_quorum = true;
 
             	    // Reset the timeout durations
-       		    start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-                    start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
                 } else if (type_hdr->type == ETH_APPEND_RESP) { // send to client TODO 
 		    spdlog::debug("IN THE ETH RESPONDER!");
                     // Get the append entry header from the storage reply
@@ -199,8 +184,6 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		    }*/
 
                     got_quorum = true;
-                    start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-                    start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
                 }
             }
 
@@ -220,166 +203,6 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
     /*stat->getAvgLatency();
     stat->getThroughput(max_duration);
     stat->getTotalOps();*/
-    
-}
-
-void custom_sequencer(std::unique_ptr<Network> net, 
-		      std::string json_name, 
-		      uint64_t thread_id, 
-		      uint64_t batch_size, 
-		      bool batch_on,
-		      std::array<uint8_t,6> cli_mac,
-		      std::string cli_ip,
-		      std::array<uint8_t,6> stor_mac,
-		      std::string stor_ip,
-		      uint64_t payload_size,
-		      uint64_t max_duration) {
-    (void) max_duration;
-    (void) json_name;
-    spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
-    //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
-    spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
-    spdlog::info("Simple Net Sequencer, cli_ip {}!", cli_ip);
-    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);
-    spdlog::info("Batch on: {}!", batch_on);
-
-
-    in_addr_t stor_in_addr = inet_addr(stor_ip.c_str());
-    in_addr_t cli_in_addr = inet_addr(cli_ip.c_str());
-    uint64_t nonce = 1;
-
-    if (true) {
-        // Request header
-        std::unique_ptr<struct ring_append_entry> req_hdr = create_ring_append_entry(nonce, thread_id);
-        req_hdr.get()->num_entries = 0;
-        while (!end_thread) {
-            bool got_quorum = false;
-
-	    // The packet size of the append request while waiting for the batch to fill up
-            size_t append_req_running_pkt_size = 0;
-
-            // Calculate the batch size for this type of packet
-            size_t size_of_hdr = get_ring_append_size();
-            uint64_t actual_batch_size = (size_of_hdr + payload_size + 1)*batch_size;
-	    uint64_t batch_offset = 0;
-	    uint64_t padding = 0; //size_of_hdr + payload_size;
-
-            auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-            double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
-
-	    // Buffer that stores each received packet while waiting for batch to fill up
-            std::unique_ptr<char[]> batch_packet = std::make_unique<char[]>(actual_batch_size + padding);
-
-            while (!got_quorum) {
-		 // Stop receiving/sending messages since the experiment is over
-                 if (end_thread) {
-                     break;
-                 }
-
-		// Wait to receive the packet 
-                char* recv_ptr = net->recv_packet(); // TODO add epoll
-
-		// Get the current elapsed duration
-                auto end_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-                double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(end_duration_since_epoch).count();
-                double dur = end_time_s - start_time_s;
-
-		// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
-                if (!recv_ptr && (dur < MAX_TIMEOUT)) {
-                    continue;
-                }
-
-		// Isolate the ethernet header from the receive ptr
-                struct ethhdr* eth = (struct ethhdr*)recv_ptr;
-
-		// If the packet is of type ETH_APPEND_REQ
-                if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
-            	
-		    // Get the correct header (ring append entry) from the received packet
-            	    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
-		    uint64_t intermediate_sz = append_entry->payload_size + 1 + size_of_hdr;
-
-		    append_req_running_pkt_size += intermediate_sz;
-
-            	    // Copy new packet into the batch and update the running packet size for the append request batch
-		    spdlog::debug("BATCH PACKET INFORMATION: offset {}, Intermediate size: {}, Size of header: {}", batch_offset, intermediate_sz, size_of_hdr);
-		    memcpy(batch_packet.get() + batch_offset, (char*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr)), intermediate_sz);
-
-	            batch_offset += intermediate_sz;
-            	    req_hdr.get()->num_entries += 1;
-         	    
-		    spdlog::debug("Request Append entry: {}, {}, tid: {}, num_entries: {}, Batch size: {}, Running pkt size: {}", append_entry->nonce, append_entry->payload_size, append_entry->thread_id, req_hdr.get()->num_entries, actual_batch_size, append_req_running_pkt_size);
-
-            	    // If the batch isn't full and the timeout not expired exceed
-            	    if(append_req_running_pkt_size < actual_batch_size && dur < MAX_TIMEOUT) {
-			// Continue waiting to receive another packet
-            	        continue;
-            	    } else {
-			// Create the packet to send to the storage server with the running packet size and the additional header
-            	        spdlog::debug("Final request packet size: {}", append_req_running_pkt_size);
-                        std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(size_of_hdr + append_req_running_pkt_size);
-
-			// Copy batch header into the reply packet, and the batch content 
-                    	memcpy(reply_packet.get(), reinterpret_cast<const char*>(req_hdr.get()), size_of_hdr);
-                    	memcpy(reply_packet.get() + size_of_hdr, batch_packet.get(), append_req_running_pkt_size);
-			//uint64_t sample_pkt = size_of_hdr + append_req_running_pkt_size;
-            	        spdlog::debug("Final request num append entries: {}, Append payload size: {}, Batch size {}, Pkt: {}", req_hdr.get()->num_entries, append_entry->payload_size, batch_size, append_req_running_pkt_size, append_req_running_pkt_size);
-
-			// Send the network packet
-			spdlog::debug("Send size: {}", size_of_hdr + append_req_running_pkt_size);
-            	        net->send_packet(std::move(reply_packet), size_of_hdr + append_req_running_pkt_size, 0, ETH_APPEND_REQ, stor_mac, stor_in_addr);
-
-        		req_hdr.get()->num_entries = 0;
-            	    }	
-                    got_quorum = true;
-            	    // Reset the timeout durations
-       		    start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-                    start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
-                } else if (ntohs(eth->h_proto) == ETH_APPEND_RESP) { // send to client TODO 
-                    // Get the append entry header from the storage reply
-		    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
-
-		    //uint64_t next_pkt_size = resp_running_pkt_size + append_entry->payload_size + size_of_hdr;
-            	    /*if (next_pkt_size < actual_batch_size  && 
-			dur < MAX_TIMEOUT) {
-
-			// Copy the header + packet into the batch_packet buffer
-            	        memcpy(batch_packet.get(), (char*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr)), append_entry->payload_size + size_of_hdr);
-            	        resp_running_pkt_size += append_entry->payload_size;
-            	        resp_running_pkt_size += size_of_hdr;
-            	        resp_hdr.get()->num_entries += 1;
-         	                spdlog::debug("Response Append entry: {}, {}, tid: {}, num_entries: {}", append_entry->nonce, append_entry->payload_size, append_entry->thread_id, resp_hdr.get()->num_entries);
-            	        continue;
-            	    }*/
-		    uint64_t size_of_reply_pkt = size_of_hdr + (1 + append_entry->payload_size + size_of_hdr) * append_entry->num_entries;
-                    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(size_of_reply_pkt);
-            	    memcpy(reply_packet.get(), (char*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr)), size_of_reply_pkt);
-
-            	    //spdlog::debug("ETH_APPEND_RESP: {}, Append nonce: {}, Append payload size: {}, Append Thread ID: {}", ETH_APPEND_RESP, append_entry->nonce, append_entry->payload_size, append_entry->thread_id);
-
-            	    //spdlog::debug("Final respond num append entries: {}, Append payload size: {}, Batch size {}, Num entries: {}", append_entry->num_entries, append_entry->payload_size, size_of_hdr, append_entry->num_entries);
-         	    
-		    net->send_packet(std::move(reply_packet), size_of_reply_pkt, 0, ETH_APPEND_RESP, cli_mac, cli_in_addr);
-
-                    got_quorum = true;
-                    start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-                    start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
-                }
-            }
-
-            // Create packet buffer which will be sent  
-            if (end_thread) {
-                break;
-            }
-        }
-    } else {
-        // Request header
-    }
-    spdlog::debug("Done here!"); 
-    // Get some statistics
-    net->done();
-
-    spdlog::debug("Stats results:");
 }
 
 int main(int argc, char* argv[]) {

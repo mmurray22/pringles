@@ -50,7 +50,6 @@
 
 const uint64_t MAX_WAIT_TIME = 100;
 uint64_t NUM_THREADS = 1;
-uint64_t CLIENT_BATCH_SIZE = 1;
 std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 bool end_thread = false;
@@ -192,6 +191,7 @@ void custom_client(std::shared_ptr<Network> net,
     
     spdlog::info("Simple Network: Sending/Receiving to remote host");
     spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid(), thread_id);
+    
     //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
     uint64_t cntr = 0;
     std::string payload(payload_size, 'x');
@@ -255,17 +255,16 @@ void custom_client(std::shared_ptr<Network> net,
 	        continue;
 	    }
 	    
-	    spdlog::debug("Registering the time and operation!");
+	    //spdlog::debug("Registering the time and operation!");
 	    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
             struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
 	    if (type_hdr->type == ETH_APPEND_RESP && append_entry->nonce == nonce) {
 	        stat->getDuration(start_time);
 	        stat->addOp();
 	        got_quorum = true;
-		spdlog::debug("!!!!!!!!!!!!!!!GOT HERE");
+		spdlog::debug("!!!!!!!!!!!!!!!GOT HERE IN THREAD {}", thread_id);
 	    }
         }
-	//nonce += NUM_THREADS;
     }
     auto end_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
     double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(end_duration_since_epoch).count();
@@ -288,7 +287,6 @@ int main(int argc, char* argv[]) {
     std::vector<std::thread> client_threads;
     std::vector<std::thread> client_recv_threads;
     std::string json_name = get_json_name(config);
-    //uint64_t batch_size = get_batch_size(config);
     bool batch_on = get_batch_on(config);
     uint64_t payload_size = get_payload_size(config);
     std::array<uint8_t, 6> switch_mac = get_switch_mac(config);
@@ -334,13 +332,13 @@ int main(int argc, char* argv[]) {
     
     for (uint64_t i = 0; i < NUM_THREADS; i++) {
         uint64_t send_port = get_send_port(config) + i;
-	uint64_t recv_port = get_recv_port(config) + + NUM_THREADS + i;	
- 
+	uint64_t recv_port = get_recv_port(config) + NUM_THREADS + i;	
+        uint64_t client_batch_size = get_num_failures(config) + 1;	
     	std::shared_ptr<Network> net = std::make_shared<Network>(std::to_string(send_port), 
                                   				 std::to_string(recv_port),
 				  				 get_socket_type(config),
                                   				 get_log_level(config),
-				  				 /*get_batch_size(config)*/CLIENT_BATCH_SIZE,
+				  				 client_batch_size,
 				  				 get_batch_on(config),
 				  				 get_interface(config),
 				  				 get_self_ip(config),
@@ -350,7 +348,7 @@ int main(int argc, char* argv[]) {
 				                net, 
 						i, 
 						json_name, 
-						CLIENT_BATCH_SIZE, 
+						client_batch_size, 
 						batch_on, 
 						payload_size, 
 						switch_mac, 

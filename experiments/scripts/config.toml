@@ -27,7 +27,7 @@ path_switch = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_se
 run_setup_script = "False"
 
 [experiment_parameters]
-log_level = 1
+log_level = 6
 warm_up = 5 # seconds
 cool_down = 5 # seconds
 experiment_duration = 10 # seconds
@@ -113,20 +113,30 @@ server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
 #[[experiment]]
 #num_client_threads = 25
 #num_storage_threads = 1
+#batch_size = 1 # Numbeyyr of packets
 #json_name = "twofive_client"
 #
 [[experiment]]
 num_client_threads = 30
 num_storage_threads = 1
-batch_size = 30 # Numbeyyr of packets
+batch_size = 2 # Numbeyyr of packets
 json_name = "thirty_client"
 #
 #[[experiment]]
 #num_client_threads = 35
 #num_storage_threads = 1
+#batch_size = 1 # Numbeyyr of packets
 #json_name = "threefive_client"
 #
 #[[experiment]]
 #num_client_threads = 40
 #num_storage_threads = 1
+#batch_size = 1 # Numbeyyr of packets
 #json_name = "forty_client"
+
+#[[experiment]]
+#num_client_threads = 50
+#num_storage_threads = 1
+#batch_size = 1 # Numbeyyr of packets
+#json_name = "fifty_client"
+
