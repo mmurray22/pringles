@@ -30,6 +30,7 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 BASE_PORT = 50000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
+EXPERIMENT_DELAY = 15  # Time to wait between experiments
 SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
 COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
 RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
@@ -55,7 +56,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
 
     if entity_type == 'server':
         # Servers run longer than the client to ensure no early termination
-        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY + SWITCH_START_DELAY
+        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY
     elif entity_type == 'switch':
         final_duration = exp_duration + warm_up + cool_down + SWITCH_START_DELAY
     else:
@@ -149,13 +150,13 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
 
     return yaml_config
 
-def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user):
+def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index):
     """
     Executes a program on a remote machine asynchronously using SSH, 
     redirecting stdout/stderr to a log file. Returns the Popen object and the log filename.
     """
     # NEW/MODIFIED: Log file is named after the IP address
-    log_filename = f"{ip}.txt" 
+    log_filename = f"{ip}_{exp_index}.txt" 
     
     # NEW/MODIFIED: redirect all output (&>) to the log file, and run in background (&)
     remote_command = f'sudo {program_path} ~/{config_filename} > ~/{log_filename} &'
@@ -697,7 +698,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 raise Exception(f"Failed to transfer config to server {ip}")
             
             # Start remote process
-            process, log_filename = execute_remote_command(ip, path_server, config_filename, ssh_key, ssh_user) # MODIFIED: Get log filename
+            process, log_filename = execute_remote_command(ip, path_server, config_filename, ssh_key, ssh_user, exp_index) # MODIFIED: Get log filename
             if process:
                 server_processes.append(process)
                 server_log_files[ip] = log_filename # MODIFIED: Store log filename
@@ -738,7 +739,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             raise Exception(f"Failed to transfer config to server {ip}")
         
         # Start remote process
-        process, log_filename = execute_remote_command(switch_ip, path_switch, switch_config_filename, ssh_key, ssh_user) # MODIFIED: Get log filename
+        process, log_filename = execute_remote_command(switch_ip, path_switch, switch_config_filename, ssh_key, ssh_user, exp_index) # MODIFIED: Get log filename
         if process:
             switch_processes.append(process)
             switch_log_files[ip] = log_filename # MODIFIED: Store log filename
@@ -786,7 +787,8 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 path_client, 
                 config_filename, 
                 ssh_key, 
-                ssh_user
+                ssh_user,
+                exp_index
             )
             if client_process:
                 print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
@@ -819,6 +821,10 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 local_results_dir
             )
             i += 1
+            #if proc.poll() is None:
+            #    print(f"Terminating server process (PID: {proc.pid})...")
+            #    proc.kill()
+
             
             
     except Exception as e:
@@ -851,7 +857,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             try:
                 if proc.poll() is None:
                     print(f"Terminating server process (PID: {proc.pid})...")
-                    proc.terminate()
+                    proc.kill()
                 # The nohup process is difficult to kill via Popen.terminate(). 
                 # Relying on the server timeout is safer.
                 #pass 
@@ -863,7 +869,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             try:
                 if proc.poll() is None:
                     print(f"Terminating server process (PID: {proc.pid})...")
-                    proc.terminate()
+                    proc.kill()
                 # The nohup process is difficult to kill via Popen.terminate(). 
                 # Relying on the server timeout is safer.
                 #pass 
@@ -956,6 +962,7 @@ def main(config_file="config.toml"):
         
         # 3. Run the full experiment cycle with the merged configuration
         run_experiment_cycle(current_config, exp_index, local_results_dir)
+        time.sleep(EXPERIMENT_DELAY)
     
     # --- Final Step A: Aggregate ALL results from the shared directory ---\
     # Only run this once after ALL experiment cycles are finished

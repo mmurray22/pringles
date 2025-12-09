@@ -35,7 +35,6 @@ void Stats::getSendToDuration(double start_time) {
     sendto.push_back(dur);
 }*/
 
-
 // Latency
 void Stats::startLatTimer(uint64_t nonce) {
     auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();

@@ -21,6 +21,8 @@
 #include <linux/if_packet.h>
 #include <sys/epoll.h>
 
+#include <tbb/concurrent_queue.h>
+#include <tbb/concurrent_hash_map.h>
 #include "concurrentqueue.h"
 #include "readerwriterqueue.h"
 #include "atomicops.h"
@@ -122,7 +124,13 @@ class Network {
 	std::thread recv_thread;
 
 	std::unordered_map<std::string, int> port_to_fd;
-        
+
+		
+	tbb::concurrent_hash_map<uint64_t, std::string> concurrent_port_to_fd;
+	tbb::concurrent_queue<char*> concurrent_recv_q;
+       
+
+
 	char* norm_buf;
 	char* final_send_packet;
         std::string socket_type; // Networking protocol you are running

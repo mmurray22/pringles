@@ -53,6 +53,7 @@ uint64_t NUM_THREADS = 1;
 std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 bool end_thread = false;
+std::atomic<bool> collect_stats = true;
 
 std::mutex recv_q_mutex;
 tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>> recv_q;
@@ -169,9 +170,7 @@ void custom_client(std::shared_ptr<Network> net,
 		   uint64_t batch_size,
 		   bool batch_on,
 		   uint64_t payload_size,
-		   std::array<uint8_t, 6> switch_mac,
 		   std::string switch_ip,
-		   std::array<uint8_t, 6> stor_mac,
 		   std::string stor_ip,
 		   std::string stor_receive_port,
 		   std::string switch_receive_port,
@@ -179,11 +178,8 @@ void custom_client(std::shared_ptr<Network> net,
 		   bool use_switch,
 		   bool use_stor,
 		   std::string self_ip,
-		   uint64_t cli_idx) {
-    std::chrono::seconds sleep_duration(2);
-    std::this_thread::sleep_for(sleep_duration);
-    (void) switch_mac;
-    (void) stor_mac;
+		   uint64_t cli_idx,
+		   uint64_t max_duration) {
     (void) use_stor;
     uint64_t nonce = thread_id;
     uint64_t highest_idx = 0;
@@ -211,14 +207,12 @@ void custom_client(std::shared_ptr<Network> net,
     uint64_t allocated_packet_size = size_of_type_hdr + size_of_hdr + payload_size + 1;
     uint64_t num_entries = 1;
 
-    auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-    double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
     
     // Only need to read from the map once to get the queue
     while (!end_thread) {
      	// Create packet buffer which will be sent  
      	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
-        double start_time = stat->getStartLat();
+        double start_time = collect_stats ? stat->getStartLat() : 0;
 	hdr.get()->num_entries = num_entries;
 	hdr.get()->nonce = nonce;
 	memcpy(packet.get(), reinterpret_cast<const char*>(type_hdr.get()), size_of_type_hdr);
@@ -259,20 +253,20 @@ void custom_client(std::shared_ptr<Network> net,
 	    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
             struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
 	    if (type_hdr->type == ETH_APPEND_RESP && append_entry->nonce == nonce) {
-	        stat->getDuration(start_time);
-	        stat->addOp();
+		if (collect_stats && start_time > 0) {
+		    highest_idx = append_entry->g_idx;
+	            stat->getDuration(start_time);
+	            stat->addOp();
+		}
 	        got_quorum = true;
 		spdlog::debug("!!!!!!!!!!!!!!!GOT HERE IN THREAD {}", thread_id);
 	    }
         }
     }
-    auto end_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-    double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(end_duration_since_epoch).count();
-    double dur = end_time_s - start_time_s;
     spdlog::debug("Made it out of the loop!");
     spdlog::critical("Highest index seen is: {}", highest_idx);
-    spdlog::critical("SEND THREAD sent {} appends in {} seconds.", cntr, dur);
-    spdlog::critical("For SEND thread {}, the lat is: {}, tput: {}, total ops: {}", thread_id, stat->getAvgLatency(), stat->getThroughput((uint64_t)dur), stat->getTotalOps());
+    spdlog::critical("SEND THREAD sent {} appends in {} seconds.", cntr, max_duration);
+    spdlog::critical("For SEND thread {}, the lat is: {}, tput: {}, total ops: {}", thread_id, stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
     stat->exportResultsToJson();
     net->done();
 }
@@ -289,9 +283,7 @@ int main(int argc, char* argv[]) {
     std::string json_name = get_json_name(config);
     bool batch_on = get_batch_on(config);
     uint64_t payload_size = get_payload_size(config);
-    std::array<uint8_t, 6> switch_mac = get_switch_mac(config);
     std::string switch_ip = get_switch_ip(config);
-    std::array<uint8_t, 6> stor_mac = get_stor_mac(config);
     std::string stor_ip = get_stor_ip(config);
    
     NUM_THREADS = get_num_client_threads(config);
@@ -329,7 +321,7 @@ int main(int argc, char* argv[]) {
 	}
 	acc.release();
     }*/
-    
+    uint64_t dur = get_experiment_duration(config) - get_warm_up(config) - get_cool_down(config);
     for (uint64_t i = 0; i < NUM_THREADS; i++) {
         uint64_t send_port = get_send_port(config) + i;
 	uint64_t recv_port = get_recv_port(config) + NUM_THREADS + i;	
@@ -352,9 +344,7 @@ int main(int argc, char* argv[]) {
 						get_batch_size(config), 
 						batch_on, 
 						payload_size, 
-						switch_mac, 
 						switch_ip, 
-						stor_mac,
 						stor_ip,
 						get_stor_receive_port(config), 
 						get_switch_receive_port(config),
@@ -362,7 +352,8 @@ int main(int argc, char* argv[]) {
 						get_use_switch(config),
 						get_use_stor(config),
 						get_self_ip(config),
-					        get_cli_idx(config)));
+					        get_cli_idx(config),
+						dur));
 	 /*client_recv_threads.emplace_back(std::thread(&custom_client_receiver, 
 				                      net, 
 					          	i, 
@@ -397,20 +388,30 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error setting thread affinity for thread " << client_recv_threads[i].get_id() << ": " << recv_result << std::endl;
         } */ 
     }
-   
-    spdlog::debug("Going to wait to sleep {}", get_experiment_duration(config));
-    std::chrono::seconds sleep_duration(get_experiment_duration(config));
-    std::this_thread::sleep_for(sleep_duration);
+
+    spdlog::critical("Warmup! {}", get_warm_up(config));
+    std::chrono::seconds warmup(get_warm_up(config));
+    
+    collect_stats = true;
+    spdlog::critical("Working! {}", dur);
+    std::chrono::seconds sleep_duration(dur);
+    std::this_thread::sleep_for(sleep_duration); 
+    collect_stats = false;
+
+    spdlog::critical("Cooldown! {}", get_cool_down(config));
+    std::chrono::seconds cooldown(get_cool_down(config));
+    std::this_thread::sleep_for(cooldown);
+    spdlog::critical("Done with cooldown!", get_cool_down(config));
+
     end_thread = true;
     spdlog::debug("Thread done!");
-    cv.notify_all();
+    //cv.notify_all();
     for (uint64_t i = 0; i < client_threads.size(); i++) {
         client_threads[i].join();
         //client_recv_threads[i].join();
     }
-    spdlog::debug("Done joining the clients!");
+    spdlog::critical("Done joining the clients!");
     //recv_thread.join();
-    //free(norm_buf);
     return 0;
 }
 

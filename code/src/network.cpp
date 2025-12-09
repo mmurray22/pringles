@@ -55,15 +55,15 @@ Network::Network(std::string send_port,
     this->batch_timeout = .001; // TODO config
     auto start_time = (std::chrono::steady_clock::now()).time_since_epoch();
     this->batch_timer = std::chrono::duration_cast<std::chrono::duration<double>>(start_time).count();
-    send_socket = setup_raw_talker_socket();
+    /*send_socket = setup_raw_talker_socket();
     if (send_socket < 0) {
         spdlog::critical("SENDER Socket creation unsuccessful. Aborting");
         throw std::runtime_error("Can't create sending socket");
     }
-    spdlog::debug("The socket fd is {}", send_socket);
+    spdlog::debug("The socket fd is {}", send_socket);*/
     recv_socket = setup_listener_socket(self_ip);
     if (recv_socket < 0) {
-        spdlog::critical("SENDER Socket creation unsuccessful. Aborting");
+        spdlog::critical("RECEIVER Socket creation unsuccessful. Aborting");
         throw std::runtime_error("Can't create receiving socket");
     }
     spdlog::debug("The socket fd is {}", recv_socket);
@@ -71,7 +71,7 @@ Network::Network(std::string send_port,
     this->send_ip_hdr = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
     this->norm_buf = (char*)std::malloc(MAX_PACKET_SIZE);
     this->final_send_packet = (char*)std::malloc(MAX_PACKET_SIZE);
-    this->send_eth_hdr = create_eth_hdr(send_socket);
+    //this->send_eth_hdr = create_eth_hdr(send_socket);
 
 
     this->sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
@@ -342,7 +342,7 @@ bool Network::pkts_in_queue() {
 
 /*Sets up a datagram receiver socket for chosen_ip_addr*/  
 int Network::setup_listener_socket(std::string curr_ip) {
-    struct addrinfo hints, *servinfo, *temp;
+    struct addrinfo hints, *servinfo; //, *temp;
     int s_fd;
     int yes = 1;
     if (socket_type != "UDP") {
@@ -353,7 +353,7 @@ int Network::setup_listener_socket(std::string curr_ip) {
         spdlog::debug("Created raw receive socket of fd {}", s_fd);
 	struct timeval timeout;
 	timeout.tv_sec = 0;  // 5 seconds timeout
-	timeout.tv_usec = 800;
+	timeout.tv_usec = 700;
 	
 	if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
 	    spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
@@ -382,36 +382,51 @@ int Network::setup_listener_socket(std::string curr_ip) {
         spdlog::critical("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), std::to_string(status), gai_strerror(status));
         return -1;
     }
-    for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
-        if ((s_fd = socket(temp->ai_family, temp->ai_socktype, temp->ai_protocol)) == -1) {
-            spdlog::critical("Cannot get socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            continue;
-        }
-        if (setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes, sizeof(int)) == -1) {
-            spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            freeaddrinfo(servinfo);
-            return -1;
-        }
-       
-       	struct timeval timeout;
-        timeout.tv_sec = 0;  // 5 seconds timeout
-        timeout.tv_usec = 600;	
-	if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-	    spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            return -1;
-	}
-
-        if (bind(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
-            close(s_fd);
-            spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            continue;
-        }
-        break;
-    }
-    if (temp == NULL) {
-        spdlog::critical("Socket failed to bind!");
+    
+    //for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
+    //if ((s_fd = socket(temp->ai_family, temp->ai_socktype, temp->ai_protocol)) == -1) {
+    if ((s_fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
+        spdlog::critical("Cannot get socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        //continue;
         return -1;
     }
+    if (setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+        spdlog::critical("Cannot set SO_REUSEADDR socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        freeaddrinfo(servinfo);
+        return -1;
+    }
+    if (setsockopt(s_fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(int)) == -1) {
+        spdlog::critical("Cannot set SO_REUSEPORT socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        freeaddrinfo(servinfo);
+        return -1;
+    }
+
+    struct timeval timeout;
+    timeout.tv_sec = 0;  // 5 seconds timeout
+    timeout.tv_usec = 400;	
+    if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        return -1;
+    }
+
+    struct sockaddr_in local_addr;
+    local_addr.sin_family = AF_INET;
+    local_addr.sin_port = htons(std::stoi(RECV_PORT));
+    local_addr.sin_addr.s_addr = inet_addr(curr_ip.c_str()); 
+    memset(local_addr.sin_zero, '\0', sizeof(local_addr.sin_zero));
+
+    if (bind(s_fd, (struct sockaddr*)&local_addr, sizeof(local_addr)) == -1) { // TODO abstract error handling into function
+        close(s_fd);
+        spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        return -1;
+	//continue;
+    }
+        //break;
+    //}
+    /*if (temp == NULL) {
+        spdlog::critical("Socket failed to bind!");
+        return -1;
+    }*/
     freeaddrinfo(servinfo);
     int flags = fcntl(s_fd, F_GETFL, 0); // TODO abstract into a helper function
     if (flags == -1) return false;
@@ -516,7 +531,6 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
     }
     
     //spdlog::debug("Sending a UDP packet!");
-
     int s_fd;
     //spdlog::debug("SINGLE CLIENT Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
     std::string combined_addr = dst_ip + ":" + dst_port;
@@ -616,6 +630,7 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
         //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
 	//memset(final_send_packet, 0, MAX_PACKET_SIZE);
     }
+    free(actual_test_send);
     running_pkt_size = 0;
     num_pkts = 0;
     auto new_time = (std::chrono::steady_clock::now()).time_since_epoch();
@@ -674,19 +689,13 @@ void Network::stop_threads() {
         std::unique_lock<std::mutex> lock(lock_terminate);
         terminate = true;
     }
-    /*uint64_t total_time = 0;
-    while (num_sends_done < num_pkts_type && num_recv_done < 1) {
-	if (total_time >= MAX_CLEANUP_TIME) {
-	   break;
-	}
-        //sleep(2); // probably better way to do this
-	total_time += 2;
-    }*/
+    
     spdlog::debug("The threads are being cleaned up!");
     mutex_condition.notify_all();
     for (auto it = port_to_fd.begin(); it != port_to_fd.end(); ++it) {
         close(it->second);
     }
+    close(recv_socket);
     for (uint64_t i = 0; i < send_threads.size(); i++) {
         send_threads[i].join();
     }

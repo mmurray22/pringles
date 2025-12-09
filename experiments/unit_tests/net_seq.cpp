@@ -58,16 +58,13 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		      std::vector<std::string> cli_ips,
 		      std::string stor_ip,
 		      std::string stor_receive_port,
-		      uint64_t payload_size,
 		      uint64_t max_duration) {
-    (void) batch_size;
-    (void) batch_on;
     (void) json_name;
-    (void) thread_id;
-    (void) payload_size;
     (void) max_duration;
+    (void) thread_id;
+    (void) batch_size;
     spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
-    //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
+    //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
     spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);
     spdlog::info("Batch on: {}!", batch_on);
@@ -97,8 +94,12 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 		
 		// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
                 if (!recv_ptr) {
-	            spdlog::debug("TIMEOUT SEND THE BATCH");
-                    net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port); // TODO use_seq?
+	            //spdlog::critical("TIMEOUT SEND THE BATCH");
+		    if (use_store) {
+                        net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
+		    }
+		    //stat->getDuration(lat_start_time);
+		    //stat->addOp();
                     continue;
                 }
 
@@ -111,11 +112,8 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
              	    	
 		    // Get the correct header (ring append entry) from the received packet
             	    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-		    append_entry->num_entries = batch_size; // TODO there must be a better way...
-		    
                     uint64_t pkt_size = size_of_type_hdr + size_of_hdr + append_entry->payload_size + 1;
-            	    // Copy new packet into the batch and update the running packet size for the append request batch
-
+            	    
             	    // If the batch isn't full and the timeout not expired exceed
 		    // Create the packet to send to the storage server with the running packet size and the additional header
             	    spdlog::debug("Final request packet number of entries: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", append_entry->num_entries, append_entry->payload_size, append_entry->nonce, append_entry->recv_port, pkt_size);
@@ -123,6 +121,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 
 		    // Copy batch header into the reply packet, and the batch content 
                     memcpy(reply_packet.get(), recv_ptr, pkt_size);
+		    
 		    // Send the network packet
 		    //spdlog::debug("Send size: {}", pkt_size);
                     bool res = false;
@@ -143,8 +142,8 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
 	       	      num_entries = 1;
 	       	   }
 
-		    /*stat->getDuration(lat_start_time);
-		    stat->addOp();*/
+		    //stat->getDuration(lat_start_time);
+		    //stat->addOp();
                     got_quorum = true;
 
             	    // Reset the timeout durations
@@ -199,10 +198,7 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
     // Get some statistics
     net->done();
 
-    spdlog::debug("Stats results:");
-    /*stat->getAvgLatency();
-    stat->getThroughput(max_duration);
-    stat->getTotalOps();*/
+    //spdlog::debug("Stats results: Lat: {}, Tput: {}, Total Ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
 }
 
 int main(int argc, char* argv[]) {
@@ -228,7 +224,7 @@ int main(int argc, char* argv[]) {
     spdlog::info("Simple Network server");
     std::string json_name = "dummy";
     uint64_t max_duration = get_experiment_duration(config);
-    std::thread server_thread(custom_udp_sequencer, std::move(net), json_name, 0, get_batch_size(config), get_batch_on(config), get_use_stor(config), get_cli_ip(config), get_stor_ip(config), get_stor_receive_port(config), get_payload_size(config), max_duration);
+    std::thread server_thread(custom_udp_sequencer, std::move(net), json_name, 0, get_batch_size(config), get_batch_on(config), get_use_stor(config), get_cli_ip(config), get_stor_ip(config), get_stor_receive_port(config), max_duration);
 
     pthread_t native_handle = server_thread.native_handle();
 
