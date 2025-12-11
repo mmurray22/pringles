@@ -171,7 +171,7 @@ void custom_client(std::shared_ptr<Network> net,
 		   bool batch_on,
 		   uint64_t payload_size,
 		   std::string switch_ip,
-		   std::string stor_ip,
+		   std::vector<std::string> stor_ips,
 		   std::string stor_receive_port,
 		   std::string switch_receive_port,
 		   uint64_t client_recv_port,
@@ -225,10 +225,10 @@ void custom_client(std::shared_ptr<Network> net,
 	    spdlog::debug("Sending to the SWITCH at IP {} and port {} at port {} and idx {}", switch_ip, switch_receive_port, client_recv_port, cli_idx);
 	    res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port);
 	} else {
-	    //for (uint64_t i = 0; i < stor_ips.size(); i++) {
-	    spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {} at port {} and idx {}", stor_ip, stor_receive_port, client_recv_port, cli_idx);
-	    res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
-	    //}
+	    for (uint64_t i = 0; i < stor_ips.size(); i++) {
+	        //spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {} at port {} and idx {}", stor_ip, stor_receive_port, client_recv_port, cli_idx);
+	        res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_ips[i], stor_receive_port);
+	    }
 	}
         if (!res) { // NEED TO CHECK BATCH SIZE TODO TODO 
 	   num_entries += 1;
@@ -284,48 +284,15 @@ int main(int argc, char* argv[]) {
     bool batch_on = get_batch_on(config);
     uint64_t payload_size = get_payload_size(config);
     std::string switch_ip = get_switch_ip(config);
-    std::string stor_ip = get_stor_ip(config);
+    std::vector<std::string> stor_ips = get_stor_ips(config);
    
     NUM_THREADS = get_num_client_threads(config);
 
-    // Receive
-    /*int recv_socket;
-    if ((recv_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
-        spdlog::critical("Unable to create raw socket! Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        return -1;
-    }
-    struct timeval timeout;
-    timeout.tv_sec = 1;  // 5 seconds timeout
-    timeout.tv_usec = 0;
-    if (setsockopt(recv_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        return -1;
-    }
-    if (setsockopt(recv_socket, SOL_SOCKET, SO_BINDTODEVICE, get_interface(config).c_str(), strlen(get_interface(config).c_str())) < 0) {
-        perror("Error binding socket to device. Interface name wrong or permissions failed.");
-        close(recv_socket);
-        return -1;
-    }
-    int ignore_outgoing = 1;
-    if (setsockopt(recv_socket, SOL_PACKET, PACKET_IGNORE_OUTGOING, &ignore_outgoing, sizeof(ignore_outgoing)) < 0) {
-        perror("Error binding socket to device. Interface name wrong or permissions failed.");
-        close(recv_socket);
-        return -1;
-    }
-
-
-    for (uint64_t i = 0; i < NUM_THREADS; i++) {
-        tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
-        if (recv_q.insert(acc, i)) {
-	    spdlog::debug("New queue created!");
-	}
-	acc.release();
-    }*/
     uint64_t dur = get_experiment_duration(config) - get_warm_up(config) - get_cool_down(config);
     for (uint64_t i = 0; i < NUM_THREADS; i++) {
         uint64_t send_port = get_send_port(config) + i;
 	uint64_t recv_port = get_recv_port(config) + NUM_THREADS + i;	
-	spdlog::debug("Creating client with send port: {} and receive port: {}", send_port, recv_port);
+	spdlog::critical("Creating client with send port: {} and receive port: {}", send_port, recv_port);
         uint64_t client_batch_size = get_num_failures(config) + 1;	
     	std::shared_ptr<Network> net = std::make_shared<Network>(std::to_string(send_port), 
                                   				 std::to_string(recv_port),
@@ -333,6 +300,7 @@ int main(int argc, char* argv[]) {
                                   				 get_log_level(config),
 				  				 client_batch_size,
 				  				 get_batch_on(config),
+								 get_batch_timeout(config),
 				  				 get_interface(config),
 				  				 get_self_ip(config),
 				  				 get_num_pkt_types(config),
@@ -345,7 +313,7 @@ int main(int argc, char* argv[]) {
 						batch_on, 
 						payload_size, 
 						switch_ip, 
-						stor_ip,
+						stor_ips,
 						get_stor_receive_port(config), 
 						get_switch_receive_port(config),
 						recv_port,
@@ -354,17 +322,9 @@ int main(int argc, char* argv[]) {
 						get_self_ip(config),
 					        get_cli_idx(config),
 						dur));
-	 /*client_recv_threads.emplace_back(std::thread(&custom_client_receiver, 
-				                      net, 
-					          	i, 
-					          	json_name, 
-					          	batch_size, 
-					          	batch_on,
-							get_self_ip(config)));*/
 
 
         pthread_t native_handle = client_threads[i].native_handle();
-        //pthread_t native_handle_recv = client_recv_threads[i].native_handle();
 
     	// Create a CPU set and add the desired core
         cpu_set_t cpuset;
@@ -376,17 +336,6 @@ int main(int argc, char* argv[]) {
         if (result != 0) {
             std::cerr << "Error setting thread affinity for thread " << client_threads[i].get_id() << ": " << result << std::endl;
         }  
-
-    	// Create a CPU set and add the desired core
-        /*cpu_set_t cpuset_recv;
-        CPU_ZERO(&cpuset_recv);
-    	CPU_SET((std::thread::hardware_concurrency() - i), &cpuset_recv); // Pin to core 'i'
-
-        // Set thread affinity
-        int recv_result = pthread_setaffinity_np(native_handle_recv, sizeof(cpu_set_t), &cpuset_recv);
-        if (recv_result != 0) {
-            std::cerr << "Error setting thread affinity for thread " << client_recv_threads[i].get_id() << ": " << recv_result << std::endl;
-        } */ 
     }
 
     spdlog::critical("Warmup! {}", get_warm_up(config));

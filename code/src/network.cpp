@@ -28,6 +28,7 @@ Network::Network(std::string send_port,
                  uint64_t log_level,
                  uint64_t batch_size,
                  bool batch_on,
+		 uint64_t batch_timeout,
                  std::string send_interface,
                  std::string self_ip,
 		 uint64_t num_pkt_type,
@@ -49,10 +50,11 @@ Network::Network(std::string send_port,
     this->num_pkt_type = num_pkt_type;
     SEND_PORT = send_port;
     RECV_PORT = recv_port;
+    spdlog::critical("Send port: {}, Receive port: {}", SEND_PORT, RECV_PORT);
     this->pkt_type_to_fd = {};
     this->running_pkt_size = 0;
     this->num_pkts = 0;
-    this->batch_timeout = .001; // TODO config
+    this->batch_timeout = static_cast<double>(batch_timeout) / 1000000; //.000460
     auto start_time = (std::chrono::steady_clock::now()).time_since_epoch();
     this->batch_timer = std::chrono::duration_cast<std::chrono::duration<double>>(start_time).count();
     /*send_socket = setup_raw_talker_socket();
@@ -344,35 +346,9 @@ bool Network::pkts_in_queue() {
 int Network::setup_listener_socket(std::string curr_ip) {
     struct addrinfo hints, *servinfo; //, *temp;
     int s_fd;
-    int yes = 1;
-    if (socket_type != "UDP") {
-        if ((s_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
-            spdlog::critical("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", curr_ip.c_str(), std::to_string(errno), strerror(errno)); // TODO
-            return -1;
-        }
-        spdlog::debug("Created raw receive socket of fd {}", s_fd);
-	struct timeval timeout;
-	timeout.tv_sec = 0;  // 5 seconds timeout
-	timeout.tv_usec = 700;
-	
-	if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-	    spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            return -1;
-	}
-	if (setsockopt(s_fd, SOL_SOCKET, SO_BINDTODEVICE, send_interface.c_str(), strlen(send_interface.c_str())) < 0) {
-	    perror("Error binding socket to device. Interface name wrong or permissions failed.");
-	    close(s_fd);
-	    return -1;
-	}
-	int ignore_outgoing = 1;
-	if (setsockopt(s_fd, SOL_PACKET, PACKET_IGNORE_OUTGOING, &ignore_outgoing, sizeof(ignore_outgoing)) < 0) {
-	    perror("Error binding socket to device. Interface name wrong or permissions failed.");
-	    close(s_fd);
-	    return -1;
-	}
-        return s_fd;
-    }
-    //spdlog::debug("USING UDP with RECV PORT: {} with curr ip: {}!", RECV_PORT, curr_ip);
+    //int yes = 1;
+    
+    spdlog::critical("USING UDP with RECV PORT: {} with curr ip: {}!", RECV_PORT, curr_ip);
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
@@ -383,14 +359,13 @@ int Network::setup_listener_socket(std::string curr_ip) {
         return -1;
     }
     
-    //for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
-    //if ((s_fd = socket(temp->ai_family, temp->ai_socktype, temp->ai_protocol)) == -1) {
     if ((s_fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
         spdlog::critical("Cannot get socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
         //continue;
         return -1;
     }
-    if (setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+    
+    /*if (setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
         spdlog::critical("Cannot set SO_REUSEADDR socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
         freeaddrinfo(servinfo);
         return -1;
@@ -399,11 +374,11 @@ int Network::setup_listener_socket(std::string curr_ip) {
         spdlog::critical("Cannot set SO_REUSEPORT socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
         freeaddrinfo(servinfo);
         return -1;
-    }
+    }*/
 
     struct timeval timeout;
     timeout.tv_sec = 0;  // 5 seconds timeout
-    timeout.tv_usec = 400;	
+    timeout.tv_usec = batch_timeout * 1000000;	
     if (setsockopt(s_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
         return -1;
@@ -411,29 +386,23 @@ int Network::setup_listener_socket(std::string curr_ip) {
 
     struct sockaddr_in local_addr;
     local_addr.sin_family = AF_INET;
+    spdlog::critical("RECEIVER PORT: {}", std::stoi(RECV_PORT));
     local_addr.sin_port = htons(std::stoi(RECV_PORT));
     local_addr.sin_addr.s_addr = inet_addr(curr_ip.c_str()); 
     memset(local_addr.sin_zero, '\0', sizeof(local_addr.sin_zero));
 
     if (bind(s_fd, (struct sockaddr*)&local_addr, sizeof(local_addr)) == -1) { // TODO abstract error handling into function
         close(s_fd);
-        spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        spdlog::critical("Cannot bind socket fd for port {}, Error {} occurred: {}", RECV_PORT, std::to_string(errno), strerror(errno));
         return -1;
-	//continue;
     }
-        //break;
+    
     //}
     /*if (temp == NULL) {
         spdlog::critical("Socket failed to bind!");
         return -1;
     }*/
     freeaddrinfo(servinfo);
-    int flags = fcntl(s_fd, F_GETFL, 0); // TODO abstract into a helper function
-    if (flags == -1) return false;
-    /*flags = flags | O_NONBLOCK;
-    if (fcntl(s_fd, F_SETFL, flags) != 0) {
-        spdlog::critical("UNABLE TO SET FCNTL FLAGS");
-    }*/
     return s_fd;
 }
 
@@ -696,6 +665,7 @@ void Network::stop_threads() {
         close(it->second);
     }
     close(recv_socket);
+
     for (uint64_t i = 0; i < send_threads.size(); i++) {
         send_threads[i].join();
     }

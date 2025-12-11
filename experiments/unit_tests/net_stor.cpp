@@ -94,24 +94,6 @@ void receiver(std::shared_ptr<Network> net, std::string switch_ip, std::string s
 	    std::unique_lock<std::mutex> lock(recv_q_mutex);
         }
 	cv.notify_all();
-
-
-	/*uint64_t num_entries = ring->num_entries;
-	uint64_t recv_offset = 0;
-        size_t size_of_hdr = get_ring_append_size();
-        size_t size_of_type_hdr = get_ring_type_size();
-	spdlog::debug("IN THE RECEIVE THREAD: Num entries {}, Payload size: {}", ring->num_entries, ring->payload_size);
-	for (uint64_t i = 0; i < num_entries; i++) {
-	    spdlog::debug("Batch append entry payload size: {}, num entries: {}",  ((struct ring_append_entry*)(recv_ptr + recv_offset + sizeof(struct ring_type)))->payload_size, ((struct ring_append_entry*)(recv_ptr + recv_offset + sizeof(struct ring_type)))->recv_port);
-	    char* pkt = (char*)std::malloc(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ring->payload_size + 1);
-            memcpy(pkt, recv_ptr + recv_offset, sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ring->payload_size + 1); 
- 	    recv_q.push(pkt);
-            {
-	        std::unique_lock<std::mutex> lock(recv_q_mutex);
-            }
-	    cv.notify_all();
-	    recv_offset += (size_of_type_hdr + size_of_hdr + ring->payload_size + 1);
-	}*/
     }
 }
 
@@ -145,19 +127,19 @@ void custom_udp_server(std::shared_ptr<Network> net,
 	    }
 
 	    char* recv_ptr;
-	    /*{
+	    {
 		std::unique_lock<std::mutex> lock(recv_q_mutex);
 		cv.wait(lock, [] {return end_thread || !recv_q.empty();});
 		if (!recv_q.try_pop(recv_ptr) || !recv_ptr) {
             	    net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, switch_ip, switch_recv_port); // TODO TEST IF THIS IS THE ISSUE
 	            continue;
 	        }
-	    }*/
-	    recv_ptr = net->recv_packet();
+	    }
+	    /*recv_ptr = net->recv_packet();
 	    if (!recv_ptr) {
                 net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, switch_ip, switch_recv_port);
 		continue;
-	    }
+	    }*/
         
 
 	    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
@@ -203,7 +185,10 @@ void custom_udp_server(std::shared_ptr<Network> net,
      	             net->send_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_ip, switch_recv_port);
 	        } else {
 	            //spdlog::debug("Sending to IP address: {}", cli_ips[batch_append_entry->cli_idx]);
+		    // std::vector<std::string> store_ips = get_stor_ips(config);
+		    // for (uint64_t i = 0; i < ) {
      	            net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[batch_append_entry->cli_idx], std::to_string(batch_append_entry->recv_port));
+		    // }
 	        }
 	        
 	        recv_offset += (size_of_type_hdr + size_of_hdr + old_payload_size + 1);
@@ -216,7 +201,7 @@ void custom_udp_server(std::shared_ptr<Network> net,
 	    break;
 	}
     }
-    net->done();
+
     spdlog::critical("The number of indices given out is: {}", idx);
 }
 
@@ -236,13 +221,14 @@ int main(int argc, char* argv[]) {
                                    get_log_level(config),
 				   get_batch_size(config), 
 				   get_batch_on(config),
+				   get_batch_timeout(config),
 				   get_interface(config),
 				   get_self_ip(config),
 				   get_num_pkt_types(config),
 				   false); 
     set_spdlog_level(get_log_level(config));
     
-    /*std::thread recv_thread(&receiver, net, get_switch_ip(config), get_switch_receive_port(config));
+    std::thread recv_thread(&receiver, net, get_switch_ip(config), get_switch_receive_port(config));
     pthread_t recv_native_handle = recv_thread.native_handle();
     // Create a CPU set and add the desired core
     cpu_set_t recv_cpuset;
@@ -251,7 +237,7 @@ int main(int argc, char* argv[]) {
     int recv_result = pthread_setaffinity_np(recv_native_handle, sizeof(cpu_set_t), &recv_cpuset);
     if (recv_result != 0) {
         std::cerr << "Error setting thread affinity for thread " << recv_thread.get_id() << ": " << recv_result << std::endl;
-    }*/
+    }
 
     spdlog::info("Simple Network server");
     std::string json_name = "dummy";
@@ -283,7 +269,9 @@ int main(int argc, char* argv[]) {
     for (uint64_t i = 0; i < server_threads.size(); i++) {
          server_threads[i].join();
     }
-    //recv_thread.join();
+    recv_thread.join();
+    net->done();
+    spdlog::critical("Joined all the threads!");
     return 0;
 }
 

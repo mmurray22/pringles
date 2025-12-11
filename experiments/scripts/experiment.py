@@ -27,7 +27,7 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # ---------------------------------------
 
 # --- Configuration Constants ---
-BASE_PORT = 50000
+BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
 EXPERIMENT_DELAY = 15  # Time to wait between experiments
@@ -85,7 +85,8 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         # WRAPPED: Ensures self_ip is quoted
         'self_ip': QuotedString(entity_ip),
         # WRAPPED: Ensures interface name is quoted
-        'batch_size': exp_params['batch_size'], # [INACTIVE]
+        'batch_size': exp_params['batch_size'],
+        'batch_usec_timeout': exp_params['batch_usec_timeout'], 
         'batch_on': proto_params['batch_on'],
         'num_pkt_types': proto_params['num_packet_types'],
         # Use the calculated final duration (adjusted for servers)

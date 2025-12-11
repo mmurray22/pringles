@@ -61,6 +61,7 @@ class Network {
                 uint64_t log_level,
                 uint64_t batch_size,
                 bool batch_on,
+		uint64_t batch_timeout,
                 std::string send_interface,
                 std::string self_ip,
 		uint64_t num_pkt_type,

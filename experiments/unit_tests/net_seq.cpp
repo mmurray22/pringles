@@ -49,14 +49,63 @@ std::string storage_pkt_type = "storage";
 bool end_thread = false;
 const uint64_t MAX_POLL_TIME = 100;
 
-void custom_udp_sequencer(std::unique_ptr<Network> net, 
+std::mutex req_q_mutex;
+std::condition_variable req_cv;
+
+std::mutex resp_q_mutex;
+std::condition_variable resp_cv;
+
+tbb::concurrent_queue<char*> req_q;
+tbb::concurrent_queue<char*> resp_q;
+
+void receiver(std::shared_ptr<Network> net, std::string switch_ip, std::string switch_receive_port) {
+    spdlog::critical("Network Recv Thread starting with TID = {}", gettid());
+    (void) switch_ip;
+    (void) switch_receive_port;
+    while (!end_thread) {
+        char* recv_ptr = net->recv_packet();
+
+	if (!recv_ptr) {
+	    req_q.push(NULL);
+            {
+	        std::unique_lock<std::mutex> lock(req_q_mutex);
+            }
+	    req_cv.notify_all();
+	    continue;
+	}
+        
+	struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
+   	if (type_hdr->type != ETH_APPEND_REQ && type_hdr->type != ETH_APPEND_RESP) { // Only supports append requests right now
+	    continue;
+	}
+        struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
+	spdlog::debug("Number of entries: {}", ring->num_entries);
+        char* pkt = (char*)std::malloc(ring->num_entries*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ring->payload_size + 1));
+        memcpy(pkt, recv_ptr, ring->num_entries*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ring->payload_size + 1)); 
+	if (type_hdr->type == ETH_APPEND_REQ) {
+	    req_q.push(pkt);
+	    {
+	        std::unique_lock<std::mutex> lock(req_q_mutex);
+            }
+	    req_cv.notify_all();
+	} else if (type_hdr->type == ETH_APPEND_RESP) {
+ 	    resp_q.push(pkt);
+            {
+	        std::unique_lock<std::mutex> lock(resp_q_mutex);
+            }
+	    resp_cv.notify_all();
+	}
+    }
+}
+
+void udp_sequencer_request(std::shared_ptr<Network> net, 
 		      std::string json_name, 
 		      uint64_t thread_id, 
 		      uint64_t batch_size, 
 		      bool batch_on,
 		      bool use_store,
 		      std::vector<std::string> cli_ips,
-		      std::string stor_ip,
+		      std::vector<std::string> stor_ips,
 		      std::string stor_receive_port,
 		      uint64_t max_duration) {
     (void) json_name;
@@ -66,14 +115,109 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
     spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
     //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
     spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
-    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ip);
+    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
     spdlog::info("Batch on: {}!", batch_on);
-	
+    uint64_t pkt_req_cntr = 0;
+    size_t size_of_hdr = get_ring_append_size();
+    size_t size_of_type_hdr = get_ring_type_size();
+
+
+
+        // Request header
+    while (!end_thread) {
+        bool got_quorum = false;
+
+        while (!got_quorum) {
+    	 // Stop receiving/sending messages since the experiment is over
+             if (end_thread) {
+                 break;
+             }
+
+    	     // Wait to receive the packet 
+    	     char* recv_ptr;
+       	     {
+                std::unique_lock<std::mutex> lock(req_q_mutex);
+    	        req_cv.wait(lock, [] {return end_thread || !req_q.empty();});
+    	        if (!req_q.try_pop(recv_ptr) || !recv_ptr) {
+    		    if (use_store) {
+    		        for (uint64_t i = 0; i < stor_ips.size(); i++) {
+                            net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, stor_ips[i], stor_receive_port);
+    		        }  
+    		    }
+                    continue;
+                }
+             }
+    
+    	// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
+
+    	// Isolate the ethernet header from the receive ptr
+         	    	
+    	// Get the correct header (ring append entry) from the received packet
+            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
+            uint64_t pkt_size = size_of_type_hdr + size_of_hdr + append_entry->payload_size + 1;
+        	
+        	// If the batch isn't full and the timeout not expired exceed
+    	// Create the packet to send to the storage server with the running packet size and the additional header
+            spdlog::debug("Final request packet number of entries: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", append_entry->num_entries, append_entry->payload_size, append_entry->nonce, append_entry->recv_port, pkt_size);
+            std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+
+    	// Copy batch header into the reply packet, and the batch content 
+            memcpy(reply_packet.get(), recv_ptr, pkt_size);
+    	
+    	// Send the network packet
+    	//spdlog::debug("Send size: {}", pkt_size);
+            bool res = false;
+    	if (use_store) {
+    	    //spdlog::debug("Sending multiple packets!");
+    	    for (uint64_t i = 0; i < stor_ips.size(); i++) {
+        	        res = net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_REQ, stor_ips[i], stor_receive_port);
+    	    }
+    	} else {
+    	    //spdlog::debug("Only sending a single packet!");
+    	    ((struct ring_type*)reply_packet.get())->type = ETH_APPEND_RESP;
+        	    net->send_client_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ips[append_entry->cli_idx], std::to_string(append_entry->recv_port));
+    	    res = true;
+    	}
+    	    pkt_req_cntr+=1;
+            if (!res) {
+           	   continue;
+    	    }
+            got_quorum = true;
+        }
+    }
+    spdlog::critical("Done here! Req cntr: {}", pkt_req_cntr); 
+    // Get some statistics,
+
+    //spdlog::debug("Stats results: Lat: {}, Tput: {}, Total Ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
+}
+
+void udp_sequencer_response(std::shared_ptr<Network> net, 
+		      std::string json_name, 
+		      uint64_t thread_id, 
+		      uint64_t batch_size, 
+		      bool batch_on,
+		      bool use_store,
+		      std::vector<std::string> cli_ips,
+		      std::vector<std::string> stor_ips,
+		      std::string stor_receive_port,
+		      uint64_t max_duration) {
+    (void) json_name;
+    (void) max_duration;
+    (void) thread_id;
+    (void) batch_size;
+    (void) use_store;
+    (void) stor_receive_port;
+    spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
+    //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
+    spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
+    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
+    spdlog::info("Batch on: {}!", batch_on);
+    uint64_t pkt_resp_cntr = 0;
+
+
     if (true) {
         // Request header
-        uint64_t num_entries = 1;
-
-        while (!end_thread) {
+	while (!end_thread) {
             bool got_quorum = false;
 
 	    // The packet size of the append request while waiting for the batch to fill up
@@ -88,102 +232,46 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
                  if (end_thread) {
                      break;
                  }
-
-		// Wait to receive the packet 
-                char* recv_ptr = net->recv_packet();
 		
+		 // Wait to receive the packet 
+		char* recv_ptr;
+	    	{
+	            std::unique_lock<std::mutex> lock(resp_q_mutex);
+		    resp_cv.wait(lock, [] {return end_thread || !resp_q.empty();});
+		    if (!resp_q.try_pop(recv_ptr) || !recv_ptr) {
+	                continue;
+	            }
+	    	}
+
 		// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
-                if (!recv_ptr) {
-	            //spdlog::critical("TIMEOUT SEND THE BATCH");
-		    if (use_store) {
-                        net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
-		    }
-		    //stat->getDuration(lat_start_time);
-		    //stat->addOp();
-                    continue;
-                }
 
 		// Isolate the ethernet header from the receive ptr
-                struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
-	        //spdlog::debug("I got the type: {}", type_hdr->type);
-
-		// If the packet is of type ETH_APPEND_REQ
-                if (type_hdr->type == ETH_APPEND_REQ) {
-             	    	
-		    // Get the correct header (ring append entry) from the received packet
-            	    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-                    uint64_t pkt_size = size_of_type_hdr + size_of_hdr + append_entry->payload_size + 1;
-            	    
-            	    // If the batch isn't full and the timeout not expired exceed
-		    // Create the packet to send to the storage server with the running packet size and the additional header
-            	    spdlog::debug("Final request packet number of entries: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", append_entry->num_entries, append_entry->payload_size, append_entry->nonce, append_entry->recv_port, pkt_size);
-                    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-
-		    // Copy batch header into the reply packet, and the batch content 
-                    memcpy(reply_packet.get(), recv_ptr, pkt_size);
-		    
-		    // Send the network packet
-		    //spdlog::debug("Send size: {}", pkt_size);
-                    bool res = false;
-		    if (use_store) {
-			//spdlog::debug("Sending multiple packets!");
-            	        res = net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
-		    } else {
-			//spdlog::debug("Only sending a single packet!");
-			((struct ring_type*)reply_packet.get())->type = ETH_APPEND_RESP;
-            	        net->send_client_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ips[append_entry->cli_idx], std::to_string(append_entry->recv_port));
-			res = true;
-		    }
-
-	       	   if (!res) {
-	       	       num_entries += 1;
-	       	       continue;
-	       	   } else {
-	       	      num_entries = 1;
-	       	   }
-
-		    //stat->getDuration(lat_start_time);
-		    //stat->addOp();
-                    got_quorum = true;
-
-            	    // Reset the timeout durations
-                } else if (type_hdr->type == ETH_APPEND_RESP) { // send to client TODO 
                     // Get the append entry header from the storage reply
-		    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-		    //spdlog::debug("Number of entries received: {}", append_entry->num_entries);
-		    uint64_t num_entries = append_entry->num_entries;
-		    uint64_t recv_offset = 0;
-		    for (uint64_t i = 0; i < num_entries; i++) {
-			// Create reply buffer packet
- 		        uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr;
-     	                std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
+		struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
+		//spdlog::debug("Number of entries received: {}", append_entry->num_entries);
+		uint64_t num_entries = append_entry->num_entries;
+		uint64_t recv_offset = 0;
+		for (uint64_t i = 0; i < num_entries; i++) {
+		    // Create reply buffer packet
+ 		    uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr;
+     	            std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
 
-		        //spdlog::debug("WE ARE ON ITERATION: {} with offset {}", i, recv_offset);
-		        struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
+		    //spdlog::debug("WE ARE ON ITERATION: {} with offset {}", i, recv_offset);
+		    struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
 	    
-		        type_hdr->type = ETH_APPEND_RESP;
-		        spdlog::debug("Sending append response with payload size: {}, and out of {} number of entries and total {} entries, this is entry #{}. This is going to cli ID {} at IP {} and port {}", batch_append_entry->payload_size, batch_append_entry->num_entries, num_entries, i, batch_append_entry->cli_idx, cli_ips[batch_append_entry->cli_idx], batch_append_entry->recv_port); // TODO next steps: Batch isn't being created properly
+		    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
+		    type_hdr->type = ETH_APPEND_RESP;
+		    spdlog::debug("Sending append response with payload size: {}, and out of {} number of entries and total {} entries, this is entry #{}. This is going to cli ID {} at IP {} and port {}", batch_append_entry->payload_size, batch_append_entry->num_entries, num_entries, i, batch_append_entry->cli_idx, cli_ips[batch_append_entry->cli_idx], batch_append_entry->recv_port); // TODO next steps: Batch isn't being created properly
 
-			// Copy contents into the packet
-                        memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
-		        net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[batch_append_entry->cli_idx], std::to_string(batch_append_entry->recv_port));
+		    // Copy contents into the packet
+                    memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
+		    net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[batch_append_entry->cli_idx], std::to_string(batch_append_entry->recv_port));
 
-		        recv_offset += reply_pkt_size;
-		        //spdlog::debug("Send packet response with size {}!", reply_pkt_size);
-		    }
-
-		    /*std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-
-		    // Copy batch header into the reply packet, and the batch content 
-                    memcpy(reply_packet.get(), recv_ptr, pkt_size);
-		    // Send the network packet
-		    //spdlog::debug("Send size: {} to IP {} at port {}", pkt_size, cli_ip, std::to_string(append_entry->recv_port));
-            	    for (std::string cli_ip : cli_ips) {
-		        net->send_udp_packet(std::move(reply_packet), pkt_size, 0, ETH_APPEND_RESP, cli_ip, std::to_string(append_entry->recv_port));
-		    }*/
-
-                    got_quorum = true;
-                }
+		    recv_offset += reply_pkt_size;
+		    //spdlog::debug("Send packet response with size {}!", reply_pkt_size);
+		}
+		pkt_resp_cntr += num_entries;
+                got_quorum = true;
             }
 
             // Create packet buffer which will be sent  
@@ -194,9 +282,8 @@ void custom_udp_sequencer(std::unique_ptr<Network> net,
     } else {
         // Request header
     }
-    spdlog::debug("Done here!"); 
-    // Get some statistics
-    net->done();
+    spdlog::critical("Done here! Resp cntr: {}", pkt_resp_cntr); 
+    // Get some statistics,
 
     //spdlog::debug("Stats results: Lat: {}, Tput: {}, Total Ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
 }
@@ -210,12 +297,13 @@ int main(int argc, char* argv[]) {
     std::string input_file = std::string(argv[1]);
     YAML::Node config = YAML::LoadFile(input_file);
     std::vector<int> eth_types = {ETH_APPEND_REQ};
-    std::unique_ptr<Network> net = std::make_unique<Network>(std::to_string(get_send_port(config)), 
+    std::shared_ptr<Network> net = std::make_shared<Network>(std::to_string(get_send_port(config)), 
                                    get_switch_receive_port(config),
 				   get_socket_type(config),
                                    get_log_level(config),
 				   get_batch_size(config),
 				   get_batch_on(config),
+				   get_batch_timeout(config),
 				   get_interface(config),
 				   get_self_ip(config),
 				   get_num_pkt_types(config),
@@ -224,28 +312,56 @@ int main(int argc, char* argv[]) {
     spdlog::info("Simple Network server");
     std::string json_name = "dummy";
     uint64_t max_duration = get_experiment_duration(config);
-    std::thread server_thread(custom_udp_sequencer, std::move(net), json_name, 0, get_batch_size(config), get_batch_on(config), get_use_stor(config), get_cli_ip(config), get_stor_ip(config), get_stor_receive_port(config), max_duration);
+    std::thread request_thread(udp_sequencer_request, net, json_name, 0, get_batch_size(config), get_batch_on(config), get_use_stor(config), get_cli_ip(config), get_stor_ips(config), get_stor_receive_port(config), max_duration);
+    std::thread response_thread(udp_sequencer_response, net, json_name, 0, get_batch_size(config), get_batch_on(config), get_use_stor(config), get_cli_ip(config), get_stor_ips(config), get_stor_receive_port(config), max_duration);
+    
+    std::thread recv_thread(&receiver, net, get_switch_ip(config), get_switch_receive_port(config));
+    pthread_t recv_native_handle = recv_thread.native_handle();
+    // Create a CPU set and add the desired core
+    cpu_set_t recv_cpuset;
+    CPU_ZERO(&recv_cpuset);
+    CPU_SET(std::thread::hardware_concurrency() - 1, &recv_cpuset); // Pin to core 'i'
+    int recv_result = pthread_setaffinity_np(recv_native_handle, sizeof(cpu_set_t), &recv_cpuset);
+    if (recv_result != 0) {
+        std::cerr << "Error setting thread affinity for thread " << recv_thread.get_id() << ": " << recv_result << std::endl;
+    }
 
-    pthread_t native_handle = server_thread.native_handle();
+    pthread_t request_handle = request_thread.native_handle();
 
     // Create a CPU set and add the desired core
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(0, &cpuset); // Pin to core 'i'
+    cpu_set_t req_cpuset;
+    CPU_ZERO(&req_cpuset);
+    CPU_SET(0, &req_cpuset); // Pin to core 'i'
 
     // Set thread affinity
-    int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
-    if (result != 0) {
-        std::cerr << "Error setting thread affinity for thread " << server_thread.get_id() << ": " << result << std::endl;
+    int req_result = pthread_setaffinity_np(request_handle, sizeof(cpu_set_t), &req_cpuset);
+    if (req_result != 0) {
+        std::cerr << "Error setting thread affinity for thread " << request_thread.get_id() << ": " << req_result << std::endl;
     } 
+    
+    pthread_t response_handle = response_thread.native_handle();
 
+    // Create a CPU set and add the desired core
+    cpu_set_t resp_cpuset;
+    CPU_ZERO(&resp_cpuset);
+    CPU_SET(1, &resp_cpuset); // Pin to core 'i'
+
+    // Set thread affinity
+    int result = pthread_setaffinity_np(response_handle, sizeof(cpu_set_t), &resp_cpuset);
+    if (result != 0) {
+        std::cerr << "Error setting thread affinity for thread " << response_thread.get_id() << ": " << result << std::endl;
+    } 
 
 
     std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);
     end_thread = true;
-
-    server_thread.join();
+    req_cv.notify_all();
+    request_thread.join();
+    resp_cv.notify_all();
+    response_thread.join();
+    recv_thread.join();
+    net->done();
     return 0;
 }
 
