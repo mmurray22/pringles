@@ -23,6 +23,7 @@ std::string get_interface(YAML::Node config); // covered
 std::string get_trace_file(YAML::Node config); 
 
 uint64_t get_batch_size(YAML::Node config); // covered
+uint64_t get_batch_timeout(YAML::Node config);
 bool get_batch_on(YAML::Node config); // covered
 
 uint64_t get_num_pkt_types(YAML::Node config); // covered 
@@ -53,7 +54,7 @@ std::string get_switch_ip(YAML::Node config);
 std::array<uint8_t,6> get_cli_mac(YAML::Node config);
 std::vector<std::string> get_cli_ip(YAML::Node config);
 std::array<uint8_t,6> get_stor_mac(YAML::Node config);
-std::string get_stor_ip(YAML::Node config);
+std::vector<std::string> get_stor_ips(YAML::Node config);
 
 std::string get_stor_receive_port(YAML::Node config);
 std::string get_switch_receive_port(YAML::Node config);

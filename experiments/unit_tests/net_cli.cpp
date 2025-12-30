@@ -53,6 +53,7 @@ uint64_t NUM_THREADS = 1;
 std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 bool end_thread = false;
+std::atomic<bool> collect_stats = true;
 
 std::mutex recv_q_mutex;
 tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>> recv_q;
@@ -112,48 +113,18 @@ void receiver(int recv_socket,
     }
 }
 
-void custom_client(std::unique_ptr<Network> net, 
+void custom_client_receiver(std::shared_ptr<Network> net, 
 		   uint64_t thread_id,
 		   std::string json_name,
 		   uint64_t batch_size,
 		   bool batch_on,
-		   uint64_t payload_size,
-		   std::array<uint8_t, 6> switch_mac,
-		   std::string switch_ip,
-		   std::array<uint8_t, 6> stor_mac,
-		   std::string stor_ip,
-		   std::string stor_receive_port,
-		   std::string switch_receive_port,
-		   uint64_t client_recv_port,
-		   bool use_switch,
-		   bool use_stor,
-		   std::string self_ip,
-		   uint64_t cli_idx) {
-    (void) switch_mac;
-    (void) stor_mac;
-    (void) use_stor;
+		   std::string self_ip) {
     uint64_t nonce = thread_id;
     uint64_t highest_idx = 0;
 
-    std::unique_ptr<struct ring_type> ring_type_hdr = create_ring_type(ETH_APPEND_REQ);
-    
     spdlog::info("Simple Network: Sending/Receiving to remote host");
-    spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid(), thread_id);
+    spdlog::critical("Network Client Receiver Thread starting with TID = {}, internal thread id {}", gettid(), thread_id);
     std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
-
-    std::string payload(payload_size, 'x');
-    size_t size_of_hdr = get_ring_append_size();
-    size_t size_of_type_hdr = get_ring_type_size();
-    std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(nonce, thread_id);
-    std::unique_ptr<struct ring_type> type_hdr = create_ring_type(ETH_APPEND_REQ);
-    spdlog::debug("Type header: {}, size of: {} and type hdr: {}", type_hdr.get()->type, size_of_hdr, size_of_type_hdr);
-    hdr.get()->payload_size = payload_size;
-    hdr.get()->num_entries = 1;
-    hdr.get()->thread_id = thread_id;
-    hdr.get()->recv_port = client_recv_port;
-    hdr.get()->nonce = nonce;
-    hdr.get()->cli_idx = cli_idx;
-    uint64_t allocated_packet_size = size_of_type_hdr + size_of_hdr + payload_size + 1;
 
     auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
     double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
@@ -161,24 +132,8 @@ void custom_client(std::unique_ptr<Network> net,
     // Only need to read from the map once to get the queue
     while (!end_thread) {
      	// Create packet buffer which will be sent  
-     	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
-        double start_time = stat->getStartLat();
-	memcpy(packet.get(), reinterpret_cast<const char*>(type_hdr.get()), size_of_type_hdr);
-	memcpy(packet.get() + size_of_type_hdr, reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
-	memcpy(packet.get() + size_of_type_hdr + size_of_hdr, payload.c_str(), payload.length() + 1);
-
-	//spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, payload.length(), size_of_hdr);
-	if (use_switch) {
-	    spdlog::debug("Sending to the SWITCH at IP {} and port {}", switch_ip, switch_receive_port);
-	    net->send_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port);
-	} else {
-	    //for (uint64_t i = 0; i < stor_ips.size(); i++) {
-	    spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {}", stor_ip, stor_receive_port);
-	    net->send_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_ip, stor_receive_port);
-	    //}
-	}
-
      	bool got_quorum = false;
+        double start_time = stat->getStartLat();
         while (!got_quorum) {
 	    if (end_thread) {
                 break;
@@ -192,7 +147,7 @@ void custom_client(std::unique_ptr<Network> net,
 	    spdlog::debug("Registering the time and operation!");
 	    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
             struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-	    if (type_hdr->type == ETH_APPEND_RESP && append_entry->nonce == nonce) {
+	    if (type_hdr->type == ETH_APPEND_RESP && (append_entry->nonce - nonce) % NUM_THREADS == 0) {
 	        stat->getDuration(start_time);
 	        stat->addOp();
 	        got_quorum = true;
@@ -204,7 +159,114 @@ void custom_client(std::unique_ptr<Network> net,
     double dur = end_time_s - start_time_s;
     spdlog::debug("Made it out of the loop!");
     spdlog::critical("Highest index seen is: {}", highest_idx);
-    spdlog::critical("For thread {}, the lat is: {}, tput: {}, total ops: {}", thread_id, stat->getAvgLatency(), stat->getThroughput((uint64_t)dur), stat->getTotalOps());
+    spdlog::critical("For  RECEIVER thread {}, the lat is: {}, tput: {}, total ops: {}", thread_id, stat->getAvgLatency(), stat->getThroughput((uint64_t)dur), stat->getTotalOps());
+    stat->exportResultsToJson();
+    net->done();
+}
+
+void custom_client(std::shared_ptr<Network> net, 
+		   uint64_t thread_id,
+		   std::string json_name,
+		   uint64_t batch_size,
+		   bool batch_on,
+		   uint64_t payload_size,
+		   std::string switch_ip,
+		   std::vector<std::string> stor_ips,
+		   std::string stor_receive_port,
+		   std::string switch_receive_port,
+		   uint64_t client_recv_port,
+		   bool use_switch,
+		   bool use_stor,
+		   std::string self_ip,
+		   uint64_t cli_idx,
+		   uint64_t max_duration) {
+    (void) use_stor;
+    uint64_t nonce = thread_id;
+    uint64_t highest_idx = 0;
+
+    std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
+    std::unique_ptr<struct ring_type> ring_type_hdr = create_ring_type(ETH_APPEND_REQ);
+    
+    spdlog::info("Simple Network: Sending/Receiving to remote host");
+    spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid(), thread_id);
+    
+    //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
+    uint64_t cntr = 0;
+    std::string payload(payload_size, 'x');
+    size_t size_of_hdr = get_ring_append_size();
+    size_t size_of_type_hdr = get_ring_type_size();
+    std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(nonce, thread_id);
+    std::unique_ptr<struct ring_type> type_hdr = create_ring_type(ETH_APPEND_REQ);
+    spdlog::debug("Type header: {}, size of: {} and type hdr: {}", type_hdr.get()->type, size_of_hdr, size_of_type_hdr);
+    hdr.get()->payload_size = payload_size;
+    hdr.get()->num_entries = 1;
+    hdr.get()->thread_id = thread_id;
+    hdr.get()->recv_port = client_recv_port;
+    hdr.get()->nonce = nonce;
+    hdr.get()->cli_idx = cli_idx;
+    uint64_t allocated_packet_size = size_of_type_hdr + size_of_hdr + payload_size + 1;
+    uint64_t num_entries = 1;
+
+    
+    // Only need to read from the map once to get the queue
+    while (!end_thread) {
+     	// Create packet buffer which will be sent  
+     	std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+        double start_time = collect_stats ? stat->getStartLat() : 0;
+	hdr.get()->num_entries = num_entries;
+	hdr.get()->nonce = nonce;
+	memcpy(packet.get(), reinterpret_cast<const char*>(type_hdr.get()), size_of_type_hdr);
+	memcpy(packet.get() + size_of_type_hdr, reinterpret_cast<const char*>(hdr.get()), size_of_hdr);
+	memcpy(packet.get() + size_of_type_hdr + size_of_hdr, payload.c_str(), payload.length() + 1);
+
+	//spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {}", allocated_packet_size, payload.length(), size_of_hdr);
+	bool res = false;
+	if (use_switch) {
+	    spdlog::debug("Sending to the SWITCH at IP {} and port {} at port {} and idx {}", switch_ip, switch_receive_port, client_recv_port, cli_idx);
+	    res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port);
+	} else {
+	    for (uint64_t i = 0; i < stor_ips.size(); i++) {
+	        //spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {} at port {} and idx {}", stor_ip, stor_receive_port, client_recv_port, cli_idx);
+	        res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_ips[i], stor_receive_port);
+	    }
+	}
+        if (!res) { // NEED TO CHECK BATCH SIZE TODO TODO 
+	   num_entries += 1;
+	   continue;
+        } else {
+           num_entries = 1;
+        }
+        cntr += 1;
+
+     	bool got_quorum = false;
+        while (!got_quorum) {
+	    if (end_thread) {
+                break;
+	    }
+	
+	    char* recv_ptr = net->recv_packet();
+	    if (!recv_ptr) {
+	        continue;
+	    }
+	    
+	    //spdlog::debug("Registering the time and operation!");
+	    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
+            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
+	    if (type_hdr->type == ETH_APPEND_RESP && append_entry->nonce == nonce) {
+		if (collect_stats && start_time > 0) {
+		    highest_idx = append_entry->g_idx;
+	            stat->getDuration(start_time);
+	            stat->addOp();
+		}
+	        got_quorum = true;
+		spdlog::debug("!!!!!!!!!!!!!!!GOT HERE IN THREAD {}", thread_id);
+	    }
+        }
+    }
+    spdlog::debug("Made it out of the loop!");
+    spdlog::critical("Highest index seen is: {}", highest_idx);
+    spdlog::critical("SEND THREAD sent {} appends in {} seconds.", cntr, max_duration);
+    spdlog::critical("For SEND thread {}, the lat is: {}, tput: {}, total ops: {}", thread_id, stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
     stat->exportResultsToJson();
     net->done();
 }
@@ -217,83 +279,50 @@ int main(int argc, char* argv[]) {
     YAML::Node config = YAML::LoadFile(input_file);
     set_spdlog_level(get_log_level(config));
     std::vector<std::thread> client_threads;
+    std::vector<std::thread> client_recv_threads;
     std::string json_name = get_json_name(config);
-    uint64_t batch_size = get_batch_size(config);
     bool batch_on = get_batch_on(config);
     uint64_t payload_size = get_payload_size(config);
-    std::array<uint8_t, 6> switch_mac = get_switch_mac(config);
     std::string switch_ip = get_switch_ip(config);
-    std::array<uint8_t, 6> stor_mac = get_stor_mac(config);
-    std::string stor_ip = get_stor_ip(config);
+    std::vector<std::string> stor_ips = get_stor_ips(config);
    
     NUM_THREADS = get_num_client_threads(config);
 
-    // Receive
-    int recv_socket;
-    if ((recv_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
-        spdlog::critical("Unable to create raw socket! Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        return -1;
-    }
-    struct timeval timeout;
-    timeout.tv_sec = 1;  // 5 seconds timeout
-    timeout.tv_usec = 0;
-    if (setsockopt(recv_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        spdlog::critical("Cannot set socket options, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        return -1;
-    }
-    if (setsockopt(recv_socket, SOL_SOCKET, SO_BINDTODEVICE, get_interface(config).c_str(), strlen(get_interface(config).c_str())) < 0) {
-        perror("Error binding socket to device. Interface name wrong or permissions failed.");
-        close(recv_socket);
-        return -1;
-    }
-    int ignore_outgoing = 1;
-    if (setsockopt(recv_socket, SOL_PACKET, PACKET_IGNORE_OUTGOING, &ignore_outgoing, sizeof(ignore_outgoing)) < 0) {
-        perror("Error binding socket to device. Interface name wrong or permissions failed.");
-        close(recv_socket);
-        return -1;
-    }
-
-
-    for (uint64_t i = 0; i < NUM_THREADS; i++) {
-        tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
-        if (recv_q.insert(acc, i)) {
-	    spdlog::debug("New queue created!");
-	}
-	acc.release();
-    }
-    
+    uint64_t dur = get_experiment_duration(config) - get_warm_up(config) - get_cool_down(config);
     for (uint64_t i = 0; i < NUM_THREADS; i++) {
         uint64_t send_port = get_send_port(config) + i;
-	uint64_t recv_port = get_recv_port(config) + + NUM_THREADS + i;	
- 
-    	std::unique_ptr<Network> net = std::make_unique<Network>(std::to_string(send_port), 
+	uint64_t recv_port = get_recv_port(config) + NUM_THREADS + i;	
+	spdlog::critical("Creating client with send port: {} and receive port: {}", send_port, recv_port);
+        uint64_t client_batch_size = get_num_failures(config) + 1;	
+    	std::shared_ptr<Network> net = std::make_shared<Network>(std::to_string(send_port), 
                                   				 std::to_string(recv_port),
 				  				 get_socket_type(config),
                                   				 get_log_level(config),
-				  				 get_batch_size(config),
+				  				 client_batch_size,
 				  				 get_batch_on(config),
+								 get_batch_timeout(config),
 				  				 get_interface(config),
 				  				 get_self_ip(config),
 				  				 get_num_pkt_types(config),
 				  				 false);
         client_threads.emplace_back(std::thread(&custom_client, 
-				                std::move(net), 
+				                net, 
 						i, 
 						json_name, 
-						batch_size, 
+						get_batch_size(config), 
 						batch_on, 
 						payload_size, 
-						switch_mac, 
 						switch_ip, 
-						stor_mac,
-						stor_ip,
+						stor_ips,
 						get_stor_receive_port(config), 
 						get_switch_receive_port(config),
 						recv_port,
 						get_use_switch(config),
 						get_use_stor(config),
 						get_self_ip(config),
-						get_cli_idx(config)));
+					        get_cli_idx(config),
+						dur));
+
 
         pthread_t native_handle = client_threads[i].native_handle();
 
@@ -308,19 +337,30 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error setting thread affinity for thread " << client_threads[i].get_id() << ": " << result << std::endl;
         }  
     }
-   
-    spdlog::debug("Going to wait to sleep {}", get_experiment_duration(config));
-    std::chrono::seconds sleep_duration(get_experiment_duration(config));
-    std::this_thread::sleep_for(sleep_duration);
+
+    spdlog::critical("Warmup! {}", get_warm_up(config));
+    std::chrono::seconds warmup(get_warm_up(config));
+    
+    collect_stats = true;
+    spdlog::critical("Working! {}", dur);
+    std::chrono::seconds sleep_duration(dur);
+    std::this_thread::sleep_for(sleep_duration); 
+    collect_stats = false;
+
+    spdlog::critical("Cooldown! {}", get_cool_down(config));
+    std::chrono::seconds cooldown(get_cool_down(config));
+    std::this_thread::sleep_for(cooldown);
+    spdlog::critical("Done with cooldown!", get_cool_down(config));
+
     end_thread = true;
     spdlog::debug("Thread done!");
-    cv.notify_all();
+    //cv.notify_all();
     for (uint64_t i = 0; i < client_threads.size(); i++) {
         client_threads[i].join();
+        //client_recv_threads[i].join();
     }
-    spdlog::debug("Done joining the clients!");
+    spdlog::critical("Done joining the clients!");
     //recv_thread.join();
-    //free(norm_buf);
     return 0;
 }
 

@@ -21,6 +21,8 @@
 #include <linux/if_packet.h>
 #include <sys/epoll.h>
 
+#include <tbb/concurrent_queue.h>
+#include <tbb/concurrent_hash_map.h>
 #include "concurrentqueue.h"
 #include "readerwriterqueue.h"
 #include "atomicops.h"
@@ -59,6 +61,7 @@ class Network {
                 uint64_t log_level,
                 uint64_t batch_size,
                 bool batch_on,
+		uint64_t batch_timeout,
                 std::string send_interface,
                 std::string self_ip,
 		uint64_t num_pkt_type,
@@ -92,6 +95,7 @@ class Network {
 
 	std::string get_recv_port();
 
+	bool send_client_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::string dst_ip, std::string dst_port);
 	bool send_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::string dst_ip, std::string dst_port);
  	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, in_addr_t dst_ip);
  
@@ -121,8 +125,15 @@ class Network {
 	std::thread recv_thread;
 
 	std::unordered_map<std::string, int> port_to_fd;
-        
+
+		
+	tbb::concurrent_hash_map<uint64_t, std::string> concurrent_port_to_fd;
+	tbb::concurrent_queue<char*> concurrent_recv_q;
+       
+
+
 	char* norm_buf;
+	char* final_send_packet;
         std::string socket_type; // Networking protocol you are running
         bool check_socket_type(std::string socket_type);
         const uint64_t BACKLOG = 5;
@@ -140,6 +151,12 @@ class Network {
         /** Batching **/
         uint64_t batch_size;
 	bool batch_on;
+	uint64_t running_pkt_size;
+	uint64_t num_pkts;
+	double batch_timer;
+	double batch_timeout;
+	std::unordered_map<std::string, char*> port_to_batch;
+
 
 	// Boolean which indicates to sending and receiving threads to cease operation
         bool terminate = false;

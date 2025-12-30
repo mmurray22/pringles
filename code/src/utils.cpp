@@ -83,6 +83,10 @@ uint64_t get_batch_size(YAML::Node config) {
     return config["batch_size"].as<uint64_t>();
 }
 
+uint64_t get_batch_timeout(YAML::Node config) {
+    return config["batch_usec_timeout"].as<uint64_t>();
+}
+
 /* Network Ports */
 uint64_t get_send_port(YAML::Node config) {
     spdlog::debug("Port: {}", config["send_port"].as<uint64_t>());
@@ -288,8 +292,8 @@ std::array<uint8_t,6> get_stor_mac(YAML::Node config) {
     return mac_final_form;
 }
 
-std::string get_stor_ip(YAML::Node config) {
-    return config["stor_ips"].as<std::vector<std::string>>()[0]; // TODO
+std::vector<std::string> get_stor_ips(YAML::Node config) {
+    return config["stor_ips"].as<std::vector<std::string>>();
 }
 
 uint64_t get_num_client_threads(YAML::Node config) {

@@ -27,9 +27,10 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # ---------------------------------------
 
 # --- Configuration Constants ---
-BASE_PORT = 50000
+BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
+EXPERIMENT_DELAY = 15  # Time to wait between experiments
 SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
 COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
 RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
@@ -55,7 +56,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
 
     if entity_type == 'server':
         # Servers run longer than the client to ensure no early termination
-        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY + SWITCH_START_DELAY
+        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY
     elif entity_type == 'switch':
         final_duration = exp_duration + warm_up + cool_down + SWITCH_START_DELAY
     else:
@@ -84,8 +85,8 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         # WRAPPED: Ensures self_ip is quoted
         'self_ip': QuotedString(entity_ip),
         # WRAPPED: Ensures interface name is quoted
-
-        'batch_size': proto_params['batch_size'], # [INACTIVE]
+        'batch_size': exp_params['batch_size'],
+        'batch_usec_timeout': exp_params['batch_usec_timeout'], 
         'batch_on': proto_params['batch_on'],
         'num_pkt_types': proto_params['num_packet_types'],
         # Use the calculated final duration (adjusted for servers)
@@ -150,13 +151,13 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
 
     return yaml_config
 
-def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user):
+def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index):
     """
     Executes a program on a remote machine asynchronously using SSH, 
     redirecting stdout/stderr to a log file. Returns the Popen object and the log filename.
     """
     # NEW/MODIFIED: Log file is named after the IP address
-    log_filename = f"{ip}.txt" 
+    log_filename = f"{ip}_{exp_index}.txt" 
     
     # NEW/MODIFIED: redirect all output (&>) to the log file, and run in background (&)
     remote_command = f'sudo {program_path} ~/{config_filename} > ~/{log_filename} &'
@@ -412,7 +413,7 @@ def process_and_aggregate_results(local_target_dir):
         total_agg_tput = 0.0
         total_avg_latency_sum = 0.0
         file_count = 0
-        
+        batch_size = 0 
         print(f"Processing group: {json_name_prefix} ({len(files_to_aggregate)} client results)")
 
         for filename in files_to_aggregate:
@@ -444,7 +445,7 @@ def process_and_aggregate_results(local_target_dir):
                 if isinstance(avg_latency, (int, float)):
                     total_avg_latency_sum += avg_latency
                     file_count += 1
-
+                batch_size = data.get('batch_size')
             except json.JSONDecodeError:
                 print(f"Error: Failed to decode JSON from file: {filename}. Skipping.")
             except IOError as e:
@@ -457,7 +458,8 @@ def process_and_aggregate_results(local_target_dir):
         final_results = {
             "agg_tput": total_agg_tput,
             "total_avg_latency": final_avg_latency,
-            "num_clients": file_count
+            "num_clients": file_count,
+            "batch_size": batch_size
         }
 
         # Write the final aggregated JSON file named [json_name].json
@@ -490,6 +492,7 @@ def plot_results(local_target_dir):
     num_clients_list = []
     tput_list = []
     latency_list = []
+    batch_list = []
     
     # 1. Gather Data
     for filename in summary_files:
@@ -502,11 +505,12 @@ def plot_results(local_target_dir):
             num_clients = data.get('num_clients')
             agg_tput = data.get('agg_tput')
             total_avg_latency = data.get('total_avg_latency')
-            
+            batch_size = data.get('batch_size')
             if all(isinstance(v, (int, float)) for v in [num_clients, agg_tput, total_avg_latency]):
                 num_clients_list.append(num_clients)
                 tput_list.append(agg_tput)
                 latency_list.append(total_avg_latency)
+                batch_list.append(batch_size)
             else:
                 print(f"Warning: Skipping file {filename} due to missing or invalid data fields.")
 
@@ -526,14 +530,15 @@ def plot_results(local_target_dir):
     
     # --- Plot 1: Clients vs. Aggregate Throughput (throughut_vs_clients.png) ---
     plt.figure(figsize=(8, 6))
-    plt.plot(num_clients_list, tput_list, marker='o', linestyle='-', color='blue')
+    plt.plot(batch_list, tput_list, marker='o', linestyle='-', color='blue')
     plt.xlabel('Number of Clients')
     plt.ylabel('Aggregate Throughput')
     plt.title(f'Aggregate Throughput vs. Client Count\nExperiment: {os.path.basename(local_target_dir)}')
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.xlim(xmin=0) # NEW
     plt.ylim(ymin=0) # NEW
-    plt.xticks(num_clients_list) # Force X-ticks to match data points
+    #plt.xticks(num_clients_list) # Force X-ticks to match data points
+    plt.xticks(batch_list) # Force X-ticks to match data points
     plot_filepath_1 = os.path.join(local_target_dir, "throughput_vs_clients.png")
     plt.savefig(plot_filepath_1)
     plt.close()
@@ -564,7 +569,10 @@ def plot_results(local_target_dir):
     for i, clients in enumerate(num_clients_list):
         plt.annotate(f'{clients} Cli', (tput_list[i], latency_list[i]), 
                      textcoords="offset points", xytext=(5,-5), ha='left')
-                     
+    #for i, batch_sz in enumerate(batch_list):
+    #    plt.annotate(f'{batch_sz} Batch', (tput_list[i], latency_list[i]), 
+    #                 textcoords="offset points", xytext=(5,-5), ha='left')
+                         
     plt.xlabel('Aggregate Throughput')
     plt.ylabel('Total Average Latency (ms)')
     plt.title(f'Throughput-Latency Tradeoff\nExperiment: {os.path.basename(local_target_dir)}')
@@ -691,7 +699,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 raise Exception(f"Failed to transfer config to server {ip}")
             
             # Start remote process
-            process, log_filename = execute_remote_command(ip, path_server, config_filename, ssh_key, ssh_user) # MODIFIED: Get log filename
+            process, log_filename = execute_remote_command(ip, path_server, config_filename, ssh_key, ssh_user, exp_index) # MODIFIED: Get log filename
             if process:
                 server_processes.append(process)
                 server_log_files[ip] = log_filename # MODIFIED: Store log filename
@@ -732,7 +740,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             raise Exception(f"Failed to transfer config to server {ip}")
         
         # Start remote process
-        process, log_filename = execute_remote_command(switch_ip, path_switch, switch_config_filename, ssh_key, ssh_user) # MODIFIED: Get log filename
+        process, log_filename = execute_remote_command(switch_ip, path_switch, switch_config_filename, ssh_key, ssh_user, exp_index) # MODIFIED: Get log filename
         if process:
             switch_processes.append(process)
             switch_log_files[ip] = log_filename # MODIFIED: Store log filename
@@ -780,7 +788,8 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 path_client, 
                 config_filename, 
                 ssh_key, 
-                ssh_user
+                ssh_user,
+                exp_index
             )
             if client_process:
                 print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
@@ -813,6 +822,10 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 local_results_dir
             )
             i += 1
+            #if proc.poll() is None:
+            #    print(f"Terminating server process (PID: {proc.pid})...")
+            #    proc.kill()
+
             
             
     except Exception as e:
@@ -845,7 +858,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             try:
                 if proc.poll() is None:
                     print(f"Terminating server process (PID: {proc.pid})...")
-                    proc.terminate()
+                    proc.kill()
                 # The nohup process is difficult to kill via Popen.terminate(). 
                 # Relying on the server timeout is safer.
                 #pass 
@@ -857,7 +870,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             try:
                 if proc.poll() is None:
                     print(f"Terminating server process (PID: {proc.pid})...")
-                    proc.terminate()
+                    proc.kill()
                 # The nohup process is difficult to kill via Popen.terminate(). 
                 # Relying on the server timeout is safer.
                 #pass 
@@ -950,6 +963,7 @@ def main(config_file="config.toml"):
         
         # 3. Run the full experiment cycle with the merged configuration
         run_experiment_cycle(current_config, exp_index, local_results_dir)
+        time.sleep(EXPERIMENT_DELAY)
     
     # --- Final Step A: Aggregate ALL results from the shared directory ---\
     # Only run this once after ALL experiment cycles are finished

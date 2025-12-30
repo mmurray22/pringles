@@ -22,7 +22,7 @@ struct ring_type {
 
 
 // Append request - from client
-// Size: 224 bytes
+// Size: 224 bytes TODO old
 struct ring_append_entry {
     // FROM CLIENT: client unique ID - TODO do you need this? src addr
     uint32_t cid;
@@ -48,6 +48,8 @@ struct ring_append_entry {
     uint64_t recv_port;
     // FROM CLIENT
     uint64_t cli_idx;
+    // FROM CLIENT
+    double start_time;
 };
 
 // Append reply - from storage server

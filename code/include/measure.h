@@ -25,7 +25,6 @@ class Stats {
 	    double getThroughput(uint64_t elapsed);
 	    double getAvgLatency();
 	    void exportResultsToJson();
-	    // Write to external file TODO
 
 	private:
 	    uint64_t thread_id;
