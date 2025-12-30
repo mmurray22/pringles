@@ -1,7 +1,2 @@
-append_req Hello
-append_req world
-append_req sample
-append_req test
-append_req protect
-append_req trans
-append_req kids
+send Hello
+send World

@@ -6,7 +6,6 @@
  * - Path to yaml file 
  */
 
-#include "network.h"
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -15,8 +14,7 @@
 #include <cassert>
 #include <fstream>
 #include "spdlog/spdlog.h"
-#include "utils.h"
-#include "trace.h"
+#include "simple_client.h"
 
 const uint64_t MAX_WAIT_TIME = 100;
 
@@ -97,30 +95,12 @@ int main(int argc, char* argv[]) {
     }
     std::string input_file = std::string(argv[1]);
     YAML::Node config = YAML::LoadFile(input_file);
-
-    std::shared_ptr<Network> custom_net = std::make_shared<Network>(get_threads(config), 
-                                                                    get_ips(config), 
-                                                                    get_port(config), 
-                                                                    get_protocol(config), 
-                                                                    get_log_level(config));
+    std::shared_ptr<SimpleClient> simpleCli = std::make_shared<SimpleClient>(input_file);
     set_spdlog_level(get_log_level(config));
-    spdlog::info("Simple Network! Sending on localhost 127.0.0.1");
-    std::shared_ptr<Trace<std::string>> trace = std::make_shared<Trace<std::string>>(get_trace_file(config));
-   
-    /*uint64_t protocol_id = 0;
-    std::shared_ptr<Network> net = std::make_shared<Network>(1, PATH_TO_YAML, str, protocol_id);
-    std::thread server_thread(server, net);
-    std::thread client_thread(client, net);
-    client_thread.join();
-    server_thread.join();
-    net->done();*/
-
-    std::thread server_thread(custom_server, custom_net, trace);
-    std::thread client_thread(custom_client, custom_net, trace);
-    client_thread.join();
-    server_thread.join();
-    custom_net->done();
-
+    std::string entry = "hello";
+    uint64_t idx = simpleCli->append("hello");
+    std::string read_entry = simpleCli->read(idx);
+    assert(read_entry == entry);
     return 0;
 }
 
