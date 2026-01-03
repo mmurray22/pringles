@@ -339,3 +339,20 @@ uint64_t get_storage_server(YAML::Node config) {
 uint64_t get_cli_idx(YAML::Node config) {
     return config["cli_idx"].as<uint64_t>();
 }
+
+/* Experiment Logistics */
+void wait_to_finish(uint64_t max_duration) {
+    spdlog::debug("Collecting statistics!");
+    std::chrono::seconds sleep_duration(max_duration);
+    std::this_thread::sleep_for(sleep_duration);
+} 
+
+void wait_to_warmup(uint64_t warmup) {
+    std::chrono::seconds sleep_duration(warmup);
+    std::this_thread::sleep_for(sleep_duration);
+}
+
+void wait_to_cooldown(uint64_t cool_down) {
+    std::chrono::seconds sleep_duration(cool_down);
+    std::this_thread::sleep_for(sleep_duration);
+}

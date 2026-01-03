@@ -64,7 +64,12 @@ uint64_t get_use_stor(YAML::Node config);
 uint64_t get_storage_server(YAML::Node config);
 uint64_t get_cli_idx(YAML::Node config);
 
-/*INACTIVE*/
+/*** Experiment Logistics ***/
+void wait_to_finish(uint64_t max_duration);
+void wait_to_warmup(uint64_t warmup);
+void wait_to_cooldown(uint64_t cool_down);
+
+/*INACTIVE TODO*/
 std::string get_string_entry_payload(YAML::Node config);
 uint64_t get_read_timeout(YAML::Node config);
 uint64_t get_write_timeout(YAML::Node config);
