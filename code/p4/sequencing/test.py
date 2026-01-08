@@ -66,11 +66,14 @@ class SequencingTest(BfRuntimeTest):
     def delete_tables(self, target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl):
         # Reset the tables to make multiple runs possible
         table_ipv4 = bfrt_info.table_get("MyIngress.ipv4_lpm")
+        table_ipv4.info.key_field_annotation_add("hdr.ipv4.dstAddr", "ipv4")
+        table_ipv4.info.data_field_annotation_add("dstAddr", "MyIngress.ipv4_forward", "mac")
         table_ipv4.entry_del(
                 target, 
                 [table_ipv4.make_key([gc.KeyTuple('hdr.ipv4.dstAddr', ip_addr, prefix_len=32)])])
 
         table_cntrl = bfrt_info.table_get("MyIngress.cntrl_id_to_ip")
+        table_cntrl.info.key_field_annotation_add("hdr.cntrl.id", "int<32>")
         table_cntrl.entry_del(
                 target, 
                 [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.id', in_cntrl)])])
@@ -84,50 +87,50 @@ class SequencingTest(BfRuntimeTest):
         # Set default output port
         ip_addr='100.99.98.97'
         dstAddr='11:11:11:11:11:11'
+        srcAddr='22:22:22:22:22:22'
         recv_port=loopback_port
         in_cntrl=1
         out_cntrl=1
 
         self.initialize_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl)
-        self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl)
+
         
-        #try:
-        #    #addr = socket.gethostbyname('100.99.98.97')
-        #    ipkt = testutils.simple_control_packet(eth_dst='11:11:11:11:11:11',
-        #                                       eth_src='22:22:22:22:22:22')
-        #    testutils.send_packet(self, swports[0], ipkt)
-        #    print(testutils.format_packet(ipkt))
+        try:
+            #addr = socket.gethostbyname('100.99.98.97')
+            ipkt = testutils.simple_control_packet(eth_dst=dstAddr, eth_src=srcAddr)
+            testutils.send_packet(self, loopback_port, ipkt)
+            print(testutils.format_packet(ipkt))
 
-        #    ipkt = testutils.simple_control_check_packet(eth_dst='11:11:11:11:11:11',
-        #                                       eth_src='22:22:22:22:22:22')
-        #    testutils.send_packet(self, swports[0], ipkt)
-        #    print(testutils.format_packet(ipkt))
+            #ipkt = testutils.simple_control_check_packet(eth_dst='11:11:11:11:11:11',
+            #                                   eth_src='22:22:22:22:22:22')
+            #testutils.send_packet(self, swports[0], ipkt)
+            #print(testutils.format_packet(ipkt))
 
-        #    logger.info("Waiting for a reply...")
-        #    (rcv_dev, rcv_port, rcv_pkt, pkt_time) = \
-        #        testutils.dp_poll(self, 0, recv_port, timeout=2)
-        #    logger.info("Received packet of size {:>15}".format(str(len(ipkt.__class__(rcv_pkt)))))
-        #    logger.info("Sent packet of size {:>15}".format(str(len(ipkt))))
-        #    hexdump(rcv_pkt)
-        #    sys.stdout.flush()
-        #    print(testutils.format_packet(rcv_pkt))
-        #    expected_ipkt = testutils.simple_hello_world_packet(eth_dst='11:11:11:11:11:11',
-        #                                       eth_src='11:11:11:11:11:11',
-        #                                       ip_src='1.2.3.4',
-        #                                       ip_dst='100.99.98.97',
-        #                                       ip_id=101,
-        #                                       ip_ttl=63,
-        #                                       hello=1)
-        #    
-        #    print(testutils.format_packet(expected_ipkt))
-        #    print(ipkt.show())
-        #    print(ipkt.__class__(rcv_pkt).show2())
-        #    print("Payload of IP: ", ipkt.__class__(rcv_pkt)['Hello'].payload.summary())
-        #    #received_packet = Ether(rcv_pkt)
-        #    #if IP in received_packet:
-        #    #    logger.info("The IP ttl is: {:>15}".format(str(received_packet[IP].ttl)))
-        #    #if Raw in received_packet:
-        #    #    print("The IP ttl is: ", received_packet[Raw].load.decode())
+            #logger.info("Waiting for a reply...")
+            #(rcv_dev, rcv_port, rcv_pkt, pkt_time) = \
+            #    testutils.dp_poll(self, 0, recv_port, timeout=2)
+            #logger.info("Received packet of size {:>15}".format(str(len(ipkt.__class__(rcv_pkt)))))
+            #logger.info("Sent packet of size {:>15}".format(str(len(ipkt))))
+            #hexdump(rcv_pkt)
+            #sys.stdout.flush()
+            #print(testutils.format_packet(rcv_pkt))
+            #expected_ipkt = testutils.simple_hello_world_packet(eth_dst='11:11:11:11:11:11',
+            #                                   eth_src='11:11:11:11:11:11',
+            #                                   ip_src='1.2.3.4',
+            #                                   ip_dst='100.99.98.97',
+            #                                   ip_id=101,
+            #                                   ip_ttl=63,
+            #                                   hello=1)
+            #
+            #print(testutils.format_packet(expected_ipkt))
+            #print(ipkt.show())
+            #print(ipkt.__class__(rcv_pkt).show2())
+            #print("Payload of IP: ", ipkt.__class__(rcv_pkt)['Hello'].payload.summary())
+            #received_packet = Ether(rcv_pkt)
+            #if IP in received_packet:
+            #    logger.info("The IP ttl is: {:>15}".format(str(received_packet[IP].ttl)))
+            #if Raw in received_packet:
+            #    print("The IP ttl is: ", received_packet[Raw].load.decode())
 
         """
         nrcv = ipkt.__class__(rcv_pkt)
@@ -161,6 +164,6 @@ class SequencingTest(BfRuntimeTest):
                     "accurately reflect the packet processing. Correct values are shown " +
                     "by the hardware implementation.")
         """
-        #finally:
-        #    logger.info("I don't think the test passed?")
-        #    #table_ipv4.default_entry_reset(target)
+        finally:
+            logger.info("Test finished!")
+            self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl)
