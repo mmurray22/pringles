@@ -586,7 +586,6 @@ def plot_results(local_target_dir):
 
     
 # --- Setup and Compile Functions (Remain unchanged from previous submission) ---
-
 def run_setup_script(ip, setup_script_path, ssh_key, ssh_user):
     """Runs the specified setup script on a remote machine synchronously (blocking run)."""
     command = [
@@ -632,6 +631,34 @@ def run_compile_command(ip, ssh_key, ssh_user):
         print(f"ERROR connecting to {ip} for compilation: {e}")
         return False
 
+def setup_switches(config):
+    # here is the setup
+    tofino_model = config["switches"]["tofino_model"]
+    switchd = config["switches"]["switchd"]
+    ptf_tests = config["switches"]["ptf_test"] 
+    arch = config["switches"]["arch"]
+    program = config["switches"]["sequencing_only"]
+    switch_ips = config["switches"]["switch_ips"]
+
+    for i in len(switch_ips):
+        # Step 1: Run the tofino model
+        # cfg_tofino = "switch_tofino_model_log"
+        # execute_remote_command(switch_ips[i], tofino_model, cfg_tofino, ssh_key, ssh_user, i)
+        sleep(10) # Crude approximation to wait for tofino setup, TODO actual indicator?
+        
+        # Step 2: Run the switchd SDE
+        cfg_switchd = "switch_switchd_log"
+        execute_remote_command(switch_ips[i], switchd, cfg_switchd, ssh_key, ssh_user, i)
+        sleep(10)
+        
+        # Step 3: Run the control plane setup
+        cfg_ptf = "switch_ptf_log"
+        ptf_configure_cmd = "~/bf-sde-9.4.0/ptf-modules-9.4.0/configure --prefix=$SDE_INSTALL; make; make install"
+        # Step 3.1: First, compile the ptf library
+        execute_remote_command(switch_ips[i], ptf_configure_cmd, cfg_ptf, ssh_key, ssh_user, i)
+        # Step 3.2: Second, run ptf scripts
+        execute_remote_command(switch_ips[i], ptf_tests, cfg_ptf, ssh_key, ssh_user, i)
+        sleep(10)
 
 # To be executed for each experiment
 def run_experiment_cycle(config, exp_index, local_results_dir):
@@ -946,6 +973,12 @@ def main(config_file="config.toml"):
             print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
             return
     print("--- Compilation Complete ---")
+
+    # --- 5. START SWITCHES --- 
+    switches_up = setup_switches(base_config)
+    num_switches = len(base_config['switches']['switch_send_ports'])
+    if switches_up:
+        print("--- All {num_switches} switches up and running ---")
 
     # --- Start Experiment Loop ---
     print(f"\n--- Starting {len(experiments_to_run)} Experiment Runs ---")
