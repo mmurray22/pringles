@@ -85,7 +85,7 @@ header control_pkt_t {
    bit<32> ring_view;
 
    // ID of last sending switch
-   bit<32> pkt_id;
+   bit<32> id;
 }
 
 // AppendEntry header
@@ -333,7 +333,7 @@ control MyIngress(inout headers hdr,
 
     table cntrl_id_to_ip {
         key = {
-            hdr.cntrl.pkt_id: exact;
+            hdr.cntrl.id: exact;
         }
         actions = {
             cntrl_forward;
@@ -358,12 +358,12 @@ control MyIngress(inout headers hdr,
     }
 
     /* Tail */
-    action update_tail(egressSpec_t port) {
-        /*bit<32> hr_seq_no = read_replicate_seq_no.execute();
+    /*action update_tail(egressSpec_t port) {
+        bit<32> hr_seq_no = read_replicate_seq_no.execute();
         if (hdr.tail.tail_seq_no < (int<32>)hr_seq_no) {
             hdr.tail.tail_seq_no = (int<32>)hr_seq_no;
         }
-        ig_tm_md.ucast_egress_port = port;*/
+        ig_tm_md.ucast_egress_port = port;
     }
     
     action return_tail(macAddr_t dstAddr, egressSpec_t port) {
@@ -386,7 +386,7 @@ control MyIngress(inout headers hdr,
         }
         size = 1024;
         default_action = drop;
-    }
+    }*/
 
     /* Circulate port */
     action circulate_port(egressSpec_t port) {
@@ -428,6 +428,7 @@ control MyIngress(inout headers hdr,
             if (hdr.append.status == 1) {
                 hdr.append.g_idx = (int<32>)write_local_seq_no.execute(0);
                 hdr.append.status = 2;
+		hdr.append.cntrl_pkt_it = (int<32>)cntrl_pkt_it_reg;
             } else if (hdr.append.status == 2) {
                 if (hdr.append.cntrl_pkt_it != (int<32>)cntrl_pkt_it_reg) {
                     int<32> h_seen_seq_no_reg = (int<32>)read_seen_seq_no.execute(0);

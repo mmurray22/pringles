@@ -76,11 +76,11 @@ class Append(Packet):
                     BitField("status", 0, 32),
                     IntField("cntrl_pkt_it", 0)]
  
-#class Tail(Packet):
-#    fields_desc = [ BitField("cid", 0, 32),
-#                    BitField("nonce", "", 32),
-#                    IntField("hops", 0),
-#                    IntField("tail_seq_no", 0)]
+class Tail(Packet):
+    fields_desc = [ BitField("cid", 0, 32),
+                    BitField("nonce", "", 32),
+                    IntField("hops", 0),
+                    IntField("tail_seq_no", 0)]
 
 bind_layers(Ether, IP)
 bind_layers(IP, Append)
@@ -143,13 +143,40 @@ class SequencingTest(BfRuntimeTest):
         table_ipv4.entry_del(
                 target, 
                 [table_ipv4.make_key([gc.KeyTuple('hdr.ipv4.dstAddr', ip_addr, prefix_len=32)])])
-
         # Reset control table
         table_cntrl = bfrt_info.table_get("MyIngress.cntrl_id_to_ip")
         table_cntrl.info.key_field_annotation_add("hdr.cntrl.pkt_id", "int<32>")
         table_cntrl.entry_del(
                 target, 
                 [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.pkt_id', in_cntrl)])])
+    
+    def run_sniff(self, interface, tofinoSrcAddr):
+        idle_timeout=5
+        #sniff(iface=interface, prn=self.handle_packet, count=10, timeout=10)
+        # This creates a raw socket exactly like tcpdump
+        L2sock = L2ListenSocket(iface=interface)
+        print("[*] L2 Socket Open and Listening...")
+            
+        # Block until 1 packet is received
+        while True:
+            ready = select.select([L2sock], [], [], idle_timeout)
+            if ready[0]:
+                pkt = L2sock.recv(1024) 
+                if pkt and pkt[Ether].src == tofinoSrcAddr:
+                    print("[*] Captured via L2Socket!")
+                    print(testutils.format_packet(pkt))
+            else:
+                print("Progam timeout out!")
+                break
+        L2sock.close()
+        
+    def handle_packet(self, recv_pkt):
+        print("!!!!!!!!!!!!!!!!!!!!!!Received from Tofino!")
+        if recv_pkt[Ether].src == "11:11:11:11:11:11":
+            print(testutils.format_packet(recv_pkt))
+        #print("!!!!!!!!!!!! SHOW PACKET")
+        #recv_pkt.show()
+        logger.info("Test finished!")
 
         # Reset circulate table
         table_circulate = bfrt_info.table_get("MyIngress.circulate_table")
