@@ -85,7 +85,7 @@ header control_pkt_t {
    bit<32> ring_view;
 
    // ID of last sending switch
-   bit<32> id;
+   bit<32> pkt_id;
 }
 
 // AppendEntry header
@@ -239,58 +239,47 @@ control MyIngress(inout headers hdr,
     
     /// Ring State ///
 
-    DirectRegister<bit<32>>(0) ring_view; // Current ring view number TODO will need to be written to from the control plane
-    /*DirectRegisterAction<bit<32>, bit<32>>(ring_view) view_update = {
+    /*DirectRegister<bit<32>>(0) ring_view; // Current ring view number TODO will need to be written to from the control plane
+    DirectRegisterAction<bit<32>, bit<32>>(ring_view) view_update = {
         void apply(inout bit<32> view) {
             view = view + 1;
         }
-    };*/ // TODO: Update view
+    }; // TODO: Update view
+    
     DirectRegisterAction<bit<32>, bit<32>>(ring_view) get_curr_view = {
         void apply(inout bit<32> view, out bit<32> read_view) {
             read_view = view;
         }
-    };
+    };*/
 
     /// Sequencing state ///
 
     // Largest global sequence number known to the switch Updated every time control packet is received.
     Register<bit<32>, bit<32>>(1, 0) highest_seen_seq_no;
+    
     RegisterAction<bit<32>, bit<32>, bit<32>>(highest_seen_seq_no) write_seen_seq_no = {
         void apply(inout bit<32> cur_seen_seq_no) {
             cur_seen_seq_no = (bit<32>)hdr.cntrl.global_seq_no;
         }
     };
+    
     RegisterAction<bit<32>, bit<32>, bit<32>>(highest_seen_seq_no) read_seen_seq_no = {
         void apply(inout bit<32> new_seen_seq_no, out bit<32> old_seen_seq_no) { // inout = register, out = output 
             old_seen_seq_no = new_seen_seq_no;
         }
     };
 
-    // Largest replicated global sequence number known to the switch
-    DirectRegister<bit<32>>(0) highest_replicated_seq_no;
-
-    // TODO: Not sure why you need the second bit<32>
-    DirectRegisterAction<bit<32>, bit<32>>(highest_replicated_seq_no) write_replicate_seq_no = {
-        void apply(inout bit<32> cur_replicate_seq_no, out bit<32> new_replicate_seq_no) {
-            // TODO: CANNOT READ NEW VAR cur_replicate_seq_no = new_replicate_seq_no;
-        }
-    };
-    DirectRegisterAction<bit<32>, bit<32>>(highest_replicated_seq_no) read_replicate_seq_no = {
-        void apply(inout bit<32> new_replicate_seq_no, out bit<32> old_replicate_seq_no) {
-            old_replicate_seq_no = new_replicate_seq_no;
-        }
-    };
-
-
     // Local seq no batch counter 
-    DirectRegister<bit<32>>(0) local_seq_no;
-    DirectRegisterAction<bit<32>, bit<32>>(local_seq_no) write_local_seq_no = {
+    Register<bit<32>, bit<1>>(1) local_seq_no;
+    
+    RegisterAction<bit<32>, bit<1>, bit<32>>(local_seq_no) write_local_seq_no = {
         void apply(inout bit<32> cur_local_seq_no, out bit<32> pkt_local_seq_no) {
             cur_local_seq_no = cur_local_seq_no + 1;
 	    pkt_local_seq_no = cur_local_seq_no;
         }
     };
-    DirectRegisterAction<bit<32>, bit<32>>(local_seq_no) read_local_seq_no = {
+    
+    RegisterAction<bit<32>, bit<1>, bit<32>>(local_seq_no) read_local_seq_no = {
         void apply(inout bit<32> cur_local_seq_no, out bit<32> final_local_seq_no) {
             final_local_seq_no = cur_local_seq_no;
 	    cur_local_seq_no = 0;
@@ -300,18 +289,15 @@ control MyIngress(inout headers hdr,
     // Number of total times the switch has seen the control packet TODO potential to overflow?
     DirectRegister<bit<32>>() cntrl_pkt_it; 
     DirectRegisterAction<bit<32>, bit<32>>(cntrl_pkt_it) update_cntrl_pkt_it = {
-        void apply(inout bit<32> cur_cntrl_pkt_it) {
-            cur_cntrl_pkt_it = cur_cntrl_pkt_it + 1;
-        }
-    };
-    DirectRegisterAction<bit<32>, bit<32>>(cntrl_pkt_it) read_cntrl_pkt_it = {
         void apply(inout bit<32> cur_cntrl_pkt_it, out bit<32> output_cntrl_pkt_it) {
+	    if (hdr.cntrl.isValid()) {
+                cur_cntrl_pkt_it = cur_cntrl_pkt_it + 1;
+	    }
 	    output_cntrl_pkt_it = cur_cntrl_pkt_it;
-        }
+	}
     };
 
-
-    /** ACTIONS **/
+    /** MATCH-ACTION TABLES **/
 
     /* Standard IPv4 routing */
     action drop() {
@@ -324,7 +310,7 @@ control MyIngress(inout headers hdr,
         hdr.ethernet.dstAddr = dstAddr;
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
-
+    
     table ipv4_lpm {
         key = {
             hdr.ipv4.dstAddr: lpm;
@@ -337,16 +323,34 @@ control MyIngress(inout headers hdr,
         size = 1024;
         default_action = NoAction();
     }
+    
+    /* Circulate port */
+    action circulate_port(egressSpec_t port) {
+        ig_tm_md.ucast_egress_port = port;
+    }
+
+    table circulate_table {
+        key = {
+	    meta.circulate: exact;
+	}
+	actions = {
+            circulate_port;
+	    drop;
+        }
+        size = 1024;
+        default_action = drop();
+    }
+
 
     /* Control Packet */
-    action cntrl_forward(egressSpec_t port, bit<32> id) {
+    action cntrl_forward(egressSpec_t port, bit<32> pkt_id) {
         ig_tm_md.ucast_egress_port = port;
-        hdr.cntrl.id = id;
+        hdr.cntrl.pkt_id = pkt_id;
     }
 
     table cntrl_id_to_ip {
         key = {
-            hdr.cntrl.id: exact;
+            hdr.cntrl.pkt_id: exact;
         }
         actions = {
             cntrl_forward;
@@ -356,7 +360,7 @@ control MyIngress(inout headers hdr,
         size = 1024;
         default_action = drop();
     }
-
+    
     /* Ring View */
     table check_view {
         key = {
@@ -370,132 +374,39 @@ control MyIngress(inout headers hdr,
         default_action = NoAction();
     }
 
-    /* Tail */
-    action update_tail(egressSpec_t port) {
-        bit<32> hr_seq_no;
-	read_replicate_seq_no.execute(hr_seq_no);
-        if (hdr.tail.tail_seq_no < (int<32>)hr_seq_no) {
-            hdr.tail.tail_seq_no = (int<32>)hr_seq_no;
-        }
-        ig_tm_md.ucast_egress_port = port;
-    }
-    
-    action return_tail(macAddr_t dstAddr, egressSpec_t port) {
-        ig_tm_md.ucast_egress_port = port;
-        
-	// do you need this?
-	hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
-        hdr.ethernet.dstAddr = dstAddr;
-        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
-    }
-    
-    table process_tail {
-        key = { 
-            hdr.tail.hops: range;
-        }
-        actions = {
-            update_tail;
-            return_tail;
-            drop;
-        }
-        size = 1024;
-        default_action = drop;
-    }
-
-    /* Circulate port */
-    action circulate_port(egressSpec_t port) {
-        ig_tm_md.ucast_egress_port = port;
-    }
-
-    table circulate_table {
-        key = {
-            meta.default_bit: exact; // what is going on here?
-        }
-        actions = {
-            circulate_port;
-            NoAction;
-        }
-        default_action = NoAction;
-    }
-
-
     apply {
-        meta.circulate = 0; // TODO
-        /* 
-         * Process Control packets 
-         * 
-         * Number of read actions done: 3
-         * Number of write actions done: 3
-         */
-        if (hdr.cntrl.isValid()) {
+        meta.circulate = 1; // TODO - change to 1
+        bit<32> cntrl_pkt_it_reg = update_cntrl_pkt_it.execute();
+
+	if (hdr.cntrl.isValid()) {
             // Step 0: Check if the control packet's view is outdated TODO
-	    check_view.apply();
-        
-            // Step 1: Update control packet global sequence number and zero local sequence counter
-            bit<32> local_seq_no_reg;
-            read_local_seq_no.execute(local_seq_no_reg);
+            bit<32> local_seq_no_reg = read_local_seq_no.execute(0);
             hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + (int<32>)local_seq_no_reg;
-
-            // Step 2: Update control packet + local highest seen seq no
 	    write_seen_seq_no.execute(0);
-
-            // Step 3: Control packet iteration increase
-	    update_cntrl_pkt_it.execute();
-            
-            // Step 4: Send to next switch
             cntrl_id_to_ip.apply();
-	/** Process Control Check packets**/
-        } else if (hdr.cntrl_check.isValid()) {
-	    read_seen_seq_no.execute(hdr.cntrl_check.switch_global_seq_no); // TODO: Understand why  this couldn't be direct
-	/** Process Append packets **/
-        } /* else if (hdr.append.isValid()) {*/
-            // Change processing of append based on the status of the packet
-            // Status 1: First time the packet has been seen
-            /*if (hdr.append.status == 1) {
-
-                // 1) Assign local seq no TODO check how you initialize variables???
-                bit<32> local_seq_no_reg;
-                local_seq_no.read(local_seq_no_reg, 0);
-                local_seq_no_reg = (bit<32>)((int<32>)local_seq_no_reg + hdr.append.batch_size);
-                local_seq_no.write(0, local_seq_no_reg);
-
-                // Update packet header variables
-                // Set status to 2 (pending sequence number)
-                hdr.append.g_idx = (int<32>)local_seq_no_reg;
+        } else if (hdr.append.isValid()) {
+            if (hdr.append.status == 1) {
+                hdr.append.g_idx = (int<32>)write_local_seq_no.execute(0);
                 hdr.append.status = 2;
+		hdr.append.cntrl_pkt_it = (int<32>)cntrl_pkt_it_reg;
             } else if (hdr.append.status == 2) {
-                bit<32> cntrl_pkt_it_reg;
-                cntrl_pkt_it.read(cntrl_pkt_it_reg, 0);
-                if (hdr.append.cntrl_pkt_it == (int<32>)cntrl_pkt_it_reg) {
-                } else {
-                    // Status 2: Packet is waiting for a global seq no assignment
-                    
-                    // Assign global seq no
-                    bit<32> h_seen_seq_no_reg;
-                    highest_seen_seq_no.read(h_seen_seq_no_reg, 0);
-                    hdr.append.g_idx = hdr.append.g_idx + (int<32>)h_seen_seq_no_reg;
+                if (hdr.append.cntrl_pkt_it != (int<32>)cntrl_pkt_it_reg) {
+                    int<32> h_seen_seq_no_reg = (int<32>)read_seen_seq_no.execute(0);
+                    hdr.append.g_idx = hdr.append.g_idx + h_seen_seq_no_reg;
                     hdr.append.status = 3;
                 }
+		meta.circulate = 0;
             }
-            bit<32> h_seen_seq_no_reg;
-            highest_seen_seq_no.read(h_seen_seq_no_reg, 0);
-            if (hdr.append.status == 3 && hdr.append.g_idx > (int<32>)h_seen_seq_no_reg) {
-		        hdr.append.status = 4;
+	    /*
+            else if (hdr.append.status == 3) {
                 hash(hdr.append.shard_id, HashAlgorithm.identity, base, {hdr.append.g_idx}, (bit<32>)NUM_SHARDS);
-                get_append_shard_id.apply();
-            } else {
-                meta.circulate = 1;
-		    }
-        } else if (hdr.tail.isValid()) {
-            process_tail.apply();
+                get_append_shard_id.apply(); // <-- meta.circulate = 0
+	    }*/
         }
 
-        if (meta.circulate == 1) {
-            circulate_table.apply();
-        }*/
-
-        /* Process IP hdr */
-        if (hdr.ipv4.isValid()) {
+	if (meta.circulate == 1) {
+           circulate_table.apply();
+	} else if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
         }
     }
