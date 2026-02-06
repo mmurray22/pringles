@@ -112,7 +112,7 @@ Thumbs.db
 *.wmv
 
 # Vim files
-*.swp
+*/*.swp
 
 # Packet captures
 *.pcap

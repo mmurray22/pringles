@@ -25,16 +25,18 @@ import time
 import sys
 import copy
 import random
-import os
-from multiprocessing import Process
-#from headers import *
+from headers import *
+
 import ptf
 import ptf.dataplane as dataplane
 from ptf import config
 import ptf.testutils as testutils
 from bfruntime_client_base_tests import BfRuntimeTest
-import pltfm_pm_rpc as pltfm_pm
+import pltfm_pm_rpc
 import bfrt_grpc.client as gc
+import grpc
+import bfrt_grpc.bfruntime_pb2 as bfruntime_pb2
+import bfrt_grpc.bfruntime_pb2_grpc as bfruntime_pb2_grpc
 from ptf.thriftutils import *
 
 
@@ -48,7 +50,7 @@ RCV_TIMEOUT = 10000
 END_EXPERIMENT = False
 
 # Some useful defines
-TYPE_IP= 0x800
+TYPE_IPV4 = 0x800
 TCP_PROTOCOL = 0x6
 UDP_PROTOCOL = 0x11
 TYPE_APPEND = 0x0860
@@ -89,70 +91,27 @@ bind_layers(IP, Append)
 bind_layers(Ether, Cntrl)
 #bind_layers(IP, Cntrl_Check)
 
-swports = []
-for device, port, ifname in config["interfaces"]:
-    #print("Port: ", port)
-    #print("Interface: ", ifname)
-    swports.append(port)
-    swports.sort()
-
 logger = logging.getLogger('Test')
 if not len(logger.handlers):
     logger.addHandler(logging.StreamHandler())
 
 class SequencingTest(BfRuntimeTest):
     def setUp(self):
-        client_id = 0
+        client_id = 1
+        #interface = gc.ClientInterface('127.0.0.1:50052', client_id=0, device_id=0);
+        #print('Success!')
         BfRuntimeTest.setUp(self, client_id, p4_program_name)
-
-
-    def load_config(file_path):
-        with open(file_path, 'r') as file:
-            try:
-                # safe_load prevents execution of arbitrary code in YAML files
-                config = yaml.safe_load(file)
-                return config
-            except yaml.YAMLError as exc:
-                print("Error parsing YAML: ", exc)
-
-    def initialize_all_ports(self, device): #, ps, fec):
-        for i in range(0, 130):
-            pltfm_pm.pltfm_port_pm_enable(self, device, i)
-            pltfm_pm.pltfm_port_pm_add(self, device, i, '10G', 'NONE') # ps, fec)
     
-    def port_setup(self, target, port, use_loopback, port_speed, port_fec):
+    def PortCfgTest(self, target, port1): # port2):
         logger.info("Test Port cfg table add and read operations")
 
-        logger.info("PortCfgTest: Adding entry for port %d", port)
-        if use_loopback:
-            self.port_table.entry_add(
-                target,
-                [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port)])],
-                [self.port_table.make_data([gc.DataTuple('$SPEED', str_val=port_speed), # TODO parameterize!
-                                            gc.DataTuple('$FEC', str_val=port_fec),
-                                            gc.DataTuple('$PORT_ENABLE', bool_val=True),
-                                            gc.DataTuple('$LOOPBACK_MODE', str_val="BF_LPBK_MAC_NEAR")])])
-        else:
-            self.port_table.entry_add(
-                target,
-                [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port)])],
-                [self.port_table.make_data([gc.DataTuple('$SPEED', str_val=port_speed), # TODO parameterize!
-                                            gc.DataTuple('$FEC', str_val=port_fec),
-                                            gc.DataTuple('$PORT_ENABLE', bool_val=True),])])
-					    #gc.DataTuple('$N_LANES', 4)])])
-        #self.port_table.entry_mod(
-        #    target,
-        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])],
-        #    [self.port_table.make_data([gc.DataTuple('$PORT_ENABLE', bool_val=True),
-        #     gc.DataTuple('$AUTO_NEGOTIATION', str_val="PM_AN_FORCE_ENABLE"),
-        #     gc.DataTuple('$TX_MTU', 1500),
-        #     gc.DataTuple('$RX_MTU', 1500),
-        #     gc.DataTuple('$TX_PFC_EN_MAP', 1),
-        #     gc.DataTuple('$RX_PFC_EN_MAP', 1),
-        #     gc.DataTuple('$TX_PAUSE_FRAME_EN', bool_val=False),
-        #     gc.DataTuple('$RX_PAUSE_FRAME_EN', bool_val=False),
-        #     gc.DataTuple('$CUT_THROUGH_EN', bool_val=False),
-        #     gc.DataTuple('$PORT_DIR', str_val="PM_PORT_DIR_DEFAULT")])])
+        logger.info("PortCfgTest: Adding entry for port %d", port1)
+        self.port_table.entry_add(
+            target,
+            [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])],
+            [self.port_table.make_data([gc.DataTuple('$SPEED', str_val="BF_SPEED_10G"), # TODO parameterize!
+                                        gc.DataTuple('$FEC', str_val="BF_FEC_TYP_NONE"),
+                                        gc.DataTuple('$PORT_ENABLE', bool_val=True),])])
 
         logger.info("PortCfgTest: Reading entry for port %d", port1)
         resp = self.port_table.entry_get(
@@ -167,21 +126,9 @@ class SequencingTest(BfRuntimeTest):
             assert(data['$SPEED'] == 'BF_SPEED_10G')
             assert(data['$FEC'] == 'BF_FEC_TYP_NONE')
             assert(data['$PORT_ENABLE'] == True)
-            #assert(data['$AUTO_NEGOTIATION'] == 'PM_AN_FORCE_ENABLE')
-            #assert(data['$TX_MTU'] == 1500)
-            #assert(data['$RX_MTU'] == 1500)
-            #assert(data['$TX_PFC_EN_MAP'] == 1)
-            #assert(data['$RX_PFC_EN_MAP'] == 1)
-            #assert(data['$TX_PAUSE_FRAME_EN'] == False)
-            #assert(data['$RX_PAUSE_FRAME_EN'] == False)
-            #assert(data['$CUT_THROUGH_EN'] == False)
-            assert(data['$PORT_DIR'] == 'PM_PORT_DIR_DEFAULT')
-            if port1 == 36:
-                assert(data['$LOOPBACK_MODE'] == 'BF_LPBK_MAC_NEAR')
 
     # Need to add more tables
-    def initialize_tables(self, target, bfrt_info, ip_addr, dstAddr, recv_port, cntrl_port, in_cntrl, out_cntrl, circulate_port, meta_circulate):
-        print("CONTROL PORT IS: ",  cntrl_port)
+    def initialize_tables(self, target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate):
         # Set default output port
         table_ipv4 = bfrt_info.table_get("MyIngress.ipv4_lpm")
         table_ipv4.info.key_field_annotation_add("hdr.ipv4.dstAddr", "ipv4")
@@ -197,7 +144,7 @@ class SequencingTest(BfRuntimeTest):
         table_cntrl.entry_add(
                 target, 
                 [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.pkt_id', in_cntrl)])],
-                [table_cntrl.make_data(action_name="MyIngress.cntrl_forward", data_field_list_in=[gc.DataTuple(name="port", val=cntrl_port), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
+                [table_cntrl.make_data(action_name="MyIngress.cntrl_forward", data_field_list_in=[gc.DataTuple(name="port", val=loopback_port), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
 
         # Set circulate table
         table_circulate = bfrt_info.table_get("MyIngress.circulate_table")
@@ -205,7 +152,7 @@ class SequencingTest(BfRuntimeTest):
         table_circulate.entry_add(
                 target, 
                 [table_circulate.make_key([gc.KeyTuple('meta.circulate', meta_circulate)])],
-                [table_circulate.make_data(action_name="MyIngress.circulate_port", data_field_list_in=[gc.DataTuple(name="port", val=circulate_port)])])
+                [table_circulate.make_data(action_name="MyIngress.circulate_port", data_field_list_in=[gc.DataTuple(name="port", val=recv_port)])]) # SHOULD BE LOOPBACK PORT
 
     def delete_tables(self, target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate):
         # Reset the tables to make multiple runs possible
@@ -230,9 +177,10 @@ class SequencingTest(BfRuntimeTest):
                 target) #, 
                 #[table_circulate.make_key([gc.KeyTuple('meta.circulate', meta_circulate)])])
     
+    
     def run_tofino_sniff(self, interface, tofinoSrcAddr):
-        os.system("taskset -p -c 0 {}".format(os.getpid()))
-        idle_timeout=2
+        idle_timeout=10
+        #sniff(iface=interface, prn=self.handle_packet, count=10, timeout=10)
         # This creates a raw socket exactly like tcpdump
         L2sock = L2ListenSocket(iface=interface)
         print("[*] L2 Socket Open and Listening...")
@@ -245,7 +193,11 @@ class SequencingTest(BfRuntimeTest):
             if ready[0]:
                 pkt = L2sock.recv(1024) 
                 if pkt and pkt[Ether].src == tofinoSrcAddr:
-                    if pkt.haslayer(Append):
+
+                    print("[*] Captured via L2Socket!")
+                    #print(testutils.format_packet(pkt))
+                    pkt.show()
+                    if pkt[Append]:
                         num_packets += 1
                         #print("The packet ", pkt[Append].nonce, " has index ", pkt[Append].g_idx, " with status ", pkt[Append].status)
                         g_idx = pkt[Append].g_idx
@@ -270,6 +222,29 @@ class SequencingTest(BfRuntimeTest):
                 #run_client_no_sniff()
         client_soc.close()
         listener.close()
+        #idle_timeout=5
+        #traffic_type='UDP'
+        ##sniff(iface=interface, prn=self.handle_packet, count=10, timeout=10)
+        ## This creates a raw socket exactly like tcpdump
+        #L2sock = L2ListenSocket(iface=interface)
+        #print("[*] L2 Socket for the client is Open and Listening...")
+        #
+        ## Block until 1 packet is received
+        #while True:
+        #    ready = select.select([L2sock], [], [], idle_timeout)
+        #    if ready[0]:
+        #        pkt = L2sock.recv(1024) 
+        #        if pkt and pkt.getlayer(TCP) and pkt[TCP].dport == 1234:
+        #                    print("[*] Captured incoming UDP packets via L2Socket!")
+        #                    print("Ready to forward append packet to the ASIC!")
+        #                    # TODO - actually extract append packet from the python script
+        #                    #sendp(pkt, iface=interface, verbose=True) 
+        #                    print(testutils.format_packet(pkt))
+        #    else:
+        #        print("Progam timeout out!")
+        #        break
+        #L2sock.close()
+
 
     def run_client_no_sniff(self, interface, dstAddr, srcAddr, ip_addr, send_timeout):
         nonce = 1
@@ -288,91 +263,80 @@ class SequencingTest(BfRuntimeTest):
         while time.time() < tend:
             pkt[Append].nonce = nonce    
             sock.send(pkt_buffer)
+            #sendp(pkt, iface=interface, verbose=True)
             nonce += 1
         print("Sent this many packets: ", nonce)
-
+    
     def test_connection(self, dstAddr, srcAddr, ip_addr, interface):
-        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IPV4)/ \
               IP(dst=ip_addr)
-        sendp(pkt, iface=interface, verbose=True)
-        print("Sent packet!")
-
-    def setup_switch_ports(target, switch_ports, loopback_port, port_speed, port_fec):
-	for i in switch_ports:
-		self.port_setup(target, i, False, port_speed, port_fec)
-	self.port_setup(target, loopback_port, True, port_speed, port_fec)
-	
+	print("Sending local packet!")
+        sendp(pkt, iface=interface, verbose=True) 
 
     def runTest(self):
-	filepath = "~/switch_config.yaml"
-	data = self.load_config(filepath)
-	os.system("taskset -p -c 1 {}".format(os.getpid()))
-	dev_number = data['device_number']
-       
-	# Device startup 
-	target = gc.Target(device_id=0, pipe_id=0xffff)
-	bfrt_info = self.interface.bfrt_info_get(p4_program_name)
-        self.port_table = bfrt_info.table_get("$PORT")
+        target = gc.Target(device_id=0, pipe_id=0xffff)
+        
+        # Get bfrt_info and set it as part of the test
+        bfrt_info = self.interface.bfrt_info_get(p4_program_name)
+	self.port_table = bfrt_info.table_get("$PORT")
         self.port_hdl_info_table = bfrt_info.table_get("$PORT_HDL_INFO")
         self.port_fp_idx_info_table = bfrt_info.table_get("$PORT_FP_IDX_INFO")
         self.port_str_info_table = bfrt_info.table_get("$PORT_STR_INFO")
-	self.dataplane = ptf.dataplane_instance
+
+        # Setting up PTF dataplane
+        self.dataplane = ptf.dataplane_instance
         self.dataplane.flush()
 
-
-	# Parameters
-	dstAddr = data['mac_dst_addr']
-	srcAddr = data['mac_src_addr']
-	ipAddr = data['dummy_ip_addr']
-	port_speed = data['port_speed']
-	port_fec = data['port_fec']
-	loopback_port = data['loopback_port']
-	cpu_interface = data['cpu_interface']
-	external_interface = data['external_interface']
-	list_of_switch_ports = data['switch_ports']
-	cntrl_port = data['cntrl_port']
-	cpu_port = data['cpu_port']
-	in_cntrl = data['in_cntrl']
-	out_cntrl = data['out_cntrl']
-	meta_circulate = data['meta_circulate']
-
-	setup_switch_ports(target, list_of_switch_ports, loopback_port, port_speed, port_fec)
-        self.initialize_tables(target, bfrt_info, ipAddr, dstAddr, recv_port, cpu_port, in_cntrl, out_cntrl, loopback_port, meta_circulate)
-
         # Set defaults [TODO: Should be in script]
+        ip_addr='100.99.98.97'
+        interface = "enp5s0"
+        cpuTofinoInterface = "enp5s0"
+        clientInterface = "ma1"
+        dev_number = 0
+        port_number = 192
+        front_port_number = 3
+        addr = socket.gethostbyname('100.99.98.97')
+        dstAddr='11:11:11:11:11:11'
+        srcAddr='22:22:22:22:22:22'
         udp_src_port = 1234
-        send_timeout = 5
+        send_port = cpu_pcie_port
+        # recv_port = front_port_number
+        recv_port= cpu_pcie_port
+        in_cntrl=1
+        out_cntrl=1
+        meta_circulate = 1
+        send_timeout = 10
 
         try:
-            # 
-            # Initialize all 5/* ports - for Switch 3
-            ## Initialize all 21/* ports - for Switch 3
+            # Starting sniffing thread
+	    #self.PortCfgTest(target, 5)
+	    #self.PortCfgTest(target, 6)
+	    #self.PortCfgTest(target, 21)
+	    #self.PortCfgTest(target, 22)
+	    
 
-            ## Initialize all 3/* ports - for Switch 2
-            ## Initialize all 19/* ports - for Switch 2
-            ## Initialize all 23/* ports - for Switch 4
-            ## Initialize all 7/* ports - for Switch 4
-
-            #self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
-            #self.initialize_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, cntrl_port, in_cntrl, out_cntrl, circulate_port, meta_circulate)
-            
-            ## Create listener socket for control plane
-            tofino_sniffer_thread = threading.Thread(target=self.run_tofino_sniff, args=(cpu_interface,dstAddr,))
+            self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
+            self.initialize_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
+            #self.test_connection(dstAddr, srcAddr, ip_addr, interface)
+            # Create listener socket for control plane
+            tofino_sniffer_thread = threading.Thread(target=self.run_tofino_sniff, args=(cpuTofinoInterface,dstAddr,))
             tofino_sniffer_thread.start()
             time.sleep(2)
-            
+
+	    print("Gonna test the self connection!")
+	    self.test_connection(dstAddr, srcAddr, ip_addr, interface)
+
+            # Inject control packet into the dataplane
             #ipkt = testutils.simple_control_packet(eth_dst=dstAddr, eth_src=srcAddr, pkt_id=in_cntrl)
             #sendp(ipkt, iface=interface, verbose=True) 
             #print("Sent control packet!")
             #time.sleep(2)
-
-            #self.test_connection(dstAddr, srcAddr, ip_addr, interface)
-            ## Inject control packet into the dataplane
-            ## Start client thread 
-            self.run_client_no_sniff(interface, dstAddr, srcAddr, ip_addr, send_timeout)
+            
+            # Start client thread 
+            #self.run_client_no_sniff(interface, dstAddr, srcAddr, ip_addr, send_timeout)
             #client_sniffer_thread = threading.Thread(target=self.run_client_sniff, args=(clientInterface,udp_src_port,))
             #client_sniffer_thread.start()
         except KeyboardInterrupt:
             print("\nStopped by user.")
         #finally:
-            #self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
+        #    self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
