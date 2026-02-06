@@ -285,6 +285,20 @@ control MyIngress(inout headers hdr,
 	    cur_local_seq_no = 0;
         }
     };
+    
+    // Largest global sequence number that is known to be a replicated sequence number
+    DirectRegister<bit<32>>() highest_replicated_seq_no;
+    /*DirectRegisterAction<bit<32>, bit<32>, bit<32>>(highest_replicated.seq_no) write_replicated_seq_no = {
+        void apply(inout bit<32> cur_replicated_seq_no) {
+            cur_replicated_seq_no = (bit<32>)hdr.cntrl.global_seq_no;
+        }
+    };*/
+    DirectRegisterAction<bit<32>, bit<32>>(highest_replicated_seq_no) read_replicated_seq_no = {
+        void apply(inout bit<32> new_replicated_seq_no, out bit<32> old_replicated_seq_no) { // inout = register, out = output 
+            old_replicated_seq_no = new_replicated_seq_no;
+        }
+    };
+
 
     // Number of total times the switch has seen the control packet TODO potential to overflow?
     DirectRegister<bit<32>>() cntrl_pkt_it; 
@@ -374,9 +388,39 @@ control MyIngress(inout headers hdr,
         default_action = NoAction();
     }
 
+    /* Get tail logic*/
+    /*action forward_tail(egressSpec_t port) {
+        ig_tm_md.ucast_egress_port = port;
+        hdr.tail.hops = hdr.tail.hops + 1;
+	bit<32> rep_seq = highest_replicated_seq_no.apply();
+	if (hdr.tail.tail_seq_no < rep_seq) {
+	    hdr.tail.tail_seq_no = req_seq;
+	}
+    }*/
+
+    action finish_circ() {
+	meta.circulate = 0;
+    }
+
+    /*table process_tail {
+        key = {
+            hdr.tail.hops: exact;
+        }
+        actions = {
+            process_tail;
+            forward_tail;
+            drop;
+            NoAction;
+        }
+        size = 1024;
+        default_action = drop();
+    }*/
+
     apply {
-        meta.circulate = 1; // TODO - change to 1
+
+	meta.circulate = 0;
         bit<32> cntrl_pkt_it_reg = update_cntrl_pkt_it.execute();
+	// check_view.apply(); <-- what do views look like?
 
 	if (hdr.cntrl.isValid()) {
             // Step 0: Check if the control packet's view is outdated TODO
@@ -389,6 +433,7 @@ control MyIngress(inout headers hdr,
                 hdr.append.g_idx = (int<32>)write_local_seq_no.execute(0);
                 hdr.append.status = 2;
 		hdr.append.cntrl_pkt_it = (int<32>)cntrl_pkt_it_reg;
+            	meta.circulate = 1;
             } else if (hdr.append.status == 2) {
                 if (hdr.append.cntrl_pkt_it != (int<32>)cntrl_pkt_it_reg) {
                     int<32> h_seen_seq_no_reg = (int<32>)read_seen_seq_no.execute(0);
@@ -402,11 +447,13 @@ control MyIngress(inout headers hdr,
                 hash(hdr.append.shard_id, HashAlgorithm.identity, base, {hdr.append.g_idx}, (bit<32>)NUM_SHARDS);
                 get_append_shard_id.apply(); // <-- meta.circulate = 0
 	    }*/
-        }
+        } /*else if (hdr.tail.isValid()) {
+	    process_tail.apply();
+	}*/
 
 	if (meta.circulate == 1) {
            circulate_table.apply();
-	} else if (hdr.ipv4.isValid()) {
+	} else if (!hdr.cntrl.isValid() && hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
         }
     }

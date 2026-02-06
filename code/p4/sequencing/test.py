@@ -25,13 +25,17 @@ import time
 import sys
 import copy
 import random
-from headers import *
-
+#from headers import *
+import ptf
 import ptf.dataplane as dataplane
 from ptf import config
 import ptf.testutils as testutils
 from bfruntime_client_base_tests import BfRuntimeTest
+<<<<<<< HEAD
+import pltfm_pm_rpc as pltfm_pm
+=======
 import pltfm_pm_rpc
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
 import bfrt_grpc.client as gc
 from ptf.thriftutils import *
 
@@ -46,7 +50,11 @@ RCV_TIMEOUT = 10000
 END_EXPERIMENT = False
 
 # Some useful defines
+<<<<<<< HEAD
+TYPE_IP= 0x800
+=======
 IP_ETHERTYPE = 0x800
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
 TCP_PROTOCOL = 0x6
 UDP_PROTOCOL = 0x11
 TYPE_APPEND = 0x0860
@@ -76,11 +84,19 @@ class Append(Packet):
                     BitField("status", 0, 32),
                     IntField("cntrl_pkt_it", 0)]
  
+<<<<<<< HEAD
+#class Tail(Packet):
+#    fields_desc = [ BitField("cid", 0, 32),
+#                    BitField("nonce", "", 32),
+#                    IntField("hops", 0),
+#                    IntField("tail_seq_no", 0)]
+=======
 class Tail(Packet):
     fields_desc = [ BitField("cid", 0, 32),
                     BitField("nonce", "", 32),
                     IntField("hops", 0),
                     IntField("tail_seq_no", 0)]
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
 
 bind_layers(Ether, IP)
 bind_layers(IP, Append)
@@ -103,10 +119,164 @@ class SequencingTest(BfRuntimeTest):
         client_id = 0
         BfRuntimeTest.setUp(self, client_id, p4_program_name)
 
+<<<<<<< HEAD
+    def initialize_all_ports(self, device): #, ps, fec):
+        for i in range(0, 130):
+            pltfm_pm.pltfm_port_pm_enable(self, device, i)
+            pltfm_pm.pltfm_port_pm_add(self, device, i, '10G', 'NONE') # ps, fec)
+    
+    def PortCfgTest(self, target, port1): # port2):
+        logger.info("Test Port cfg table add and read operations")
+
+        logger.info("PortCfgTest: Adding entry for port %d", port1)
+        self.port_table.entry_add(
+            target,
+            [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])],
+            [self.port_table.make_data([gc.DataTuple('$SPEED', str_val="BF_SPEED_10G"), # TODO parameterize!
+                                        gc.DataTuple('$FEC', str_val="BF_FEC_TYP_NONE"),
+                                        gc.DataTuple('$PORT_ENABLE', bool_val=True),])])
+
+        #logger.info("PortCfgTest: Adding entry for port %d", port2)
+        #self.port_table.entry_add(
+        #    target,
+        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port2)])],
+        #    [self.port_table.make_data([gc.DataTuple('$SPEED', str_val="BF_SPEED_100G"),
+        #                                gc.DataTuple('$FEC', str_val="BF_FEC_TYP_NONE"),
+        #                                gc.DataTuple('$N_LANES', 4)])])
+
+        #logger.info("PortCfgTest: Modifying entry for port %d", port1)
+        #self.port_table.entry_mod(
+        #    target,
+        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])],
+        #    [self.port_table.make_data([gc.DataTuple('$PORT_ENABLE', bool_val=True),
+        #     gc.DataTuple('$AUTO_NEGOTIATION', str_val="PM_AN_FORCE_ENABLE"),
+        #     gc.DataTuple('$TX_MTU', 1500),
+        #     gc.DataTuple('$RX_MTU', 1500),
+        #     gc.DataTuple('$TX_PFC_EN_MAP', 1),
+        #     gc.DataTuple('$RX_PFC_EN_MAP', 1),
+        #     gc.DataTuple('$TX_PAUSE_FRAME_EN', bool_val=False),
+        #     gc.DataTuple('$RX_PAUSE_FRAME_EN', bool_val=False),
+        #     gc.DataTuple('$CUT_THROUGH_EN', bool_val=False),
+        #     gc.DataTuple('$PORT_DIR', str_val="PM_PORT_DIR_DEFAULT")])])
+
+        #logger.info("PortCfgTest: Modifying entry for port %d", port2)
+        #self.port_table.entry_mod(
+        #    target,
+        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port2)])],
+        #    [self.port_table.make_data([gc.DataTuple('$PORT_ENABLE', bool_val=True),
+        #                                gc.DataTuple('$LOOPBACK_MODE', str_val="BF_LPBK_MAC_NEAR")])])
+
+        logger.info("PortCfgTest: Reading entry for port %d", port1)
+        resp = self.port_table.entry_get(
+            target,
+            [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])])
+
+        logger.info("PortCfgTest: Validating entry read for port %d", port1)
+        for data, key in resp:
+            data = data.to_dict()
+            key = key.to_dict()
+            assert(key['$DEV_PORT']['value'] == port1)
+            assert(data['$SPEED'] == 'BF_SPEED_10G')
+            assert(data['$FEC'] == 'BF_FEC_TYP_NONE')
+            assert(data['$PORT_ENABLE'] == True)
+            #assert(data['$AUTO_NEGOTIATION'] == 'PM_AN_FORCE_ENABLE')
+            #assert(data['$TX_MTU'] == 1500)
+            #assert(data['$RX_MTU'] == 1500)
+            #assert(data['$TX_PFC_EN_MAP'] == 1)
+            #assert(data['$RX_PFC_EN_MAP'] == 1)
+            #assert(data['$TX_PAUSE_FRAME_EN'] == False)
+            #assert(data['$RX_PAUSE_FRAME_EN'] == False)
+            #assert(data['$CUT_THROUGH_EN'] == False)
+            assert(data['$PORT_DIR'] == 'PM_PORT_DIR_DEFAULT')
+
+        #logger.info("PortCfgTest: Reading entry for port %d", port2)
+        #resp = self.port_table.entry_get(
+        #    target,
+        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port2)])])
+
+        #logger.info("PortCfgTest: Validating entry read for port %d", port2)
+        #for data, key in resp:
+        #    data = data.to_dict()
+        #    key = key.to_dict()
+        #    assert(key['$DEV_PORT']['value'] == port2)
+        #    assert(data['$SPEED'] == 'BF_SPEED_100G')
+        #    assert(data['$FEC'] == 'BF_FEC_TYP_NONE')
+        #    assert(data['$N_LANES'] == 4)
+        #    assert(data['$PORT_ENABLE'] == True)
+        #    assert(data['$LOOPBACK_MODE'] == 'BF_LPBK_MAC_NEAR')
+
+        #logger.info("PortCfgTest: Wild card read")
+        #resp = self.port_table.entry_get(target, None)
+
+        #logger.info("PortCfgTest: Validating wild card read")
+        #for data, key in resp:
+        #    data = data.to_dict()
+        #    key = key.to_dict()
+        #    port = key['$DEV_PORT']['value']
+        #    if port == port1:
+        #        assert(key['$DEV_PORT']['value'] == port1)
+        #        assert(data['$SPEED'] == 'BF_SPEED_100G')
+        #        assert(data['$FEC'] == 'BF_FEC_TYP_NONE')
+        #        assert(data['$PORT_ENABLE'] == True)
+        #        assert(data['$AUTO_NEGOTIATION'] == 'PM_AN_FORCE_ENABLE')
+        #        assert(data['$TX_MTU'] == 1500)
+        #        assert(data['$RX_MTU'] == 1500)
+        #        assert(data['$TX_PFC_EN_MAP'] == 1)
+        #        assert(data['$RX_PFC_EN_MAP'] == 1)
+        #        assert(data['$TX_PAUSE_FRAME_EN'] == False)
+        #        assert(data['$RX_PAUSE_FRAME_EN'] == False)
+        #        assert(data['$CUT_THROUGH_EN'] == False)
+        #        assert(data['$PORT_DIR'] == 'PM_PORT_DIR_DEFAULT')
+        #    elif port == port2:
+        #        assert(key['$DEV_PORT']['value'] == port2)
+        #        assert(data['$SPEED'] == 'BF_SPEED_100G')
+        #        assert(data['$FEC'] == 'BF_FEC_TYP_NONE')
+        #        assert(data['$N_LANES'] == 4)
+        #        assert(data['$PORT_ENABLE'] == True)
+        #        assert(data['$LOOPBACK_MODE'] == 'BF_LPBK_MAC_NEAR')
+
+        #logger.info("PortCfgTest: Delete entries for ports %d and %d", port1, port2)
+        #self.port_table.entry_del(
+        #    target,
+        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])])
+        #self.port_table.entry_del(
+        #    target,
+        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port2)])])
+
+
+    #def CfgPortTableClearTest(self, port1):
+    #    self.port_table.entry_del(
+    #        target,
+    #        key_list=None)
+    #    self.port_table.entry_add(
+    #        target,
+    #        [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])],
+    #        [self.port_table.make_data([gc.DataTuple('$SPEED', str_val="BF_SPEED_100G"),
+    #                                    client.DataTuple('$FEC', str_val="BF_FEC_TYP_NONE")])])
+    #    self.port_table.entry_del(
+    #        target,
+    #        key_list=None)
+    #    try:
+    #        get_data_list = self.port_table.make_data([client.DataTuple("$SPEED")])
+    #        resp = self.port_table.entry_get(
+    #            target,
+    #            [self.port_table.make_key([client.KeyTuple('$DEV_PORT', port1)])],
+    #            {"from_hw": False},
+    #            get_data_list)
+    #        data_dict = next(resp)[0].to_dict()
+    #        # since we have deleted all the ports, the above API call should have
+    #        # failed. Assert if not
+    #        logger.error("Unable to clear port cfg table")
+    #        assert(0)
+    #    except:
+    #        logger.info("Cleared port cfg table successfully")
+
+=======
     def initialize_all_ports(self, device, ps, fec):
         for i in range(0, 130):
             pltfm_port_pm_enable(self, device, dev_port)
             pltfm_port_pm_add(self, device, dev_port, ps, fec)
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
 
     # Need to add more tables
     def initialize_tables(self, target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate):
@@ -125,7 +295,7 @@ class SequencingTest(BfRuntimeTest):
         table_cntrl.entry_add(
                 target, 
                 [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.pkt_id', in_cntrl)])],
-                [table_cntrl.make_data(action_name="MyIngress.cntrl_forward", data_field_list_in=[gc.DataTuple(name="port", val=loopback_port), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
+                [table_cntrl.make_data(action_name="MyIngress.cntrl_forward", data_field_list_in=[gc.DataTuple(name="port", val=164), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
 
         # Set circulate table
         table_circulate = bfrt_info.table_get("MyIngress.circulate_table")
@@ -143,40 +313,91 @@ class SequencingTest(BfRuntimeTest):
         table_ipv4.entry_del(
                 target, 
                 [table_ipv4.make_key([gc.KeyTuple('hdr.ipv4.dstAddr', ip_addr, prefix_len=32)])])
+
         # Reset control table
         table_cntrl = bfrt_info.table_get("MyIngress.cntrl_id_to_ip")
         table_cntrl.info.key_field_annotation_add("hdr.cntrl.pkt_id", "int<32>")
         table_cntrl.entry_del(
                 target, 
                 [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.pkt_id', in_cntrl)])])
+
+        # Reset circulate table
+        table_circulate = bfrt_info.table_get("MyIngress.circulate_table")
+        table_circulate.info.key_field_annotation_add("meta.circulate", "bit<32>")
+        table_circulate.entry_del(
+                target) #, 
+                #[table_circulate.make_key([gc.KeyTuple('meta.circulate', meta_circulate)])])
     
-    def run_sniff(self, interface, tofinoSrcAddr):
-        idle_timeout=5
+    def run_tofino_sniff(self, interface, tofinoSrcAddr):
+        idle_timeout=100
         #sniff(iface=interface, prn=self.handle_packet, count=10, timeout=10)
         # This creates a raw socket exactly like tcpdump
         L2sock = L2ListenSocket(iface=interface)
         print("[*] L2 Socket Open and Listening...")
-            
+        num_packets = 0
+
         # Block until 1 packet is received
+        g_idx = 0
         while True:
             ready = select.select([L2sock], [], [], idle_timeout)
             if ready[0]:
                 pkt = L2sock.recv(1024) 
-                if pkt and pkt[Ether].src == tofinoSrcAddr:
-                    print("[*] Captured via L2Socket!")
+                if pkt: # and pkt[Ether].src == tofinoSrcAddr:
+                    #print("[*] Captured via L2Socket!")
                     print(testutils.format_packet(pkt))
+                    pkt.show()
+                    if pkt.haslayer(Append):
+                        num_packets += 1
+                        #print("The packet ", pkt[Append].nonce, " has index ", pkt[Append].g_idx, " with status ", pkt[Append].status)
+                        g_idx = pkt[Append].g_idx
+
             else:
-                print("Progam timeout out!")
+                print("Progam timeout out! Total number of packets: ", num_packets, " and highest g idx: ", g_idx)
                 break
         L2sock.close()
+     
+    def run_client_sniff(self, interface, udp_sport):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        listener.bind(('', 1234))
+        listener.listen(5)
+        client_soc, address = listener.accept()
+        #print(f"Connection established from: {address[0]} on port {address[1]}")
+        while True:
+            data = client_soc.recv(1024).decode()
+            if len(data) > 0:
+                print(data)
+                #run_client_no_sniff()
+        client_soc.close()
+        listener.close()
+
+    def run_client_no_sniff(self, interface, dstAddr, srcAddr, ip_addr, send_timeout):
+        nonce = 1
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_APPEND)/ \
+              IP(dst=ip_addr)/ \
+              Append(cid=0, nonce=nonce, g_idx=0, batch_size=0, shard_id=0, ring_view=0, status=1, cntrl_pkt_it=0)
+        payload= Raw(load=b"Hello world!")
+        pkt = pkt/payload
+        pkt_buffer = bytes(pkt)
         
-    def handle_packet(self, recv_pkt):
-        print("!!!!!!!!!!!!!!!!!!!!!!Received from Tofino!")
-        if recv_pkt[Ether].src == "11:11:11:11:11:11":
-            print(testutils.format_packet(recv_pkt))
-        #print("!!!!!!!!!!!! SHOW PACKET")
-        #recv_pkt.show()
-        logger.info("Test finished!")
+        # Send socket
+        sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+        sock.bind((interface, 0))
+
+        tend = time.time() + send_timeout
+        while time.time() < tend:
+            pkt[Append].nonce = nonce    
+            sock.send(pkt_buffer)
+            #sendp(pkt, iface=interface, verbose=True)
+            nonce += 1
+        print("Sent this many packets: ", nonce)
+
+    def test_connection(self, dstAddr, srcAddr, ip_addr, interface):
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
+              IP(dst=ip_addr)
+        sendp(pkt, iface=interface, verbose=True)
+        print("Sent packet!")
 
         # Reset circulate table
         table_circulate = bfrt_info.table_get("MyIngress.circulate_table")
@@ -280,7 +501,18 @@ class SequencingTest(BfRuntimeTest):
         
         # Get bfrt_info and set it as part of the test
         bfrt_info = self.interface.bfrt_info_get(p4_program_name)
+        self.port_table = bfrt_info.table_get("$PORT")
+        self.port_hdl_info_table = bfrt_info.table_get("$PORT_HDL_INFO")
+        self.port_fp_idx_info_table = bfrt_info.table_get("$PORT_FP_IDX_INFO")
+        self.port_str_info_table = bfrt_info.table_get("$PORT_STR_INFO")
 
+<<<<<<< HEAD
+        # Setting up PTF dataplane
+        self.dataplane = ptf.dataplane_instance
+        self.dataplane.flush()
+        
+=======
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
         # Set defaults [TODO: Should be in script]
         ip_addr='100.99.98.97'
         interface = "enp5s0"
@@ -297,6 +529,43 @@ class SequencingTest(BfRuntimeTest):
         in_cntrl=1
         out_cntrl=1
         meta_circulate = 1
+<<<<<<< HEAD
+        send_timeout = 5
+
+        try:
+            # Starting sniffing thread
+            # Initialize all 5/* ports
+            self.PortCfgTest(target, 164)
+            self.PortCfgTest(target, 165)
+            self.PortCfgTest(target, 166)
+            self.PortCfgTest(target, 167)
+            # Initialize all 21/* ports
+            self.PortCfgTest(target, 36)
+            self.PortCfgTest(target, 37)
+            self.PortCfgTest(target, 38)
+            self.PortCfgTest(target, 39)
+            # Initialize all 3/* ports
+            self.PortCfgTest(target, 148)
+            self.PortCfgTest(target, 149)
+            self.PortCfgTest(target, 150)
+            self.PortCfgTest(target, 151)
+            # Initialize all 19/* ports
+            self.PortCfgTest(target, 20)
+            self.PortCfgTest(target, 21)
+            self.PortCfgTest(target, 22)
+            self.PortCfgTest(target, 23)
+
+            #self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
+            self.initialize_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
+            
+            #ipkt = testutils.simple_control_packet(eth_dst=dstAddr, eth_src=srcAddr, pkt_id=in_cntrl)
+            #sendp(ipkt, iface=interface, verbose=True) 
+            #print("Sent control packet!")
+            #time.sleep(2)
+
+        
+            ## Create listener socket for control plane
+=======
         send_timeout = 10
 
         try:
@@ -304,10 +573,19 @@ class SequencingTest(BfRuntimeTest):
             #self.initialize_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
         
             # Create listener socket for control plane
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
             #tofino_sniffer_thread = threading.Thread(target=self.run_tofino_sniff, args=(cpuTofinoInterface,dstAddr,))
             #tofino_sniffer_thread.start()
             #time.sleep(2)
 
+<<<<<<< HEAD
+            #self.test_connection(dstAddr, srcAddr, ip_addr, interface)
+            ## Inject control packet into the dataplane
+            ## Start client thread 
+            #self.run_client_no_sniff(interface, dstAddr, srcAddr, ip_addr, send_timeout)
+            #client_sniffer_thread = threading.Thread(target=self.run_client_sniff, args=(clientInterface,udp_src_port,))
+            #client_sniffer_thread.start()
+=======
             # Inject control packet into the dataplane
             #ipkt = testutils.simple_control_packet(eth_dst=dstAddr, eth_src=srcAddr, pkt_id=in_cntrl)
             #sendp(ipkt, iface=interface, verbose=True) 
@@ -318,6 +596,7 @@ class SequencingTest(BfRuntimeTest):
             #self.run_client_no_sniff(interface, dstAddr, srcAddr, ip_addr, send_timeout)
             client_sniffer_thread = threading.Thread(target=self.run_client_sniff, args=(clientInterface,udp_src_port,))
             client_sniffer_thread.start()
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
         except KeyboardInterrupt:
             print("\nStopped by user.")
         #finally:
