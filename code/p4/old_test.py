@@ -25,14 +25,18 @@ import time
 import sys
 import copy
 import random
-#from headers import *
+from headers import *
+
 import ptf
 import ptf.dataplane as dataplane
 from ptf import config
 import ptf.testutils as testutils
 from bfruntime_client_base_tests import BfRuntimeTest
-import pltfm_pm_rpc as pltfm_pm
+import pltfm_pm_rpc
 import bfrt_grpc.client as gc
+import grpc
+import bfrt_grpc.bfruntime_pb2 as bfruntime_pb2
+import bfrt_grpc.bfruntime_pb2_grpc as bfruntime_pb2_grpc
 from ptf.thriftutils import *
 
 
@@ -46,7 +50,7 @@ RCV_TIMEOUT = 10000
 END_EXPERIMENT = False
 
 # Some useful defines
-TYPE_IP= 0x800
+TYPE_IPV4 = 0x800
 TCP_PROTOCOL = 0x6
 UDP_PROTOCOL = 0x11
 TYPE_APPEND = 0x0860
@@ -87,26 +91,16 @@ bind_layers(IP, Append)
 bind_layers(Ether, Cntrl)
 #bind_layers(IP, Cntrl_Check)
 
-swports = []
-for device, port, ifname in config["interfaces"]:
-    #print("Port: ", port)
-    #print("Interface: ", ifname)
-    swports.append(port)
-    swports.sort()
-
 logger = logging.getLogger('Test')
 if not len(logger.handlers):
     logger.addHandler(logging.StreamHandler())
 
 class SequencingTest(BfRuntimeTest):
     def setUp(self):
-        client_id = 0
+        client_id = 1
+        #interface = gc.ClientInterface('127.0.0.1:50052', client_id=0, device_id=0);
+        #print('Success!')
         BfRuntimeTest.setUp(self, client_id, p4_program_name)
-
-    def initialize_all_ports(self, device): #, ps, fec):
-        for i in range(0, 130):
-            pltfm_pm.pltfm_port_pm_enable(self, device, i)
-            pltfm_pm.pltfm_port_pm_add(self, device, i, '10G', 'NONE') # ps, fec)
     
     def PortCfgTest(self, target, port1): # port2):
         logger.info("Test Port cfg table add and read operations")
@@ -118,36 +112,6 @@ class SequencingTest(BfRuntimeTest):
             [self.port_table.make_data([gc.DataTuple('$SPEED', str_val="BF_SPEED_10G"), # TODO parameterize!
                                         gc.DataTuple('$FEC', str_val="BF_FEC_TYP_NONE"),
                                         gc.DataTuple('$PORT_ENABLE', bool_val=True),])])
-
-        #logger.info("PortCfgTest: Adding entry for port %d", port2)
-        #self.port_table.entry_add(
-        #    target,
-        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port2)])],
-        #    [self.port_table.make_data([gc.DataTuple('$SPEED', str_val="BF_SPEED_100G"),
-        #                                gc.DataTuple('$FEC', str_val="BF_FEC_TYP_NONE"),
-        #                                gc.DataTuple('$N_LANES', 4)])])
-
-        #logger.info("PortCfgTest: Modifying entry for port %d", port1)
-        #self.port_table.entry_mod(
-        #    target,
-        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])],
-        #    [self.port_table.make_data([gc.DataTuple('$PORT_ENABLE', bool_val=True),
-        #     gc.DataTuple('$AUTO_NEGOTIATION', str_val="PM_AN_FORCE_ENABLE"),
-        #     gc.DataTuple('$TX_MTU', 1500),
-        #     gc.DataTuple('$RX_MTU', 1500),
-        #     gc.DataTuple('$TX_PFC_EN_MAP', 1),
-        #     gc.DataTuple('$RX_PFC_EN_MAP', 1),
-        #     gc.DataTuple('$TX_PAUSE_FRAME_EN', bool_val=False),
-        #     gc.DataTuple('$RX_PAUSE_FRAME_EN', bool_val=False),
-        #     gc.DataTuple('$CUT_THROUGH_EN', bool_val=False),
-        #     gc.DataTuple('$PORT_DIR', str_val="PM_PORT_DIR_DEFAULT")])])
-
-        #logger.info("PortCfgTest: Modifying entry for port %d", port2)
-        #self.port_table.entry_mod(
-        #    target,
-        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port2)])],
-        #    [self.port_table.make_data([gc.DataTuple('$PORT_ENABLE', bool_val=True),
-        #                                gc.DataTuple('$LOOPBACK_MODE', str_val="BF_LPBK_MAC_NEAR")])])
 
         logger.info("PortCfgTest: Reading entry for port %d", port1)
         resp = self.port_table.entry_get(
@@ -162,98 +126,6 @@ class SequencingTest(BfRuntimeTest):
             assert(data['$SPEED'] == 'BF_SPEED_10G')
             assert(data['$FEC'] == 'BF_FEC_TYP_NONE')
             assert(data['$PORT_ENABLE'] == True)
-            #assert(data['$AUTO_NEGOTIATION'] == 'PM_AN_FORCE_ENABLE')
-            #assert(data['$TX_MTU'] == 1500)
-            #assert(data['$RX_MTU'] == 1500)
-            #assert(data['$TX_PFC_EN_MAP'] == 1)
-            #assert(data['$RX_PFC_EN_MAP'] == 1)
-            #assert(data['$TX_PAUSE_FRAME_EN'] == False)
-            #assert(data['$RX_PAUSE_FRAME_EN'] == False)
-            #assert(data['$CUT_THROUGH_EN'] == False)
-            assert(data['$PORT_DIR'] == 'PM_PORT_DIR_DEFAULT')
-
-        #logger.info("PortCfgTest: Reading entry for port %d", port2)
-        #resp = self.port_table.entry_get(
-        #    target,
-        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port2)])])
-
-        #logger.info("PortCfgTest: Validating entry read for port %d", port2)
-        #for data, key in resp:
-        #    data = data.to_dict()
-        #    key = key.to_dict()
-        #    assert(key['$DEV_PORT']['value'] == port2)
-        #    assert(data['$SPEED'] == 'BF_SPEED_100G')
-        #    assert(data['$FEC'] == 'BF_FEC_TYP_NONE')
-        #    assert(data['$N_LANES'] == 4)
-        #    assert(data['$PORT_ENABLE'] == True)
-        #    assert(data['$LOOPBACK_MODE'] == 'BF_LPBK_MAC_NEAR')
-
-        #logger.info("PortCfgTest: Wild card read")
-        #resp = self.port_table.entry_get(target, None)
-
-        #logger.info("PortCfgTest: Validating wild card read")
-        #for data, key in resp:
-        #    data = data.to_dict()
-        #    key = key.to_dict()
-        #    port = key['$DEV_PORT']['value']
-        #    if port == port1:
-        #        assert(key['$DEV_PORT']['value'] == port1)
-        #        assert(data['$SPEED'] == 'BF_SPEED_100G')
-        #        assert(data['$FEC'] == 'BF_FEC_TYP_NONE')
-        #        assert(data['$PORT_ENABLE'] == True)
-        #        assert(data['$AUTO_NEGOTIATION'] == 'PM_AN_FORCE_ENABLE')
-        #        assert(data['$TX_MTU'] == 1500)
-        #        assert(data['$RX_MTU'] == 1500)
-        #        assert(data['$TX_PFC_EN_MAP'] == 1)
-        #        assert(data['$RX_PFC_EN_MAP'] == 1)
-        #        assert(data['$TX_PAUSE_FRAME_EN'] == False)
-        #        assert(data['$RX_PAUSE_FRAME_EN'] == False)
-        #        assert(data['$CUT_THROUGH_EN'] == False)
-        #        assert(data['$PORT_DIR'] == 'PM_PORT_DIR_DEFAULT')
-        #    elif port == port2:
-        #        assert(key['$DEV_PORT']['value'] == port2)
-        #        assert(data['$SPEED'] == 'BF_SPEED_100G')
-        #        assert(data['$FEC'] == 'BF_FEC_TYP_NONE')
-        #        assert(data['$N_LANES'] == 4)
-        #        assert(data['$PORT_ENABLE'] == True)
-        #        assert(data['$LOOPBACK_MODE'] == 'BF_LPBK_MAC_NEAR')
-
-        #logger.info("PortCfgTest: Delete entries for ports %d and %d", port1, port2)
-        #self.port_table.entry_del(
-        #    target,
-        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])])
-        #self.port_table.entry_del(
-        #    target,
-        #    [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port2)])])
-
-
-    #def CfgPortTableClearTest(self, port1):
-    #    self.port_table.entry_del(
-    #        target,
-    #        key_list=None)
-    #    self.port_table.entry_add(
-    #        target,
-    #        [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port1)])],
-    #        [self.port_table.make_data([gc.DataTuple('$SPEED', str_val="BF_SPEED_100G"),
-    #                                    client.DataTuple('$FEC', str_val="BF_FEC_TYP_NONE")])])
-    #    self.port_table.entry_del(
-    #        target,
-    #        key_list=None)
-    #    try:
-    #        get_data_list = self.port_table.make_data([client.DataTuple("$SPEED")])
-    #        resp = self.port_table.entry_get(
-    #            target,
-    #            [self.port_table.make_key([client.KeyTuple('$DEV_PORT', port1)])],
-    #            {"from_hw": False},
-    #            get_data_list)
-    #        data_dict = next(resp)[0].to_dict()
-    #        # since we have deleted all the ports, the above API call should have
-    #        # failed. Assert if not
-    #        logger.error("Unable to clear port cfg table")
-    #        assert(0)
-    #    except:
-    #        logger.info("Cleared port cfg table successfully")
-
 
     # Need to add more tables
     def initialize_tables(self, target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate):
@@ -272,7 +144,7 @@ class SequencingTest(BfRuntimeTest):
         table_cntrl.entry_add(
                 target, 
                 [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.pkt_id', in_cntrl)])],
-                [table_cntrl.make_data(action_name="MyIngress.cntrl_forward", data_field_list_in=[gc.DataTuple(name="port", val=164), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
+                [table_cntrl.make_data(action_name="MyIngress.cntrl_forward", data_field_list_in=[gc.DataTuple(name="port", val=loopback_port), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
 
         # Set circulate table
         table_circulate = bfrt_info.table_get("MyIngress.circulate_table")
@@ -280,7 +152,7 @@ class SequencingTest(BfRuntimeTest):
         table_circulate.entry_add(
                 target, 
                 [table_circulate.make_key([gc.KeyTuple('meta.circulate', meta_circulate)])],
-                [table_circulate.make_data(action_name="MyIngress.circulate_port", data_field_list_in=[gc.DataTuple(name="port", val=loopback_port)])])
+                [table_circulate.make_data(action_name="MyIngress.circulate_port", data_field_list_in=[gc.DataTuple(name="port", val=recv_port)])]) # SHOULD BE LOOPBACK PORT
 
     def delete_tables(self, target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate):
         # Reset the tables to make multiple runs possible
@@ -305,8 +177,9 @@ class SequencingTest(BfRuntimeTest):
                 target) #, 
                 #[table_circulate.make_key([gc.KeyTuple('meta.circulate', meta_circulate)])])
     
+    
     def run_tofino_sniff(self, interface, tofinoSrcAddr):
-        idle_timeout=100
+        idle_timeout=10
         #sniff(iface=interface, prn=self.handle_packet, count=10, timeout=10)
         # This creates a raw socket exactly like tcpdump
         L2sock = L2ListenSocket(iface=interface)
@@ -319,11 +192,12 @@ class SequencingTest(BfRuntimeTest):
             ready = select.select([L2sock], [], [], idle_timeout)
             if ready[0]:
                 pkt = L2sock.recv(1024) 
-                if pkt: # and pkt[Ether].src == tofinoSrcAddr:
-                    #print("[*] Captured via L2Socket!")
-                    print(testutils.format_packet(pkt))
+                if pkt and pkt[Ether].src == tofinoSrcAddr:
+
+                    print("[*] Captured via L2Socket!")
+                    #print(testutils.format_packet(pkt))
                     pkt.show()
-                    if pkt.haslayer(Append):
+                    if pkt[Append]:
                         num_packets += 1
                         #print("The packet ", pkt[Append].nonce, " has index ", pkt[Append].g_idx, " with status ", pkt[Append].status)
                         g_idx = pkt[Append].g_idx
@@ -348,6 +222,29 @@ class SequencingTest(BfRuntimeTest):
                 #run_client_no_sniff()
         client_soc.close()
         listener.close()
+        #idle_timeout=5
+        #traffic_type='UDP'
+        ##sniff(iface=interface, prn=self.handle_packet, count=10, timeout=10)
+        ## This creates a raw socket exactly like tcpdump
+        #L2sock = L2ListenSocket(iface=interface)
+        #print("[*] L2 Socket for the client is Open and Listening...")
+        #
+        ## Block until 1 packet is received
+        #while True:
+        #    ready = select.select([L2sock], [], [], idle_timeout)
+        #    if ready[0]:
+        #        pkt = L2sock.recv(1024) 
+        #        if pkt and pkt.getlayer(TCP) and pkt[TCP].dport == 1234:
+        #                    print("[*] Captured incoming UDP packets via L2Socket!")
+        #                    print("Ready to forward append packet to the ASIC!")
+        #                    # TODO - actually extract append packet from the python script
+        #                    #sendp(pkt, iface=interface, verbose=True) 
+        #                    print(testutils.format_packet(pkt))
+        #    else:
+        #        print("Progam timeout out!")
+        #        break
+        #L2sock.close()
+
 
     def run_client_no_sniff(self, interface, dstAddr, srcAddr, ip_addr, send_timeout):
         nonce = 1
@@ -369,19 +266,19 @@ class SequencingTest(BfRuntimeTest):
             #sendp(pkt, iface=interface, verbose=True)
             nonce += 1
         print("Sent this many packets: ", nonce)
-
+    
     def test_connection(self, dstAddr, srcAddr, ip_addr, interface):
-        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IPV4)/ \
               IP(dst=ip_addr)
-        sendp(pkt, iface=interface, verbose=True)
-        print("Sent packet!")
+	print("Sending local packet!")
+        sendp(pkt, iface=interface, verbose=True) 
 
     def runTest(self):
         target = gc.Target(device_id=0, pipe_id=0xffff)
         
         # Get bfrt_info and set it as part of the test
         bfrt_info = self.interface.bfrt_info_get(p4_program_name)
-        self.port_table = bfrt_info.table_get("$PORT")
+	self.port_table = bfrt_info.table_get("$PORT")
         self.port_hdl_info_table = bfrt_info.table_get("$PORT_HDL_INFO")
         self.port_fp_idx_info_table = bfrt_info.table_get("$PORT_FP_IDX_INFO")
         self.port_str_info_table = bfrt_info.table_get("$PORT_STR_INFO")
@@ -389,7 +286,7 @@ class SequencingTest(BfRuntimeTest):
         # Setting up PTF dataplane
         self.dataplane = ptf.dataplane_instance
         self.dataplane.flush()
-        
+
         # Set defaults [TODO: Should be in script]
         ip_addr='100.99.98.97'
         interface = "enp5s0"
@@ -397,61 +294,49 @@ class SequencingTest(BfRuntimeTest):
         clientInterface = "ma1"
         dev_number = 0
         port_number = 192
+        front_port_number = 3
         addr = socket.gethostbyname('100.99.98.97')
         dstAddr='11:11:11:11:11:11'
         srcAddr='22:22:22:22:22:22'
         udp_src_port = 1234
         send_port = cpu_pcie_port
+        # recv_port = front_port_number
         recv_port= cpu_pcie_port
         in_cntrl=1
         out_cntrl=1
         meta_circulate = 1
-        send_timeout = 5
+        send_timeout = 10
 
         try:
             # Starting sniffing thread
-            # Initialize all 5/* ports
-            self.PortCfgTest(target, 164)
-            self.PortCfgTest(target, 165)
-            self.PortCfgTest(target, 166)
-            self.PortCfgTest(target, 167)
-            # Initialize all 21/* ports
-            self.PortCfgTest(target, 36)
-            self.PortCfgTest(target, 37)
-            self.PortCfgTest(target, 38)
-            self.PortCfgTest(target, 39)
-            # Initialize all 3/* ports
-            self.PortCfgTest(target, 148)
-            self.PortCfgTest(target, 149)
-            self.PortCfgTest(target, 150)
-            self.PortCfgTest(target, 151)
-            # Initialize all 19/* ports
-            self.PortCfgTest(target, 20)
-            self.PortCfgTest(target, 21)
-            self.PortCfgTest(target, 22)
-            self.PortCfgTest(target, 23)
+	    #self.PortCfgTest(target, 5)
+	    #self.PortCfgTest(target, 6)
+	    #self.PortCfgTest(target, 21)
+	    #self.PortCfgTest(target, 22)
+	    
 
-            #self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
+            self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
             self.initialize_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
-            
+            #self.test_connection(dstAddr, srcAddr, ip_addr, interface)
+            # Create listener socket for control plane
+            tofino_sniffer_thread = threading.Thread(target=self.run_tofino_sniff, args=(cpuTofinoInterface,dstAddr,))
+            tofino_sniffer_thread.start()
+            time.sleep(2)
+
+	    print("Gonna test the self connection!")
+	    self.test_connection(dstAddr, srcAddr, ip_addr, interface)
+
+            # Inject control packet into the dataplane
             #ipkt = testutils.simple_control_packet(eth_dst=dstAddr, eth_src=srcAddr, pkt_id=in_cntrl)
             #sendp(ipkt, iface=interface, verbose=True) 
             #print("Sent control packet!")
             #time.sleep(2)
-
-        
-            ## Create listener socket for control plane
-            #tofino_sniffer_thread = threading.Thread(target=self.run_tofino_sniff, args=(cpuTofinoInterface,dstAddr,))
-            #tofino_sniffer_thread.start()
-            #time.sleep(2)
-
-            #self.test_connection(dstAddr, srcAddr, ip_addr, interface)
-            ## Inject control packet into the dataplane
-            ## Start client thread 
+            
+            # Start client thread 
             #self.run_client_no_sniff(interface, dstAddr, srcAddr, ip_addr, send_timeout)
             #client_sniffer_thread = threading.Thread(target=self.run_client_sniff, args=(clientInterface,udp_src_port,))
             #client_sniffer_thread.start()
         except KeyboardInterrupt:
             print("\nStopped by user.")
         #finally:
-            #self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
+        #    self.delete_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
