@@ -31,7 +31,11 @@ import ptf.dataplane as dataplane
 from ptf import config
 import ptf.testutils as testutils
 from bfruntime_client_base_tests import BfRuntimeTest
+<<<<<<< HEAD
 import pltfm_pm_rpc as pltfm_pm
+=======
+import pltfm_pm_rpc
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
 import bfrt_grpc.client as gc
 from ptf.thriftutils import *
 
@@ -46,7 +50,11 @@ RCV_TIMEOUT = 10000
 END_EXPERIMENT = False
 
 # Some useful defines
+<<<<<<< HEAD
 TYPE_IP= 0x800
+=======
+IP_ETHERTYPE = 0x800
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
 TCP_PROTOCOL = 0x6
 UDP_PROTOCOL = 0x11
 TYPE_APPEND = 0x0860
@@ -76,11 +84,19 @@ class Append(Packet):
                     BitField("status", 0, 32),
                     IntField("cntrl_pkt_it", 0)]
  
+<<<<<<< HEAD
 #class Tail(Packet):
 #    fields_desc = [ BitField("cid", 0, 32),
 #                    BitField("nonce", "", 32),
 #                    IntField("hops", 0),
 #                    IntField("tail_seq_no", 0)]
+=======
+class Tail(Packet):
+    fields_desc = [ BitField("cid", 0, 32),
+                    BitField("nonce", "", 32),
+                    IntField("hops", 0),
+                    IntField("tail_seq_no", 0)]
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
 
 bind_layers(Ether, IP)
 bind_layers(IP, Append)
@@ -103,6 +119,7 @@ class SequencingTest(BfRuntimeTest):
         client_id = 0
         BfRuntimeTest.setUp(self, client_id, p4_program_name)
 
+<<<<<<< HEAD
     def initialize_all_ports(self, device): #, ps, fec):
         for i in range(0, 130):
             pltfm_pm.pltfm_port_pm_enable(self, device, i)
@@ -254,6 +271,12 @@ class SequencingTest(BfRuntimeTest):
     #    except:
     #        logger.info("Cleared port cfg table successfully")
 
+=======
+    def initialize_all_ports(self, device, ps, fec):
+        for i in range(0, 130):
+            pltfm_port_pm_enable(self, device, dev_port)
+            pltfm_port_pm_add(self, device, dev_port, ps, fec)
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
 
     # Need to add more tables
     def initialize_tables(self, target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate):
@@ -376,6 +399,103 @@ class SequencingTest(BfRuntimeTest):
         sendp(pkt, iface=interface, verbose=True)
         print("Sent packet!")
 
+        # Reset circulate table
+        table_circulate = bfrt_info.table_get("MyIngress.circulate_table")
+        table_circulate.info.key_field_annotation_add("meta.circulate", "bit<32>")
+        table_circulate.entry_del(
+                target) #, 
+                #[table_circulate.make_key([gc.KeyTuple('meta.circulate', meta_circulate)])])
+    
+    
+    def run_tofino_sniff(self, interface, tofinoSrcAddr):
+        idle_timeout=10
+        #sniff(iface=interface, prn=self.handle_packet, count=10, timeout=10)
+        # This creates a raw socket exactly like tcpdump
+        L2sock = L2ListenSocket(iface=interface)
+        print("[*] L2 Socket Open and Listening...")
+        num_packets = 0
+
+        # Block until 1 packet is received
+        g_idx = 0
+        while True:
+            ready = select.select([L2sock], [], [], idle_timeout)
+            if ready[0]:
+                pkt = L2sock.recv(1024) 
+                if pkt and pkt[Ether].src == tofinoSrcAddr:
+
+                    #print("[*] Captured via L2Socket!")
+                    #print(testutils.format_packet(pkt))
+                    #pkt.show()
+                    if pkt[Append]:
+                        num_packets += 1
+                        #print("The packet ", pkt[Append].nonce, " has index ", pkt[Append].g_idx, " with status ", pkt[Append].status)
+                        g_idx = pkt[Append].g_idx
+
+            else:
+                print("Progam timeout out! Total number of packets: ", num_packets, " and highest g idx: ", g_idx)
+                break
+        L2sock.close()
+     
+    def run_client_sniff(self, interface, udp_sport):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        listener.bind(('', 1234))
+        listener.listen(5)
+        client_soc, address = listener.accept()
+        #print(f"Connection established from: {address[0]} on port {address[1]}")
+        while True:
+            data = client_soc.recv(1024).decode()
+            if len(data) > 0:
+                print(data)
+                #run_client_no_sniff()
+        client_soc.close()
+        listener.close()
+        #idle_timeout=5
+        #traffic_type='UDP'
+        ##sniff(iface=interface, prn=self.handle_packet, count=10, timeout=10)
+        ## This creates a raw socket exactly like tcpdump
+        #L2sock = L2ListenSocket(iface=interface)
+        #print("[*] L2 Socket for the client is Open and Listening...")
+        #
+        ## Block until 1 packet is received
+        #while True:
+        #    ready = select.select([L2sock], [], [], idle_timeout)
+        #    if ready[0]:
+        #        pkt = L2sock.recv(1024) 
+        #        if pkt and pkt.getlayer(TCP) and pkt[TCP].dport == 1234:
+        #                    print("[*] Captured incoming UDP packets via L2Socket!")
+        #                    print("Ready to forward append packet to the ASIC!")
+        #                    # TODO - actually extract append packet from the python script
+        #                    #sendp(pkt, iface=interface, verbose=True) 
+        #                    print(testutils.format_packet(pkt))
+        #    else:
+        #        print("Progam timeout out!")
+        #        break
+        #L2sock.close()
+
+
+    def run_client_no_sniff(self, interface, dstAddr, srcAddr, ip_addr, send_timeout):
+        nonce = 1
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_APPEND)/ \
+              IP(dst=ip_addr)/ \
+              Append(cid=0, nonce=nonce, g_idx=0, batch_size=0, shard_id=0, ring_view=0, status=1, cntrl_pkt_it=0)
+        payload= Raw(load=b"Hello world!")
+        pkt = pkt/payload
+        pkt_buffer = bytes(pkt)
+        
+        # Send socket
+        sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+        sock.bind((interface, 0))
+
+        tend = time.time() + send_timeout
+        while time.time() < tend:
+            pkt[Append].nonce = nonce    
+            sock.send(pkt_buffer)
+            #sendp(pkt, iface=interface, verbose=True)
+            nonce += 1
+        print("Sent this many packets: ", nonce)
+    
     def runTest(self):
         target = gc.Target(device_id=0, pipe_id=0xffff)
         
@@ -386,10 +506,13 @@ class SequencingTest(BfRuntimeTest):
         self.port_fp_idx_info_table = bfrt_info.table_get("$PORT_FP_IDX_INFO")
         self.port_str_info_table = bfrt_info.table_get("$PORT_STR_INFO")
 
+<<<<<<< HEAD
         # Setting up PTF dataplane
         self.dataplane = ptf.dataplane_instance
         self.dataplane.flush()
         
+=======
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
         # Set defaults [TODO: Should be in script]
         ip_addr='100.99.98.97'
         interface = "enp5s0"
@@ -406,6 +529,7 @@ class SequencingTest(BfRuntimeTest):
         in_cntrl=1
         out_cntrl=1
         meta_circulate = 1
+<<<<<<< HEAD
         send_timeout = 5
 
         try:
@@ -441,16 +565,38 @@ class SequencingTest(BfRuntimeTest):
 
         
             ## Create listener socket for control plane
+=======
+        send_timeout = 10
+
+        try:
+            # Starting sniffing thread
+            #self.initialize_tables(target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate)
+        
+            # Create listener socket for control plane
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
             #tofino_sniffer_thread = threading.Thread(target=self.run_tofino_sniff, args=(cpuTofinoInterface,dstAddr,))
             #tofino_sniffer_thread.start()
             #time.sleep(2)
 
+<<<<<<< HEAD
             #self.test_connection(dstAddr, srcAddr, ip_addr, interface)
             ## Inject control packet into the dataplane
             ## Start client thread 
             #self.run_client_no_sniff(interface, dstAddr, srcAddr, ip_addr, send_timeout)
             #client_sniffer_thread = threading.Thread(target=self.run_client_sniff, args=(clientInterface,udp_src_port,))
             #client_sniffer_thread.start()
+=======
+            # Inject control packet into the dataplane
+            #ipkt = testutils.simple_control_packet(eth_dst=dstAddr, eth_src=srcAddr, pkt_id=in_cntrl)
+            #sendp(ipkt, iface=interface, verbose=True) 
+            #print("Sent control packet!")
+            #time.sleep(2)
+            
+            # Start client thread 
+            #self.run_client_no_sniff(interface, dstAddr, srcAddr, ip_addr, send_timeout)
+            client_sniffer_thread = threading.Thread(target=self.run_client_sniff, args=(clientInterface,udp_src_port,))
+            client_sniffer_thread.start()
+>>>>>>> f645800080fd2934e7271f76e1ade934bddf2f60
         except KeyboardInterrupt:
             print("\nStopped by user.")
         #finally:
