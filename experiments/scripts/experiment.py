@@ -35,6 +35,149 @@ SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
 COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
 RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
 
+def generate_switch_setup_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None):
+    configs = []
+    switch_params = base_config['switches']
+    for i in base_config['experiment_parameters'][switch_in_ring]:
+        port_idx = 'switch_ports' + i
+        cntrl_port = 'cntrl_port_switch' + i
+        yaml_config = {
+            'loopback_port': switch_params['loopback_port'],
+            'switch_ports': [port for port in switch_params['port_idx']],
+            'cntrl_port': switch_params['cntrl_port'],
+            'cpu_port': switch_params['cpu_port'],
+            'dummy_ip_addr': QuotedString(switch_params['dummy_ip_addr']),
+            'mac_dst_addr': QuotedString(switch_params['dstAddr']),
+            'mac_src_addr': QuotedString(switch_params['srcAddr']),
+            'device_number': switch_params['dev_number'],
+            'cpu_interface': QuotedString(switch_params['cpu_interface']),
+            'external_interface': QuotedString(switch_params['external_interface']),
+            'port_speed': "BF_SPEED_10G",
+            'port_fec': "BF_FEC_TYPE_NONE",
+            'loopback_mode': "BF_LPBK_MAC_NEAR",
+            'meta_circulate': 1,
+            'in_cntrl': 1,
+            'out_cntrl': 1
+        }
+        configs.push(yaml_config)
+
+    configs[len(configs) - 1].update({send_cntrl_pkt: 1})
+    """Generates the configuration dictionary for a client or server."""
+    
+    # Base port calculation to ensure uniqueness
+    send_port = BASE_PORT + port_offset
+    recv_port = BASE_PORT + port_offset + 1
+
+    # Extract required parameters from the fully merged base_config
+    exp_params = base_config['experiment_parameters']
+    proto_params = base_config['protocol_batching']
+    net_params = base_config['network_setup']
+    route_params = base_config['routing']
+
+    # Calculate experiment duration, adding a delay for servers (Feature 3)
+    exp_duration = exp_params['experiment_duration']
+    warm_up = exp_params['warm_up']
+    cool_down = exp_params['cool_down']
+
+
+    if entity_type == 'server':
+        # Servers run longer than the client to ensure no early termination
+        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY
+    elif entity_type == 'switch':
+        final_duration = exp_duration + warm_up + cool_down + SWITCH_START_DELAY
+    else:
+        final_duration = exp_duration + warm_up + cool_down
+
+    # Initialize the base YAML structure
+    cli_macs = [QuotedString(mac) for mac in net_params['cli_macs']]
+    cli_ips = [QuotedString(mac) for mac in net_params['cli_ips']]
+    stor_macs = [QuotedString(mac) for mac in net_params['stor_macs']]
+    stor_ips = [QuotedString(mac) for mac in net_params['stor_ips']]
+    yaml_config = {
+        'log_level': exp_params['log_level'],
+        'switch_ip': QuotedString(net_params['switch_ip']),
+        'switch_mac': QuotedString(net_params['switch_mac']),
+        'cli_macs': cli_macs,
+        'cli_ips': cli_ips,
+        'stor_macs': stor_macs,
+        'stor_ips': stor_ips,
+        'send_port': QuotedString(send_port),
+        'recv_port': QuotedString(recv_port),
+        'stor_recv_port': QuotedString(net_params['stor_recv_port']),
+        'switch_recv_port': QuotedString(net_params['switch_recv_port']),
+        'send_threads': 1,  # [INACTIVE]
+        # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
+        'socket_type': QuotedString(exp_params['socket_type']),
+        # WRAPPED: Ensures self_ip is quoted
+        'self_ip': QuotedString(entity_ip),
+        # WRAPPED: Ensures interface name is quoted
+        'batch_size': exp_params['batch_size'],
+        'batch_usec_timeout': exp_params['batch_usec_timeout'], 
+        'batch_on': proto_params['batch_on'],
+        'num_pkt_types': proto_params['num_packet_types'],
+        # Use the calculated final duration (adjusted for servers)
+        'experiment_duration': final_duration, 
+        'payload_size': exp_params['message_size'],
+        'use_switch': exp_params['use_switch'],
+        'use_store': exp_params['use_store']
+    }
+    
+    # Pre-calculate and wrap client destination MACs (used by both client to send, and server to reply)
+    client_macs = [QuotedString(mac) for mac in route_params['client_dest_macs']]
+    server_macs = [QuotedString(mac) for mac in route_params['server_dest_macs']]
+
+    # --- Client Specific Fields ---
+    if entity_type == 'client':
+        # Routing: Wrap list elements (IPs)
+        client_ips = [QuotedString(ip) for ip in route_params['list_client_dest_ips']]
+        
+        yaml_config.update({
+            'sequencer_type': proto_params['sequencer_type'],
+            'num_client_threads': exp_params['num_client_threads'],
+            'cli_id': entity_id, # Integer
+            
+            # Add json_name to client config (as a QuotedString)
+            'json_name': QuotedString(json_name), 
+            
+            # Add num_failures to client config
+            'num_failures': num_failures, 
+
+            # warm up time
+            'warm_up': warm_up,
+
+            # cool down time
+            'cool_down': cool_down,
+            'interface': QuotedString(network_interface),
+            'cli_idx': entity_idx
+        })
+    
+    # --- Storage Server Specific Fields ---
+    elif entity_type == 'server':
+        # Routing: Wrap list elements (IPs)
+        server_ips = [QuotedString(ip) for ip in route_params['list_storage_server_dest_ips']]
+
+        # Randomly generated values for simplicity, as requested
+        shard_id = random.randint(0, 999)
+        shard_switch_id = random.randint(0, 9)
+
+        yaml_config.update({
+            'storage_type': proto_params['storage_server_type'],
+            'shard_id': shard_id,
+            'shard_switch_id': shard_switch_id,
+            'stor_id': entity_id, # Integer
+            'use_switch': exp_params['use_switch'],
+            'num_storage_threads': exp_params['num_storage_threads'],
+            'interface': QuotedString(network_interface)
+        })
+
+    elif entity_type == 'switch':
+        yaml_config.update({
+            'interface': QuotedString(network_interface)
+        })
+
+    return yaml_config
+
+
 def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None):
     """Generates the configuration dictionary for a client or server."""
     
@@ -644,21 +787,21 @@ def setup_switches(config):
         # Step 1: Run the tofino model
         # cfg_tofino = "switch_tofino_model_log"
         # execute_remote_command(switch_ips[i], tofino_model, cfg_tofino, ssh_key, ssh_user, i)
-        sleep(10) # Crude approximation to wait for tofino setup, TODO actual indicator?
+        # sleep(10) # Crude approximation to wait for tofino setup, TODO actual indicator?
         
         # Step 2: Run the switchd SDE
         cfg_switchd = "switch_switchd_log"
         execute_remote_command(switch_ips[i], switchd, cfg_switchd, ssh_key, ssh_user, i)
-        sleep(10)
+        sleep(5)
         
         # Step 3: Run the control plane setup
         cfg_ptf = "switch_ptf_log"
-        ptf_configure_cmd = "~/bf-sde-9.4.0/ptf-modules-9.4.0/configure --prefix=$SDE_INSTALL; make; make install"
+        ptf_configure_cmd = "~/bf-sde-9.4.0/ptf-modules-9.4.0/configure --prefix=$SDE_INSTALL; cd ~/bf-sde-9.4.0/ptf-modules-9.4.0; make; make install"
         # Step 3.1: First, compile the ptf library
         execute_remote_command(switch_ips[i], ptf_configure_cmd, cfg_ptf, ssh_key, ssh_user, i)
         # Step 3.2: Second, run ptf scripts
         execute_remote_command(switch_ips[i], ptf_tests, cfg_ptf, ssh_key, ssh_user, i)
-        sleep(10)
+        sleep(5)
 
 # To be executed for each experiment
 def run_experiment_cycle(config, exp_index, local_results_dir):

@@ -43,6 +43,7 @@ use_switch = 1
 use_store = 1
 batch_size = 1 # Number of packets
 batch_usec_timeout = 460
+switch_in_ring = [1, 2, 3] # indices of the switches active in the ring, list of unique values, each val 0 <= v <= 3
 
 [protocol_batching]
 batch_on = true
@@ -58,12 +59,31 @@ server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
 
 [switches]
 tofino_model = "/root/bf-sde-9.4.0/run_tofino_model.sh"
-switchd = "/root/bf-sde-9.4.0/run_switchd.sh"
-ptf_test = "/root/bf-sde-9.4.0/run_ptf_test.sh"
+switchd = "/root/bf-sde-9.4.0/run_switchd.sh --arch tofino -p sequencing_only"
+ptf_test = "/root/bf-sde-9.4.0/run_ptf_test.sh --arch tofino -p sequencing_only -t /root/pringles/code/p4/sequencing --veth-exists --target hw"
 arch = "tofino"
 program = "sequencing_only"
+control_plane = "/root/pringles/code/p4/sequencing/test.py"
+use_port_forwarding = true
 loopback_port = 68
-switch_port_matrix = [[0, 1, 2, 3], [63, 64, 65, 66], [31, 32, 33, 34], [140, 141, 142, 143]] # Dummy port values
+cpu_port = 192
+active_switches = [10.229.49.3, 10.229.49.5, 10.229.49.7, 10.229.49.9]
+switch_ports0 = []
+switch_ports1 = [156, 157, 158, 159, 164, 165, 166, 167, 172, 173, 174, 175, 180, 181, 182, 183, 188, 189, 190, 191, 20, 21, 22, 23, 36, 37, 38, 39, 44, 45, 46, 47, 60, 61, 62, 63, 56]
+switch_ports2 = [144, 145, 146, 147, 152, 153, 154, 155, 168, 169, 170, 171, 176, 177, 178, 179, 184, 185, 186, 187, 16, 17, 18, 19, 24, 25, 26, 27, 32, 33, 34, 35, 48, 49, 50, 51, 56, 57, 58, 59]
+switch_ports3 = [148, 149, 150, 151, 164, 165, 166, 167, 172, 173, 174, 175, 188, 189, 190, 191, 20, 21, 22, 23, 28, 29, 30, 31, 36, 37, 38, 39, 44, 45, 46, 47, 52, 53, 54, 55, 56]
+loopback_port = 56
+cpu_port = 192
+cntrl_port_switch0 = 150 # DUMMY placeholder
+cntrl_port_switch1 = 164
+cntrl_port_switch2 = 176
+cntrl_port_switch3 = 148
+dummy_ip_addr = "100.99.98.97"
+mac_dst_addr = "11:11:11:11:11:11"
+mac_dst_addr = "22:22:22:22:22:22"
+dev_number = 0
+cpu_interface = "enp5s0"
+external_interface = "ma1"
 
 [cpu_dataplane]
 udp_sport = 309
