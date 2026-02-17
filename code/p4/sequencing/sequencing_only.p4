@@ -65,16 +65,12 @@ header ipv4_t {
     ip4Addr_t dstAddr;
 }
 
-
-
 /******* Custom Pringles Headers ********/
 /*
  * Note:
  *  Numbers which need to be read as integers or take part in arithmetic operations are ints.
  *  Numbers that are merely for identification are bit arrays.
-*/
-
-
+ */
 
 // Control Packet Header
 header control_pkt_t {
@@ -88,6 +84,14 @@ header control_pkt_t {
    bit<32> pkt_id;
 }
 
+// Ring type header - holds the type of the packet
+header ring_type_t {
+    // Type to filter packets
+    bit<16> type;
+    // Counting the number of entries batched in the packet
+    bit<16> num_entries;
+}
+
 // AppendEntry header
 header append_entry_t {
     /** Part of header: Set by client **/
@@ -96,6 +100,10 @@ header append_entry_t {
     bit<32> cid;
     // Unique nonce used to detect duplicates of the message
     bit<32> nonce;
+    // Bytes in each paylod
+    bit<32> payload_size;
+    // Number of payload entries
+    bit<32> num_entries;
     
     /** Part of header: Set by switches **/
     
@@ -116,6 +124,10 @@ header append_entry_t {
 
     // Metadata: The number of times the control packet had been seen when entry is first received
     int<32> cntrl_pkt_it;
+
+    bit<32> thread_id;
+    bit<32> recv_port;
+    bit<32> cli_idx;
 }
 
 // Header for requesting the current tail
@@ -154,8 +166,10 @@ struct metadata {
 
 struct headers {
     ethernet_t              ethernet;
-    ipv4_t                  ipv4;
     control_pkt_t           cntrl;
+    ipv4_t                  ipv4;
+    udp_h		    udp;
+    ring_type_t             ring_type;
     control_pkt_checker_t   cntrl_check;
     append_entry_t          append;
     tail_req_t              tail;
@@ -184,6 +198,26 @@ parser MyParser(packet_in packet,
 	    default: parse_ipv4;
         }
     }
+    
+    state parse_ipv4 {
+        packet.extract(hdr.ipv4);
+        transition parse_udp;
+    }
+
+    state parse_udp {
+        packet.extract(hdr.udp);
+	transition parse_ring_type;
+    }
+
+    state parse_ring_type {
+	packet.extract(hdr.ring_type);
+        transition select(hdr.ring_type.type) {
+            TYPE_CONTROL_CHECK: parse_control_check;
+            TYPE_APPEND: parse_append;
+            TYPE_TAIL: parse_tail;
+	    default: accept;
+        }
+    }
 
     state parse_control {
         packet.extract(hdr.cntrl);
@@ -203,16 +237,6 @@ parser MyParser(packet_in packet,
     state parse_tail {
         packet.extract(hdr.tail);
         transition accept;
-    }
-
-    state parse_ipv4 {
-        packet.extract(hdr.ipv4);
-	transition select(hdr.ethernet.etherType) {
-            TYPE_CONTROL_CHECK: parse_control_check;
-            TYPE_APPEND: parse_append;
-            TYPE_TAIL: parse_tail;
-	    default: accept;
-        }
     }
 }
 
@@ -438,8 +462,10 @@ control MyIngress(inout headers hdr,
                     int<32> h_seen_seq_no_reg = (int<32>)read_seen_seq_no.execute(0);
                     hdr.append.g_idx = hdr.append.g_idx + h_seen_seq_no_reg;
                     hdr.append.status = 3;
-                }
-		meta.circulate = 0;
+		    meta.circulate = 0;
+                } else {
+		    meta.circulate = 1;
+		}
             }
 	    /*
             else if (hdr.append.status == 3) {
@@ -449,6 +475,14 @@ control MyIngress(inout headers hdr,
         } /*else if (hdr.tail.isValid()) {
 	    process_tail.apply();
 	}*/
+
+        if (hdr.udp.isValid()) {
+	    hdr.udp.src_port = 6543;
+        }
+
+	if (hdr.ring_type.isValid()) {
+	    hdr.ring_type.num_entries = 4;
+	}
 
 	if (meta.circulate == 1) {
            circulate_table.apply();
@@ -478,49 +512,58 @@ parser MyEgressParser(packet_in packet,
  		      out egress_intrinsic_metadata_t eg_intr_md) {
  	
 	TofinoEgressParser() tofino_parser;
-   	
-	state start {
-        	tofino_parser.apply(packet, eg_intr_md);
-        	transition parse_ethernet;
-    	}
+   	state start {
+            tofino_parser.apply(packet, eg_intr_md);
+            transition parse_ethernet;
+        }
 
-    	state parse_ethernet {
-    	    packet.extract(hdr.ethernet);
-    	    transition select(hdr.ethernet.etherType) {
-    	        TYPE_CONTROL: parse_control;
-    	        default: parse_ipv4;
-    	    }
-    	}
+        state parse_ethernet {
+            packet.extract(hdr.ethernet);
+            transition select(hdr.ethernet.etherType) {
+                TYPE_CONTROL: parse_control;
+                default: parse_ipv4;
+            }
+        }
+        
+        state parse_ipv4 {
+            packet.extract(hdr.ipv4);
+            transition parse_udp;
+        }
 
-    	state parse_control {
-    	    packet.extract(hdr.cntrl);
-    	    transition accept;
-    	}
-    	
-    	state parse_control_check {
-    	    packet.extract(hdr.cntrl_check);
-    	    transition accept;
-    	}
+        state parse_udp {
+            packet.extract(hdr.udp);
+            transition parse_ring_type;
+        }
 
-    	state parse_append {
-    	    packet.extract(hdr.append);
-    	    transition accept;
-    	}
-    	
-    	state parse_tail {
-    	    packet.extract(hdr.tail);
-    	    transition accept;
-    	}
+        state parse_ring_type {
+            packet.extract(hdr.ring_type);
+            transition select(hdr.ring_type.type) {
+                TYPE_CONTROL_CHECK: parse_control_check;
+                TYPE_APPEND: parse_append;
+                TYPE_TAIL: parse_tail;
+                default: parse_append;
+            }
+        }
 
-    	state parse_ipv4 {
-    	    packet.extract(hdr.ipv4);
-    	    transition select(hdr.ethernet.etherType) {
-    	        TYPE_CONTROL_CHECK: parse_control_check;
-    	        TYPE_APPEND: parse_append;
-    	        TYPE_TAIL: parse_tail;
-    	        default: accept;
-    	    }
-    	}
+        state parse_control {
+            packet.extract(hdr.cntrl);
+            transition accept;
+        }
+        
+        state parse_control_check {
+            packet.extract(hdr.cntrl_check);
+            transition accept;
+        }
+
+        state parse_append {
+            packet.extract(hdr.append);
+            transition accept;
+        }
+        
+        state parse_tail {
+            packet.extract(hdr.tail);
+            transition accept;
+        }
 }
 
 control MyEgress(inout headers hdr,

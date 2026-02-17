@@ -34,6 +34,10 @@ Key components of the codebase:
 
 Switch SDE Changes:
 - In the ptf/testutils.py file: Added function to create the specialized control packet 
+<<<<<<< HEAD
+=======
+- Removed "sudo" from the run_switchd.sh and run_ptf_tests.sh scripts
+>>>>>>> ff8a7314a10cbdcf5e945c7367724f3cfa86835b
 
 ## How to Setup and Compile
 See setup.sh for all relevant packages. C++17 at minimum required. If you are using cloudlab for testing, you can use the Cloudlab profile `run-pringles` which already has the appropriate packages.
