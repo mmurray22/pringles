@@ -1,3 +1,5 @@
+#pragma once
+
 // #include <cstdint>
 // #include <string>
 #include <atomic>
@@ -6,9 +8,13 @@
 #include "yaml-cpp/yaml.h"
 #include <thread>
 
-constexpr uint64_t MAX_WAIT_TIME = 1000;
+#include "utils.h"
+#include "spdlog/spdlog.h"
 
-class Network;
+#include "network.h"
+#include "trace.h"
+
+constexpr uint64_t MAX_WAIT_TIME = 1000;
 
 class CorfuSequencer {
     public:
@@ -17,6 +23,8 @@ class CorfuSequencer {
         
         uint64_t assign_next_idx(); // Assigns the next sequence number
         uint64_t get_current_idx(); // gets the current sequencer index
+
+        std::string IP;
 
     protected:
         void run_sequencer_thread();

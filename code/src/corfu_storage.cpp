@@ -29,7 +29,7 @@ CorfuStorage::~CorfuStorage() {
 void CorfuStorage::write(corfuclient::Payload msg) {
     // if epoch != s_epoch, respond <err_sealed>
     if (msg.append().currEpoch() != s_epoch) {
-        auto err_packet = corfu_storage_serialize_str_entry("", CORFU_SEALED_PROTO_TYPE, 0);
+        auto err_packet = Trace<std::string>::corfu_storage_serialize_str_entry("", CORFU_SEALED_PROTO_TYPE, 0);
 
         net->add_to_send_queue(std::move(err_packet), msg.client_id());
         return;
@@ -43,11 +43,11 @@ void CorfuStorage::write(corfuclient::Payload msg) {
     if (it != storage_map.end()) { // is the entry already in the map?
         if (it->second.deleted) { // has it been marked deleted?
             // send <err_deleted>
-            auto err_packet = corfu_storage_serialize_str_entry("", CORFU_DELETED_PROTO_TYPE, 0);
+            auto err_packet = Trace<std::string>::corfu_storage_serialize_str_entry("", CORFU_DELETED_PROTO_TYPE, 0);
             net->add_to_send_queue(std::move(err_packet), msg.clientID());
         } else { // if not marked deleted, then it must be written to already so we send back err + written contents
             // send <err_written>
-            auto err_packet = corfu_storage_serialize_str_entry(it->second.contents, CORFU_WRITTEN_PROTO_TYPE, 0);
+            auto err_packet = Trace<std::string>::corfu_storage_serialize_str_entry(it->second.contents, CORFU_WRITTEN_PROTO_TYPE, 0);
             net->add_to_send_queue(std::move(err_packet), msg.clientID());
         }
         return;
@@ -57,14 +57,14 @@ void CorfuStorage::write(corfuclient::Payload msg) {
     mark = std::max(mark, idx);
 
     // reply with ack
-    auto ack_packet = corfu_storage_serialize_str_entry("", CORFU_ACK_PROTO_TYPE, 0);
+    auto ack_packet = Trace<std::string>::corfu_storage_serialize_str_entry("", CORFU_ACK_PROTO_TYPE, 0);
     net->add_to_send_queue(std::move(ack_packet), msg.clientID());
 }
 
 void CorfuStorage::read(corfuclient::Payload msg) {
     // if epoch != s_epoch, respond <err_sealed>
     if (msg.read().currEpoch() != s_epoch) {
-        auto err_packet = corfu_storage_serialize_str_entry("", CORFU_SEALED_PROTO_TYPE, 0);
+        auto err_packet = Trace<std::string>::corfu_storage_serialize_str_entry("", CORFU_SEALED_PROTO_TYPE, 0);
 
         net->add_to_send_queue(std::move(err_packet), msg.client_id());
         return;
@@ -76,7 +76,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
 
     // if unwritten, respond <err_unwritten> (entry is not in the map)
     if (it == storage_map.end()) { // is the entry not already in the map?
-        auto err_packet = corfu_storage_serialize_str_entry("", CORFU_UNWRITTEN_PROTO_TYPE, 0);
+        auto err_packet = Trace<std::string>::corfu_storage_serialize_str_entry("", CORFU_UNWRITTEN_PROTO_TYPE, 0);
         net->add_to_send_queue(std::move(err_packet), msg.clientID());
         return;
     }
@@ -84,13 +84,13 @@ void CorfuStorage::read(corfuclient::Payload msg) {
     // if deleted, respond <err_deleted> (deleted bit in map set)
     if (it->second.deleted) {
         // send <err_deleted>
-        auto err_packet = corfu_storage_serialize_str_entry("", CORFU_DELETED_PROTO_TYPE, 0);
+        auto err_packet = Trace<std::string>::corfu_storage_serialize_str_entry("", CORFU_DELETED_PROTO_TYPE, 0);
         net->add_to_send_queue(std::move(err_packet), msg.clientID());
         return;
     }
 
     // if written, respond <pg_content>
-    auto read_packet = corfu_storage_serialize_str_entry(it->second.contents, CORFU_STORE_READ_PROTO_TYPE, 0);
+    auto read_packet = Trace<std::string>::corfu_storage_serialize_str_entry(it->second.contents, CORFU_STORE_READ_PROTO_TYPE, 0);
     net->add_to_send_queue(std::move(read_packet), msg.clientID());
 }
 
@@ -102,7 +102,7 @@ void CorfuStorage::storage_delete(corfuclient::Payload msg) {
     entry.contents.clear();
 
     // reply with ack
-    auto ack_packet = corfu_storage_serialize_str_entry("", CORFU_ACK_PROTO_TYPE, 0);
+    auto ack_packet = Trace<std::string>::corfu_storage_serialize_str_entry("", CORFU_ACK_PROTO_TYPE, 0);
     net->add_to_send_queue(std::move(ack_packet), msg.clientID());
 }
 
@@ -113,7 +113,7 @@ void CorfuStorage::seal(corfuclient::Payload msg) {
     }
 
     // respond <sealed, highaddr> with highaddr = highest locally stored page address
-    auto payload = corfu_storage_serialize_str_entry("", CORFU_STORE_SEAL_PROTO_TYPE, mark);
+    auto payload = Trace<std::string>::corfu_storage_serialize_str_entry("", CORFU_STORE_SEAL_PROTO_TYPE, mark);
     net->add_to_send_queue(std::move(payload), msg.clientID());
 }
 

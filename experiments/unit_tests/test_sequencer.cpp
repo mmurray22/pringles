@@ -19,8 +19,9 @@
 #include "corfustorage.pb.h"
 #include "corfusequencer.pb.h"
 
+#include "corfu_sequencer.h"
+#include "utils.h"
 
-const uint64_t MAX_WAIT_TIME = 100;
 
 void dummy_client(std::string cli_input) {
     // create network object
@@ -46,14 +47,15 @@ void dummy_client(std::string cli_input) {
         spdlog::debug("Message to queue: {}, of packet type {}", it->second, it->first);
         
         /*Create Corfu protobuf packet manually*/
-        std::unique_ptr<std::string> output = NULL;
+        std::unique_ptr<std::string> output = std::make_unique<std::string>();
         
         corfuclient::Payload corfu_payload;
         corfu_payload.set_packet_type(CORFU_GETTOKEN_PROTO_TYPE);
         corfu_payload.set_clientid(get_self_ip(config));
 
-        corfuclient::GetToken pkt; // create gettoken packet
-        pkt.set_reqtoken(true);
+        corfuclient::GetToken* pkt = new corfuclient::GetToken(); 
+        pkt->set_reqtoken(true);
+        corfu_payload.set_allocated_token_req(pkt);
 
         corfu_payload.set_allocated_token_req(&pkt);
         corfu_payload.SerializeToString(output.get());
@@ -105,6 +107,7 @@ void dummy_client(std::string cli_input) {
 
 void dummy_storage() {
     // Test dummy storage server here
+    // not required yet for first sequencer test
 }
 
 

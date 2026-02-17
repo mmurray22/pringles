@@ -1,3 +1,5 @@
+#pragma once
+
 #include <string>
 #include <map>
 #include <memory>
@@ -33,13 +35,13 @@ template <typename T> class Trace {
         
         auto deserialize_str_entry(std::unique_ptr<std::string> entry, std::string cli_type);
      
-        std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t client_id, uint64_t log_idx, uint64_t curr_epoch);
-        std::unique_ptr<std::string> corfu_storage_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t highest_addr);
-        std::unique_ptr<std::string> corfu_sequencer_serialize_str_entry(uint64_t proto_type, uint64_t log_idx);
+        static std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t client_id, uint64_t log_idx, uint64_t curr_epoch);
+        static std::unique_ptr<std::string> corfu_storage_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t highest_addr);
+        static std::unique_ptr<std::string> corfu_sequencer_serialize_str_entry(uint64_t proto_type, uint64_t log_idx);
 
-        corfuclient::Payload corfu_client_deserialize_str_entry(std::unique_ptr<std::string> entry);
-        corfustorage::Payload corfu_storage_deserialize_str_entry(std::unique_ptr<std::string> entry);
-        corfusequencer::Payload corfu_sequencer_deserialize_str_entry(std::unique_ptr<std::string> entry);
+        static corfuclient::Payload corfu_client_deserialize_str_entry(std::unique_ptr<std::string> entry);
+        static corfustorage::Payload corfu_storage_deserialize_str_entry(std::unique_ptr<std::string> entry);
+        static corfusequencer::Payload corfu_sequencer_deserialize_str_entry(std::unique_ptr<std::string> entry);
         
         // Map of operation to payload value
         // Created at the start of the program and should not change during runtime

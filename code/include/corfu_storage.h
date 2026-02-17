@@ -1,8 +1,13 @@
+#pragma once
+
 // #include <string>
 // #include <cstdint>
 #include <unordered_map>
 #include "base_storage.h"
 #include <atomic>
+
+#include "network.h"
+#include "trace.h"
 
 // #include <thread>
 // #include <chrono>
@@ -27,6 +32,10 @@ class CorfuStorage : public BaseStorage {
         void storage_delete(std::string msg);
         void seal(std::string msg);
 
+        uint64_t ssid = 0;  // storage server ID
+        uint64_t s_epoch = 0;  // current epoch
+        uint64_t mark = 0;  // highest written address
+
         void server();
 
     protected:
@@ -34,10 +43,6 @@ class CorfuStorage : public BaseStorage {
             bool deleted;
             std::string contents;
         };
-
-        uint64_t ssid = 0;  // storage server ID
-        uint64_t s_epoch = 0;  // current epoch
-        uint64_t mark = 0;  // highest written address
 
         std::unordered_map<uint64_t, map_entry> storage_map;
 

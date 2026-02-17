@@ -1,8 +1,4 @@
 #include "corfu_sequencer.h"
-#include "utils.h"
-#include "spdlog/spdlog.h"
-#include "trace.h"
-// #include "network.h"
 
 CorfuSequencer::CorfuSequencer(YAML::Node config) {
     net = std::make_unique<Network>(get_threads(config), 
@@ -42,14 +38,14 @@ void CorfuSequencer::run_sequencer_thread() {
             continue;
         }
 
-        corfuclient::Payload packet_contents = corfu_client_deserialize_str_entry(rcv_str);
+        corfuclient::Payload packet_contents = Trace<std::string>::corfu_client_deserialize_str_entry(std::move(rcv_str));
 
         if (packet_contents.token_req().reqtoken()) {
             spdlog::info("sequencer received a token request");
             uint64_t idx = assign_next_idx();
 
-            std::unique_ptr<std::string> token_packet = corfu_sequencer_serialize_str_entry(CORFU_GETTOKEN_REPLY_PROTO_TYPE, idx);
-            net->add_to_send_queue(token_packet, packet_contents.clientid());
+            std::unique_ptr<std::string> token_packet = Trace<std::string>::corfu_sequencer_serialize_str_entry(CORFU_GETTOKEN_REPLY_PROTO_TYPE, idx);
+            net->add_to_send_queue(std::move(token_packet), packet_contents.clientid());
         }
         wait_time = 10;
     }
