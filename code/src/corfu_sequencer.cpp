@@ -2,8 +2,8 @@
 
 CorfuSequencer::CorfuSequencer(YAML::Node config) {
     net = std::make_unique<Network>(get_threads(config), 
-                                                                    get_send_port(config), 
-                                                                    get_recv_port(config),
+                                    std::to_string(get_send_port(config)), 
+                                    std::to_string(get_recv_port(config)),
 								    get_socket_type(config),
                                                                     get_log_level(config),
 								    get_batch_size(config),

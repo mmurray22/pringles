@@ -8,8 +8,9 @@
 CorfuClient::CorfuClient(YAML::Node config) : sequencer(config){
     // Create network
     bool run_threads = false;
-    net = std::make_unique<Network>(get_send_port(config), 
-                                    get_recv_port(config),
+    net = std::make_unique<Network>(get_threads(config),
+                    std::to_string(get_send_port(config)), 
+                    std::to_string(get_recv_port(config)),
                     get_socket_type(config),
                                     get_log_level(config),
                     get_batch_size(config),
@@ -27,7 +28,6 @@ CorfuClient::CorfuClient(YAML::Node config) : sequencer(config){
     trace = std::make_shared<Trace<std::string>>(get_trace_file(config));
 
     // Get Client type
-    cli_type = fromStringToClientType(get_type(config));
     pending_appends_updated = false;
     terminate = false;
 
@@ -97,7 +97,7 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
     }
 
     for (auto& sm : send_machines) {
-        std::unique_ptr<std::string> write_packet = Trace<std::string>::corfu_client_serialize_str_entry(entry, CORFU_APPEND_PROTO_TYPE, cid, log_idx, curr_epoch);
+        std::unique_ptr<std::string> write_packet = Trace<std::string>::corfu_client_serialize_str_entry(*entry, CORFU_APPEND_PROTO_TYPE, cid, log_idx, curr_epoch);
         net->add_to_send_queue(std::move(write_packet), std::to_string(sm->ssid));
         // CHECK HOW SHOULD I BE GETTING THE IPs OF SEND MACHINES???
 
@@ -120,7 +120,7 @@ uint64_t CorfuClient::append(std::unique_ptr<std::string> entry) {
             return 1; // return error
         }
 
-        corfustorage::Payload packet_contents = Trace<std::string>::corfu_storage_deserialize_str_entry(msg);
+        corfustorage::Payload packet_contents = Trace<std::string>::corfu_storage_deserialize_str_entry(std::move(msg));
 
         if (packet_contents.packet_type() == CORFU_SEALED_PROTO_TYPE) {
             spdlog::info("Must reconfigure because the current epoch was sealed");

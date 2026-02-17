@@ -29,8 +29,8 @@ void dummy_client(std::string cli_input) {
     // make it so each object has its own network object :o
     // so put this init in the corfu sequencer and storage constructors
     std::unique_ptr<Network> net = std::make_unique<Network>(get_threads(config), 
-                                                                    get_send_port(config), 
-                                                                    get_recv_port(config),
+                                                                    std::to_string(get_send_port(config)), 
+                                    std::to_string(get_recv_port(config)),
 								    get_socket_type(config),
                                                                     get_log_level(config),
 								    get_batch_size(config),
@@ -57,7 +57,6 @@ void dummy_client(std::string cli_input) {
         pkt->set_reqtoken(true);
         corfu_payload.set_allocated_token_req(pkt);
 
-        corfu_payload.set_allocated_token_req(&pkt);
         corfu_payload.SerializeToString(output.get());
 
         /**

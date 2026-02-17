@@ -27,13 +27,13 @@ class CorfuStorage : public BaseStorage {
 
         // response functions for when the server receives certain packets over the network
         // used as helpers in the server function
-        void read(std::string msg);
-        void write(std::string msg);
-        void storage_delete(std::string msg);
-        void seal(std::string msg);
+        void read(corfuclient::Payload msg);
+        void write(corfuclient::Payload msg);
+        void storage_delete(corfuclient::Payload msg);
+        void seal(corfuclient::Payload msg);
 
         uint64_t ssid = 0;  // storage server ID
-        uint64_t s_epoch = 0;  // current epoch
+        int64_t s_epoch = 0;  // current epoch
         uint64_t mark = 0;  // highest written address
 
         void server();
