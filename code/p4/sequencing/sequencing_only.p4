@@ -128,6 +128,7 @@ header append_entry_t {
     bit<32> thread_id;
     bit<32> recv_port;
     bit<32> cli_idx;
+    bit<64> timestamp;
 }
 
 // Header for requesting the current tail
@@ -342,10 +343,18 @@ control MyIngress(inout headers hdr,
         ig_dprsr_md.drop_ctl = 1;
     }
 
-    action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
+    /*action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
         ig_tm_md.ucast_egress_port = port;
         hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
         hdr.ethernet.dstAddr = dstAddr;
+        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+    }*/
+
+    action ipv4_forward(macAddr_t dstAddr, egressSpec_t port, ipv4_addr_t dst_ip) {
+        ig_tm_md.ucast_egress_port = port;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = dstAddr;
+	hdr.ipv4.dstAddr = dst_ip;
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
     
@@ -355,6 +364,23 @@ control MyIngress(inout headers hdr,
         }
         actions = {
             ipv4_forward;
+            drop;
+            NoAction;
+        }
+        size = 1024;
+        default_action = NoAction();
+    }
+
+    action udp_forward(bit<16> dst_port) {
+        hdr.udp.dst_port = dst_port;
+    }
+    
+    table udp_exact {
+        key = {
+            hdr.ring_type.type: exact;
+        }
+        actions = {
+            udp_forward;
             drop;
             NoAction;
         }
@@ -466,9 +492,7 @@ control MyIngress(inout headers hdr,
                 } else {
 		    meta.circulate = 1;
 		}
-            }
-	    /*
-            else if (hdr.append.status == 3) {
+            }/*else if (hdr.append.status == 3) {
                 hash(hdr.append.shard_id, HashAlgorithm.identity, base, {hdr.append.g_idx}, (bit<32>)NUM_SHARDS);
                 get_append_shard_id.apply(); // <-- meta.circulate = 0
 	    }*/
@@ -476,19 +500,15 @@ control MyIngress(inout headers hdr,
 	    process_tail.apply();
 	}*/
 
-        if (hdr.udp.isValid()) {
-	    hdr.udp.src_port = 6543;
-        }
-
-	if (hdr.ring_type.isValid()) {
-	    hdr.ring_type.num_entries = 4;
-	}
-
 	if (meta.circulate == 1) {
            circulate_table.apply();
 	} else if (!hdr.cntrl.isValid() && hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
         }
+
+	if (hdr.udp.isValid()) {
+	    udp_exact.apply();
+	}	
     }
 }
 

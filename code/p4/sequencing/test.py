@@ -86,7 +86,8 @@ class Append(Packet):
                     IntField("cntrl_pkt_it", 0),
                     IntField("thread_id", 0),
                     IntField("recv_port", 0),
-                    IntField("cli_idx", 0)]
+                    IntField("cli_idx", 0),
+                    LongField("timestamp", 0)]
 class Tail(Packet):
     fields_desc = [ BitField("cid", 0, 32),
                     BitField("nonce", 0, 32),
@@ -146,7 +147,7 @@ class SequencingTest(BfRuntimeTest):
             print(port_fec)
             self.port_table.entry_add(
                 target,
-                [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', 148)])],
+                [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port)])],
                 [self.port_table.make_data([gc.DataTuple('$PORT_ENABLE', bool_val=True),
                                             gc.DataTuple('$SPEED', str_val=port_speed),
                                             gc.DataTuple('$FEC', str_val=port_fec)])])
@@ -178,16 +179,28 @@ class SequencingTest(BfRuntimeTest):
                 assert(data['$LOOPBACK_MODE'] == 'BF_LPBK_MAC_NEAR')
 
     # Need to add more tables
-    def initialize_tables(self, target, bfrt_info, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate, cntrl_port, loopback_port):
+    def initialize_tables(self, target, bfrt_info, ipv4_table_vals, cli_d_port, serv_d_port, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate, cntrl_port, loopback_port):
         # Set default output port
-        print(cntrl_port)
         table_ipv4 = bfrt_info.table_get("MyIngress.ipv4_lpm")
         table_ipv4.info.key_field_annotation_add("hdr.ipv4.dstAddr", "ipv4")
         table_ipv4.info.data_field_annotation_add("dstAddr", "MyIngress.ipv4_forward", "mac")
+        table_ipv4.info.data_field_annotation_add("dst_ip", "MyIngress.ipv4_forward", "ipv4")
         table_ipv4.entry_add(
                 target, 
-                [table_ipv4.make_key([gc.KeyTuple('hdr.ipv4.dstAddr', ip_addr, prefix_len=32)])],
-                [table_ipv4.make_data(action_name="MyIngress.ipv4_forward", data_field_list_in=[gc.DataTuple(name="dstAddr", val=dstAddr), gc.DataTuple(name="port", val=recv_port)])])
+                [table_ipv4.make_key([gc.KeyTuple('hdr.ipv4.dstAddr', ipv4_table_vals[0], prefix_len=32)])],
+                [table_ipv4.make_data(action_name="MyIngress.ipv4_forward", data_field_list_in=[gc.DataTuple(name="dstAddr", val=ipv4_table_vals[1]), gc.DataTuple(name="port", val=int(ipv4_table_vals[2])),gc.DataTuple(name="dst_ip", val=ipv4_table_vals[3])])])
+
+        table_udp = bfrt_info.table_get("MyIngress.udp_exact")
+        table_udp.info.key_field_annotation_add("hdr.ring_type.type", "bit<16>")
+        table_udp.info.data_field_annotation_add("dst_port", "MyIngress.udp_forward", "bit<16>")
+        table_udp.entry_add(
+                    target, 
+                    [table_udp.make_key([gc.KeyTuple('hdr.ring_type.type', TYPE_APPEND)])],
+                    [table_udp.make_data(action_name="MyIngress.udp_forward", data_field_list_in=[gc.DataTuple(name="dst_port",val=serv_d_port)])])
+        table_udp.entry_add(
+                    target, 
+                    [table_udp.make_key([gc.KeyTuple('hdr.ring_type.type', TYPE_APPEND_RESP)])],
+                    [table_udp.make_data(action_name="MyIngress.udp_forward", data_field_list_in=[gc.DataTuple(name="dst_port",val=cli_d_port)])])
 
         # Set control table
         table_cntrl = bfrt_info.table_get("MyIngress.cntrl_id_to_ip")
@@ -241,72 +254,20 @@ class SequencingTest(BfRuntimeTest):
                 target) #, 
                 #[table_circulate.make_key([gc.KeyTuple('meta.circulate', meta_circulate)])])
     
-    def receive_pkt_from_tofino(self, interface, tofinoSrcAddr, target_ip, target_port, target_mac, switch_mac):
+    def receive_pkt_from_tofino(self, interface, tofinoSrcAddr, target_ip, target_port, target_mac, switch_mac, use_stor):
         os.system("taskset -p -c 0 {}".format(os.getpid()))
         # This creates a raw socket exactly like tcpdump
-        L2sock = L2ListenSocket(iface=interface)
-        send_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
-        print("[*] L2 Socket Open and Listening...")
+        send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        recv_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
+        recv_sock.bind((interface, 0))
+        print("[*] Socket Open and Listening...")
         num_packets = 0
         # Block until 1 packet is received
         g_idx = 0
+	#recv_sock.settimeout(1)
         while True:
-            ready = select.select([L2sock], [], [], None)
-            if ready[0]:
-                pkt = L2sock.recv(1024) 
-		print("Ether src: ", pkt[Ether].src, " Ether dst: ", pkt[Ether].dst)
-                if pkt and pkt[Ether].src == tofinoSrcAddr:
-                    if pkt.haslayer(Append):
-			pkt[Ether].dst = target_mac
-			pkt[Ether].src = switch_mac
-			pkt[IP].dst = target_ip
-			pkt[UDP].dport = target_port
-			pkt[RingType].type = TYPE_APPEND_RESP
-			new_target_port = 30003 #pkt[Append].recv_port
-			del pkt[UDP].chksum # This forces Scapy to recalculate
-			del pkt[IP].chksum
-			#pkt[Ether].src = "00:90:fb:70:65:71"
-			#pkt[Ether].dst = "00:25:90:53:e6:00"
-			#pkt[Ether].type = 0x861
-			
-                        #num_packets += 1
-			pkt.show()
-                        print("Packet: ", pkt[Append].nonce, " w/ idx ", pkt[Append].g_idx, " with status ", pkt[Append].status)
-                        print("Packet: ", pkt[RingType].type, " w/ num_entries ", pkt[RingType].num_entries)
-                        #g_idx = pkt[Append].g_idx
-			print(target_ip)
-			print(target_port)
-			print(new_target_port)
-                        send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                        
-                        # 3. Send the bytes (pkt must include Ether/IP/UDP)
-                        try:
-                            #send_sock.sendto(bytes(pkt), (target_ip, target_port))
-                            send_sock.sendto(str(pkt[UDP].payload), (target_ip, new_target_port))
-		   	    print("Sent the storage server packet!")
-                        except OSError as e:
-                            print("Send failed: e. Check if the IP:PORT is UP.")
-            else:
-                print("Progam timeout out! Total number of packets: ", num_packets, " and highest g idx: ", g_idx)
-                break
-        L2sock.close()
-     
-    def run_storage_sniff(self, external_interface, listen_ip, listen_port, tofino_interface, dstAddr, srcAddr, ip_addr):
-        raw_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
-	#raw_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, interface.encode())
-	raw_sock.bind((external_interface, 0))
-        print("Storage listener thread started on {listen_ip}:{listen_port}")
-        nonce = 1
-	
-	#self.run_client_no_sniff(tofino_interface, dstAddr, srcAddr, ip_addr, nonce)
-	#self.run_client_no_sniff(tofino_interface, dstAddr, srcAddr, ip_addr, nonce)
-	raw_sock.settimeout(1)
-        while True:
-	    try:
-                raw_data, addr = raw_sock.recvfrom(65535)
-                
-                # 1. Parse Ethernet Header (First 14 bytes)
-                # !6s6sH -> Big-endian, 6 bytes (Dst MAC), 6 bytes (Src MAC), 2 bytes (Type)
+            try:
+                raw_data, addr = recv_sock.recvfrom(65535)
                 eth_header = raw_data[:14]
                 eth = struct.unpack('!6s6sH', eth_header)
                 eth_type = eth[2]
@@ -318,53 +279,61 @@ class SequencingTest(BfRuntimeTest):
                 dst_ip = socket.inet_ntoa(iph[9])
                 protocol = iph[6] # 17 for UDP
 
-
-                # IP packets are Type 0x0800
-                #if eth_type == 0x0800:
-                # 3. Filter for UDP (Protocol 17)
-                if dst_ip == "10.229.49.9" and protocol == 17:
-                    # UDP Header starts at index 34
-                    u_header = raw_data[34:42]
-                    udph = struct.unpack('!HHHH', u_header)
-                    src_port = udph[0]
-                    dest_port = udph[1]
-	            if dest_port == 5005: # TODO TODO 
-	                pkt = Ether(raw_data)
-	                #print("THIS IS THE ORIGINAL PACKET!!!")
-	                #pkt.show()
-	                # Update the packet
-	                pkt[Ether].dst = dstAddr
-	                pkt[Ether].src = srcAddr
-	                pkt[IP].dst = ip_addr
-	                pkt[IP].src = dst_ip
-			new_target_port = pkt[Append].recv_port
-	                #print("THIS IS THE UPDATED PACKET ( IF THAT IS POSSIBLE) !!!!")
-	                #pkt.show()
-	                if pkt[RingType].type == TYPE_APPEND_RESP: # TODO TODO 
-	        	    pkt = Ether(raw_data)
-	                    #pkt.show()
-	                    send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                            # 3. Send the bytes (pkt must include Ether/IP/UDP)
-                            try:
-                                send_sock.sendto(str(pkt[UDP].payload), ("169.229.48.63", new_target_port))
-	                        print("Sent the response packet!")
-                            except OSError as e:
-                                print("Send failed: e. Check if the IP:PORT is UP.")
-	    except socket.timeout:
-	        print("Halted: Waiting for packet to send response")
+                # UDP Header starts at index 34
+                u_header = raw_data[34:42]
+                udph = struct.unpack('!HHHH', u_header)
+                src_port = udph[0]
+                dest_port = udph[1]
+                PAYLOAD_OFFSET = 42
+                payload = raw_data[PAYLOAD_OFFSET:]
+                if dst_ip == target_ip and protocol == 17:
+                    print("Current timestamp for nonce {} is {}".format(Ether(raw_data)[Append].nonce, time.time()))
+                    send_sock.sendto(payload, (dst_ip, dest_port))
+	
+                #pkt = Ether(raw_data)
+		##print("Ether src: ", pkt[Ether].src, " Ether dst: ", pkt[Ether].dst)
+                #if pkt[Ether].src == tofinoSrcAddr:
+                #    if pkt.haslayer(Append):
+		#	#pkt[Ether].dst = target_mac
+		#	#pkt[Ether].src = switch_mac
+		#	#pkt[IP].dst = target_ip
+		#	pkt[UDP].dport = target_port
+                #        new_target_port = 0
+                #        if use_stor and pkt[RingType].type == TYPE_APPEND:
+		#	    new_target_port = 30003 #TODO
+		#   	    #print("Sent the storage server packet!")
+                #        else: # TODO slower!!
+                #            new_target_port = pkt[Append].recv_port
+		#	    pkt[RingType].type = TYPE_APPEND_RESP
+		#   	    #print("Send to the client!")
+		#	    #print(new_target_port)
+		#	del pkt[UDP].chksum # This forces Scapy to recalculate
+		#	del pkt[IP].chksum
+		#	pkt.show()
+                #        #print("Packet: ", pkt[Append].nonce, " w/ idx ", pkt[Append].g_idx, " with status ", pkt[Append].status)
+                #        #print("Packet: ", pkt[RingType].type, " w/ num_entries ", pkt[RingType].num_entries)
+		#	#print(target_ip)
+		#	#print(new_target_port)
+                #        # 3. Send the bytes (pkt must include Ether/IP/UDP)
+                #        send_sock.sendto(str(pkt[UDP].payload), (target_ip, new_target_port))
+            except socket.timeout:
+	        print("Halted: Waiting for packet to send tofino request")
 		continue
-
-
-    def run_client_sniff(self, external_interface, listen_ip, listen_port, tofino_interface, dstAddr, srcAddr, ip_addr):
+     
+    def run_jump_sniff(self, external_interface, listen_ip, listen_port, tofino_interface, dstAddr, srcAddr, ip_addr):
+	os.system("taskset -p -c 2 {}".format(os.getpid()))
         raw_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
 	#raw_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, interface.encode())
 	raw_sock.bind((external_interface, 0))
         print("Listener thread started on {listen_ip}:{listen_port}")
         nonce = 1
 	
+        tofino_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+        tofino_sock.bind((tofino_interface, 0))
+
 	#self.run_client_no_sniff(tofino_interface, dstAddr, srcAddr, ip_addr, nonce)
 	#self.run_client_no_sniff(tofino_interface, dstAddr, srcAddr, ip_addr, nonce)
-	raw_sock.settimeout(1)
+	#raw_sock.settimeout(1)
         while True:
 	    try:
                 raw_data, addr = raw_sock.recvfrom(65535)
@@ -393,30 +362,25 @@ class SequencingTest(BfRuntimeTest):
                     dest_port = udph[1]
 	            if dest_port == 5005: # TODO TODO 
 	        	pkt = Ether(raw_data)
-	                print("THIS IS THE ORIGINAL PACKET!!!")
+                        if pkt[Append].g_idx == 0:
+                            pkt[Append].timestamp = time.time()
+                            print("Time first receiving cli pkt: {} with nonce {}".format(pkt[Append].timestamp, pkt[Append].nonce))
+                            pkt.show()
+                        else:
+                            #lapse = time.time() - pkt[Append].timestamp
+                            print("Time receiving cli pkt storage server is sending back: {} with nonce {}".format(time.time(), pkt[Append].nonce))
+                            pkt.show()
+	                #print("THIS IS THE ORIGINAL PACKET!!!")
 	                #pkt.show()
 	                # Update the packet
-	                pkt[Ether].dst = dstAddr
-	                pkt[Ether].src = srcAddr
-	                pkt[IP].dst = ip_addr
-	                pkt[IP].src = dst_ip
-	                #print("THIS IS THE UPDATED PACKET ( IF THAT IS POSSIBLE) !!!!")
-	                #pkt.show()
-                        # The actual message starts after the UDP header (14 + 20 + 8 = 42)
-                        #payload = raw_data[42:]
-                        #print("IP: ", src_ip, " -> ", dst_ip, " | Port: ", src_port)
-                        #print("Data: ", payload) 
-                        # 4. "The particular header" logic:
-                        # Check if payload starts with a specific "Magic Number" or Keyword
-	                #self.run_client_no_sniff(tofino_interface, dstAddr, srcAddr, ip_addr, nonce)
-                        # Send socket
-	                if pkt[RingType].type == TYPE_APPEND:
-                            sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
-                            sock.bind((tofino_interface, 0))
-                            #pkt[Append].nonce = nonce    
-	                    pkt_buffer = bytes(pkt)
-                            sock.send(pkt_buffer)
-	            	    print("Sending append to tofino!")
+	                #pkt[Ether].dst = dstAddr
+	                #pkt[Ether].src = srcAddr
+	                #pkt[IP].dst = ip_addr
+	                #pkt[IP].src = dst_ip TODO is this important?
+                        #pkt_buffer = bytes(pkt)
+                        #print("Sending data TO tofino at time: {}".format(time.time()))
+                        tofino_sock.send(raw_data)
+	            	#print("Sending append to tofino!")
 	    except socket.timeout:
 	        print("Halted: Waiting for packet to send tofino request")
 		continue
@@ -434,14 +398,13 @@ class SequencingTest(BfRuntimeTest):
         # Send socket
         sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
         sock.bind((interface, 0))
-        pkt[Append].nonce = nonce    
+        pkt[Append].nonce = nonce 
         sock.send(pkt_buffer)
     
     def setup_switch_ports(self, target, switch_ports, loopback_port, control_port, port_speed, port_fec, size_of_ring):
         print(switch_ports)
 	for i in switch_ports:
 		self.port_setup(target, i, False, port_speed, port_fec)
-                break
 	self.port_setup(target, loopback_port, True, port_speed, port_fec)
 	if size_of_ring == 1:
 	    self.port_setup(target, control_port, True, port_speed, port_fec)
@@ -490,12 +453,18 @@ class SequencingTest(BfRuntimeTest):
 	client_base_port = data['client_recv_port'] # TODO
 	client_num_threads = data['num_client_threads']
 	switch_mac = data['switch_mac']
+        use_stor = data['use_stor']
+        cli_d_port = data['cli_d_port']
+        serv_d_port = data['serv_d_port']
+        ipv4_table_vals = data['ipv4_table_entries']
+        # NEXT SWITCH
+        # LIST OF ALL CONTROL PORTS
 	#send_timeout = 5 # TODO
 
         # Initialize all 5, 21, 3, 19, 23, 7 ports (332244)
 	self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring)
         #self.delete_tables(target, bfrt_info, ipAddr, dstAddr, cpu_port, in_cntrl, out_cntrl, meta_circulate)
-        self.initialize_tables(target, bfrt_info, ipAddr, dstAddr, cpu_port, in_cntrl, out_cntrl, meta_circulate, cntrl_port, loopback_port)
+        self.initialize_tables(target, bfrt_info, ipv4_table_vals, cli_d_port, serv_d_port, ipAddr, dstAddr, cpu_port, in_cntrl, out_cntrl, meta_circulate, cntrl_port, loopback_port)
 
         try:
             # Inject control packet into the dataplane
@@ -507,24 +476,18 @@ class SequencingTest(BfRuntimeTest):
                 time.sleep(2)
 
             # Create tofino listener socket
-            tofino_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(cpu_interface,dstAddr,target_ip,client_base_port,target_mac,switch_mac))
+            tofino_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(cpu_interface,dstAddr,target_ip,client_base_port,target_mac,switch_mac,use_stor,))
             tofino_thread.start()
             time.sleep(2)
 
             # Create client listener socket
-            client_thread = threading.Thread(target=self.run_client_sniff, args=(external_interface,listen_ip,listen_port,cpu_interface, dstAddr, srcAddr, ipAddr))
-            client_thread.start()
+            jump_thread = threading.Thread(target=self.run_jump_sniff, args=(external_interface,listen_ip,listen_port,cpu_interface, dstAddr, srcAddr, ipAddr))
+            jump_thread.start()
 
-	    # Create storage server listener socket
-            storage_thread = threading.Thread(target=self.run_storage_sniff, args=(external_interface,listen_ip,listen_port,cpu_interface, dstAddr, srcAddr, ipAddr))
-            storage_thread.start()
             time.sleep(2)
 
             #self.run_client_no_sniff(cpu_interface, dstAddr, srcAddr, ipAddr, send_timeout) TODO
-            while True:
-                pass
-
             tofino_thread.join()
-            client_thread.join()
+            jump_thread.join()
         except KeyboardInterrupt:
             print("\nStopped by user.")
