@@ -85,8 +85,8 @@ class Append(Packet):
                     IntField("status", 0),
                     IntField("cntrl_pkt_it", 0),
                     IntField("thread_id", 0),
-                    IntField("recv_port", 0),
-                    IntField("cli_idx", 0),
+                    ShortField("recv_port", 0),
+                    ShortField("cli_idx", 0),
                     LongField("timestamp", 0)]
 class Tail(Packet):
     fields_desc = [ BitField("cid", 0, 32),
@@ -179,7 +179,7 @@ class SequencingTest(BfRuntimeTest):
                 assert(data['$LOOPBACK_MODE'] == 'BF_LPBK_MAC_NEAR')
 
     # Need to add more tables
-    def initialize_tables(self, target, bfrt_info, ipv4_table_vals, cli_d_port, serv_d_port, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate, cntrl_port, loopback_port):
+    def initialize_tables(self, target, bfrt_info, ipv4_table_vals, cli_base_d_port, serv_d_port, ip_addr, dstAddr, recv_port, in_cntrl, out_cntrl, meta_circulate, cntrl_port, loopback_port, num_client_threads, client_ips_and_idx, shards_and_idx, type_for_cli_dest, type_for_serv_dest):
         # Set default output port
         table_ipv4 = bfrt_info.table_get("MyIngress.ipv4_lpm")
         table_ipv4.info.key_field_annotation_add("hdr.ipv4.dstAddr", "ipv4")
@@ -190,17 +190,31 @@ class SequencingTest(BfRuntimeTest):
                 [table_ipv4.make_key([gc.KeyTuple('hdr.ipv4.dstAddr', ipv4_table_vals[0], prefix_len=32)])],
                 [table_ipv4.make_data(action_name="MyIngress.ipv4_forward", data_field_list_in=[gc.DataTuple(name="dstAddr", val=ipv4_table_vals[1]), gc.DataTuple(name="port", val=int(ipv4_table_vals[2])),gc.DataTuple(name="dst_ip", val=ipv4_table_vals[3])])])
 
-        table_udp = bfrt_info.table_get("MyIngress.udp_exact")
-        table_udp.info.key_field_annotation_add("hdr.ring_type.type", "bit<16>")
-        table_udp.info.data_field_annotation_add("dst_port", "MyIngress.udp_forward", "bit<16>")
-        table_udp.entry_add(
-                    target, 
-                    [table_udp.make_key([gc.KeyTuple('hdr.ring_type.type', TYPE_APPEND)])],
-                    [table_udp.make_data(action_name="MyIngress.udp_forward", data_field_list_in=[gc.DataTuple(name="dst_port",val=serv_d_port)])])
-        table_udp.entry_add(
-                    target, 
-                    [table_udp.make_key([gc.KeyTuple('hdr.ring_type.type', TYPE_APPEND_RESP)])],
-                    [table_udp.make_data(action_name="MyIngress.udp_forward", data_field_list_in=[gc.DataTuple(name="dst_port",val=cli_d_port)])])
+        cli_d_port = cli_base_d_port
+
+        for ip_and_idx in client_ips_and_idx:
+            table_udp = bfrt_info.table_get("MyIngress.udp_exact")
+            table_udp.info.key_field_annotation_add("hdr.ring_type.type", "bit<16>")
+            table_ipv4.info.key_field_annotation_add("hdr.ipv4.dstAddr", "ipv4")
+            table_udp.info.key_field_annotation_add("hdr.append.cli_idx", "bit<16>")
+            table_udp.info.data_field_annotation_add("dst_port", "MyIngress.udp_forward", "bit<16>")
+            table_udp.entry_add(
+                        target, 
+                        [table_udp.make_key([gc.KeyTuple('hdr.ring_type.type', type_for_cli_dest)]), table_udp.make_key([gc.KeyTuple('hdr.ipv4.dstAddr', ip_and_idx[0])]), table_udp.make_key([gc.KeyTuple('hdr.append.cli_idx', ip_and_idx[1])])],
+                        [table_udp.make_data(action_name="MyIngress.udp_forward", data_field_list_in=[gc.DataTuple(name="dst_port",val=serv_d_port)])])
+        for shard_id in shards:
+            table_udp = bfrt_info.table_get("MyIngress.udp_exact")
+            table_udp.info.key_field_annotation_add("hdr.ring_type.type", "bit<16>")
+            table_udp.info.key_field_annotation_add("hdr.append.shard_id", "bit<16>")
+            table_udp.info.data_field_annotation_add("dst_port", "MyIngress.udp_forward", "bit<16>")
+            table_udp.entry_add(
+                        target, 
+                        [table_udp.make_key([gc.KeyTuple('hdr.ring_type.type', type_for_serv_dest)]), table_udp.make_key([gc.KeyTuple('hdr.append.shard_id', shard_id])],
+                        [table_udp.make_data(action_name="MyIngress.udp_forward", data_field_list_in=[gc.DataTuple(name="dst_port",val=serv_d_port)])])
+        #table_udp.entry_add(
+        #            target, 
+        #            [table_udp.make_key([gc.KeyTuple('hdr.ring_type.type', TYPE_APPEND_RESP)])],
+        #            [table_udp.make_data(action_name="MyIngress.udp_forward", data_field_list_in=[gc.DataTuple(name="dst_port",val=5005)])])
 
         # Set control table
         table_cntrl = bfrt_info.table_get("MyIngress.cntrl_id_to_ip")
@@ -286,9 +300,15 @@ class SequencingTest(BfRuntimeTest):
                 dest_port = udph[1]
                 PAYLOAD_OFFSET = 42
                 payload = raw_data[PAYLOAD_OFFSET:]
+
+                pkt = Ether(raw_data)
+                print("After tofino processes:")
+                print(dest_port)
+                print(dst_ip)
+                pkt.show()
                 if dst_ip == target_ip and protocol == 17:
                     print("Current timestamp for nonce {} is {}".format(Ether(raw_data)[Append].nonce, time.time()))
-                    send_sock.sendto(payload, (dst_ip, dest_port))
+                    send_sock.sendto(payload, (dst_ip, int(dest_port)))
 	
                 #pkt = Ether(raw_data)
 		##print("Ether src: ", pkt[Ether].src, " Ether dst: ", pkt[Ether].dst)
@@ -362,14 +382,14 @@ class SequencingTest(BfRuntimeTest):
                     dest_port = udph[1]
 	            if dest_port == 5005: # TODO TODO 
 	        	pkt = Ether(raw_data)
-                        if pkt[Append].g_idx == 0:
-                            pkt[Append].timestamp = time.time()
-                            print("Time first receiving cli pkt: {} with nonce {}".format(pkt[Append].timestamp, pkt[Append].nonce))
-                            pkt.show()
-                        else:
-                            #lapse = time.time() - pkt[Append].timestamp
-                            print("Time receiving cli pkt storage server is sending back: {} with nonce {}".format(time.time(), pkt[Append].nonce))
-                            pkt.show()
+                        #if pkt[Append].g_idx == 0:
+                        #    pkt[Append].timestamp = time.time()
+                        #    print("Time first receiving cli pkt: {} with nonce {}".format(pkt[Append].timestamp, pkt[Append].nonce))
+                        #    pkt.show()
+                        #else:
+                        #    #lapse = time.time() - pkt[Append].timestamp
+                        #    print("Time receiving cli pkt storage server is sending back: {} with nonce {}".format(time.time(), pkt[Append].nonce))
+                        #    pkt.show()
 	                #print("THIS IS THE ORIGINAL PACKET!!!")
 	                #pkt.show()
 	                # Update the packet
@@ -454,9 +474,15 @@ class SequencingTest(BfRuntimeTest):
 	client_num_threads = data['num_client_threads']
 	switch_mac = data['switch_mac']
         use_stor = data['use_stor']
-        cli_d_port = data['cli_d_port']
+        cli_base_d_port = data['cli_d_port']
+        num_client_threads = data['num_client_threads']
         serv_d_port = data['serv_d_port']
         ipv4_table_vals = data['ipv4_table_entries']
+
+        # Routing information
+        client_ips_and_idx = data['client_ips_and_idx']
+        type_for_cli_dest = data['type_send_to_cli']
+        type_for_serv_dest = data['type_send_to_serv']
         # NEXT SWITCH
         # LIST OF ALL CONTROL PORTS
 	#send_timeout = 5 # TODO
@@ -464,7 +490,7 @@ class SequencingTest(BfRuntimeTest):
         # Initialize all 5, 21, 3, 19, 23, 7 ports (332244)
 	self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring)
         #self.delete_tables(target, bfrt_info, ipAddr, dstAddr, cpu_port, in_cntrl, out_cntrl, meta_circulate)
-        self.initialize_tables(target, bfrt_info, ipv4_table_vals, cli_d_port, serv_d_port, ipAddr, dstAddr, cpu_port, in_cntrl, out_cntrl, meta_circulate, cntrl_port, loopback_port)
+        self.initialize_tables(target, bfrt_info, ipv4_table_vals, cli_base_d_port, serv_d_port, ipAddr, dstAddr, cpu_port, in_cntrl, out_cntrl, meta_circulate, cntrl_port, loopback_port, num_client_threads, client_ips_and_idx, type_for_cli_dest, type_for_serv_dest)
 
         try:
             # Inject control packet into the dataplane

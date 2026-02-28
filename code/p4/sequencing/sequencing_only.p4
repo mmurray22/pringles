@@ -126,8 +126,8 @@ header append_entry_t {
     int<32> cntrl_pkt_it;
 
     bit<32> thread_id;
-    bit<32> recv_port;
-    bit<32> cli_idx;
+    bit<16> recv_port;
+    bit<16> cli_idx;
     bit<64> timestamp;
 }
 
@@ -338,7 +338,7 @@ control MyIngress(inout headers hdr,
 
     /** MATCH-ACTION TABLES **/
 
-    /* Standard IPv4 routing */
+    /**** ROUTING *****/
     action drop() {
         ig_dprsr_md.drop_ctl = 1;
     }
@@ -372,16 +372,17 @@ control MyIngress(inout headers hdr,
     }
 
     action udp_forward(bit<16> dst_port) {
-        hdr.udp.dst_port = dst_port;
+         hdr.udp.dst_port = dst_port;
     }
     
-    table udp_exact {
+    table set_udp_port {
         key = {
             hdr.ring_type.type: exact;
+	    hdr.ipv4.dstAddr: exact;
+	    hdr.append.cli_idx: exact;
         }
         actions = {
             udp_forward;
-            drop;
             NoAction;
         }
         size = 1024;
@@ -406,7 +407,7 @@ control MyIngress(inout headers hdr,
     }
 
 
-    /* Control Packet */
+    /**** CONTROL PACKET *****/
     action cntrl_forward(egressSpec_t port, bit<32> pkt_id) {
         ig_tm_md.ucast_egress_port = port;
         hdr.cntrl.pkt_id = pkt_id;
@@ -425,7 +426,7 @@ control MyIngress(inout headers hdr,
         default_action = drop();
     }
     
-    /* Ring View */
+    /**** RING VIEW *****/
     table check_view {
         key = {
             hdr.cntrl.ring_view: exact;
@@ -438,7 +439,7 @@ control MyIngress(inout headers hdr,
         default_action = NoAction();
     }
 
-    /* Get tail logic*/
+    /**** TAIL *****/
     /*action forward_tail(egressSpec_t port) {
         ig_tm_md.ucast_egress_port = port;
         hdr.tail.hops = hdr.tail.hops + 1;
@@ -466,6 +467,7 @@ control MyIngress(inout headers hdr,
         default_action = drop();
     }*/
 
+    /**** DONE WITH MATCH ACTION TABLES *****/
     apply {
 	meta.circulate = 0;
         bit<32> cntrl_pkt_it_reg = update_cntrl_pkt_it.execute();
@@ -506,8 +508,11 @@ control MyIngress(inout headers hdr,
             ipv4_lpm.apply();
         }
 
-	if (hdr.udp.isValid()) {
-	    udp_exact.apply();
+	if (hdr.udp.isValid() && hdr.append.isValid()) {
+	     //bit<16> recv_port = hdr.append.recv_port;
+	     hdr.udp.dst_port = hdr.append.recv_port;
+	     udp_exact.apply();
+	     hdr.udp.checksum = 0;
 	}	
     }
 }
