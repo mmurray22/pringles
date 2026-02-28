@@ -115,7 +115,12 @@ Thumbs.db
 *.wmv
 
 # Vim files
-*.swp
+*/*.swp
+code/src/*.swp
+code/include/*.swp
+experiments/scripts/*.swp
+experiments/unit_tests/*.swp
+experiments/yaml/*.swp
 
 # Packet captures
 *.pcap
