@@ -10,6 +10,9 @@ cloudlab.pub
 # Personal tasks list
 todo.md
 
+# Static builds
+subprojects/
+
 ### CMake
 builddir/*
 

@@ -34,9 +34,9 @@ Network::Network(std::string send_port,
 		 uint64_t num_pkt_type,
 		 bool run_threads) :  rcv_pkt(1000000)
 { 
-    if (geteuid() != 0) { // Check if we are running as root
+    /*if (geteuid() != 0) { // Check if we are running as root
         throw std::runtime_error("Not running as root!");
-    }
+    }*/
     if(!check_socket_type(socket_type)) { 
         throw std::runtime_error("Invalid socket type!");
     }
@@ -490,7 +490,7 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
 			  int eth_type,
 			  std::string dst_ip,
 			  std::string dst_port) {
-    bool sent_all = true;
+    bool sent_all = false;
     (void) pkt_type;
     (void) eth_type;
     
@@ -517,13 +517,14 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
         } 
         port_to_fd.insert({combined_addr, s_fd});
     }
-
-    ssize_t num_bytes = send(s_fd, send_packet.get(), pkt_len, 0);
-    if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
-        spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        sent_all = false;
-    } else {
-         //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+    while (!terminate && !sent_all) {
+        ssize_t num_bytes = send(s_fd, send_packet.get(), pkt_len, 0);
+        if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
+            spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        } else {
+             //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+	     sent_all = true;
+        }
     }
     return sent_all;
 }
@@ -535,7 +536,7 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
 			  int eth_type,
 			  std::string dst_ip,
 			  std::string dst_port) {
-    bool sent_all = true;
+    bool sent_all = false;
     (void) pkt_type;
     (void) eth_type;
     
@@ -585,19 +586,21 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     }
   
     // TODO TODO TODO SPECIALIZED HEADER REFERENCE
-    ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries = num_pkts; 
+    ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries = htonl(num_pkts); 
     //spdlog::debug("The number of entries in this send are: {} with number of packets {}", ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries, num_pkts); 
     char* actual_test_send = (char*)std::malloc(running_pkt_size);    
     memcpy(actual_test_send, final_send_packet, running_pkt_size);
-    spdlog::debug("The number of entries in this send are: {} with total number of packets received {}", ((struct ring_append_entry*)(actual_test_send + sizeof(struct ring_type)))->num_entries, num_pkts); 
-    ssize_t num_bytes = send(s_fd, actual_test_send, running_pkt_size, 0);
-    
-    if (num_bytes < 0 || ((uint64_t)num_bytes != running_pkt_size)) {
-        spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        sent_all = false;
-    } else {
-        //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
-	//memset(final_send_packet, 0, MAX_PACKET_SIZE);
+    spdlog::debug("The number of entries in this send are: {} with total number of packets received {}", ntohl(((struct ring_append_entry*)(actual_test_send + sizeof(struct ring_type)))->num_entries), num_pkts); 
+    while (!terminate && !sent_all) {
+        ssize_t num_bytes = send(s_fd, actual_test_send, running_pkt_size, 0);
+        
+        if (num_bytes < 0 || ((uint64_t)num_bytes != running_pkt_size)) {
+            spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        } else {
+            //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+            //memset(final_send_packet, 0, MAX_PACKET_SIZE);
+	    sent_all = true;
+        }
     }
     free(actual_test_send);
     running_pkt_size = 0;

@@ -16,7 +16,7 @@ uint64_t get_threads(YAML::Node config);
 
 std::string get_self_ip(YAML::Node config); // covered
 uint64_t get_send_port(YAML::Node config); // covered
-uint64_t get_recv_port(YAML::Node config); //covered
+uint16_t get_recv_port(YAML::Node config); //covered
 std::string get_socket_type(YAML::Node config); // covered
 std::string get_interface(YAML::Node config); // covered
 

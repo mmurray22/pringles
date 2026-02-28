@@ -93,9 +93,9 @@ uint64_t get_send_port(YAML::Node config) {
     return config["send_port"].as<uint64_t>();
 }
 
-uint64_t get_recv_port(YAML::Node config) {
-    spdlog::debug("Port: {}", config["recv_port"].as<uint64_t>());
-    return config["recv_port"].as<uint64_t>();
+uint16_t get_recv_port(YAML::Node config) {
+    spdlog::debug("Port: {}", config["recv_port"].as<uint16_t>());
+    return config["recv_port"].as<uint16_t>();
 }
 
 /* Socket type */

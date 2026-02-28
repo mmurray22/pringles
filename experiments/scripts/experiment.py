@@ -7,6 +7,7 @@ import time
 import sys
 import os
 import json 
+import paramiko
 from datetime import datetime 
 from copy import deepcopy 
 # NEW IMPORT: Matplotlib for plotting the results
@@ -35,147 +36,51 @@ SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
 COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
 RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
 
-def generate_switch_setup_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None):
-    configs = []
+def generate_switch_config(base_config, i, cntrl_port_num, ring_size, client_base_recv_port, serv_recv_port, loopback_port, num_client_threads):
     switch_params = base_config['switches']
-    for i in base_config['experiment_parameters'][switch_in_ring]:
-        port_idx = 'switch_ports' + i
-        cntrl_port = 'cntrl_port_switch' + i
-        yaml_config = {
-            'loopback_port': switch_params['loopback_port'],
-            'switch_ports': [port for port in switch_params['port_idx']],
-            'cntrl_port': switch_params['cntrl_port'],
-            'cpu_port': switch_params['cpu_port'],
-            'dummy_ip_addr': QuotedString(switch_params['dummy_ip_addr']),
-            'mac_dst_addr': QuotedString(switch_params['dstAddr']),
-            'mac_src_addr': QuotedString(switch_params['srcAddr']),
-            'device_number': switch_params['dev_number'],
-            'cpu_interface': QuotedString(switch_params['cpu_interface']),
-            'external_interface': QuotedString(switch_params['external_interface']),
-            'port_speed': "BF_SPEED_10G",
-            'port_fec': "BF_FEC_TYPE_NONE",
-            'loopback_mode': "BF_LPBK_MAC_NEAR",
-            'meta_circulate': 1,
-            'in_cntrl': 1,
-            'out_cntrl': 1
-        }
-        configs.push(yaml_config)
-
-    configs[len(configs) - 1].update({send_cntrl_pkt: 1})
-    """Generates the configuration dictionary for a client or server."""
-    
-    # Base port calculation to ensure uniqueness
-    send_port = BASE_PORT + port_offset
-    recv_port = BASE_PORT + port_offset + 1
-
-    # Extract required parameters from the fully merged base_config
-    exp_params = base_config['experiment_parameters']
-    proto_params = base_config['protocol_batching']
-    net_params = base_config['network_setup']
-    route_params = base_config['routing']
-
-    # Calculate experiment duration, adding a delay for servers (Feature 3)
-    exp_duration = exp_params['experiment_duration']
-    warm_up = exp_params['warm_up']
-    cool_down = exp_params['cool_down']
-
-
-    if entity_type == 'server':
-        # Servers run longer than the client to ensure no early termination
-        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY
-    elif entity_type == 'switch':
-        final_duration = exp_duration + warm_up + cool_down + SWITCH_START_DELAY
-    else:
-        final_duration = exp_duration + warm_up + cool_down
-
-    # Initialize the base YAML structure
-    cli_macs = [QuotedString(mac) for mac in net_params['cli_macs']]
-    cli_ips = [QuotedString(mac) for mac in net_params['cli_ips']]
-    stor_macs = [QuotedString(mac) for mac in net_params['stor_macs']]
-    stor_ips = [QuotedString(mac) for mac in net_params['stor_ips']]
-    yaml_config = {
-        'log_level': exp_params['log_level'],
-        'switch_ip': QuotedString(net_params['switch_ip']),
-        'switch_mac': QuotedString(net_params['switch_mac']),
-        'cli_macs': cli_macs,
-        'cli_ips': cli_ips,
-        'stor_macs': stor_macs,
-        'stor_ips': stor_ips,
-        'send_port': QuotedString(send_port),
-        'recv_port': QuotedString(recv_port),
-        'stor_recv_port': QuotedString(net_params['stor_recv_port']),
-        'switch_recv_port': QuotedString(net_params['switch_recv_port']),
-        'send_threads': 1,  # [INACTIVE]
-        # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
-        'socket_type': QuotedString(exp_params['socket_type']),
-        # WRAPPED: Ensures self_ip is quoted
-        'self_ip': QuotedString(entity_ip),
-        # WRAPPED: Ensures interface name is quoted
-        'batch_size': exp_params['batch_size'],
-        'batch_usec_timeout': exp_params['batch_usec_timeout'], 
-        'batch_on': proto_params['batch_on'],
-        'num_pkt_types': proto_params['num_packet_types'],
-        # Use the calculated final duration (adjusted for servers)
-        'experiment_duration': final_duration, 
-        'payload_size': exp_params['message_size'],
-        'use_switch': exp_params['use_switch'],
-        'use_store': exp_params['use_store']
+    port_idx = "switch_ports" + str(i)
+    cntrl_port = "cntrl_port_switch" + str(i)
+    switch_config = {
+        'loopback_port': loopback_port,
+        'switch_ports': [port for port in switch_params[port_idx]],
+        'cntrl_port': cntrl_port_num,
+        'cpu_port': switch_params['cpu_port'],
+        'listen_port': switch_params['listen_port'],
+        'dummy_ip_addr': QuotedString(switch_params['dummy_ip_addr']),
+        'mac_dst_addr': QuotedString(switch_params['mac_dst_addr']),
+        'mac_src_addr': QuotedString(switch_params['mac_src_addr']),
+        'device_number': switch_params['dev_number'],
+        'cpu_interface': QuotedString(switch_params['cpu_interface']),
+        'external_interface': QuotedString(switch_params['external_interface']),
+        'port_speed': QuotedString("BF_SPEED_10G"),
+        'port_fec': QuotedString("BF_FEC_TYP_NONE"),
+        'loopback_mode': QuotedString("BF_LPBK_MAC_NEAR"),
+        'meta_circulate': 1,
+        'in_cntrl': 1,
+        'out_cntrl': 1,
+        'storage_server_ip': QuotedString(base_config['network_setup']['stor_ips'][0]),
+        'storage_server_recv_port': QuotedString(base_config['network_setup']['stor_recv_port']),
+        'client_ip': QuotedString(base_config['network_setup']['cli_ips'][0]),
+        'size_of_ring': ring_size,
+        'switch_mac': QuotedString(switch_params['switch_macs'][i]),
+        'switch_ip': QuotedString(switch_params['switch_ips'][i]),
+        'client_mac': QuotedString(switch_params['jump_mac']),
+        'client_ip': QuotedString(switch_params['jump_ip']),
+        'num_client_threads': base_config['experiment_parameters']['num_client_threads'],
+        'client_recv_port': client_base_recv_port,
+        'use_stor': base_config['experiment_parameters']['use_store'],
+        'ipv4_table_entries': [QuotedString(entry) for entry in base_config['switches']['ipv4_table_entries']],
+        'cli_d_port': client_base_recv_port, #client_recv_port,
+        'num_client_threads': num_client_threads,
+        'serv_d_port': serv_recv_port
     }
-    
-    # Pre-calculate and wrap client destination MACs (used by both client to send, and server to reply)
-    client_macs = [QuotedString(mac) for mac in route_params['client_dest_macs']]
-    server_macs = [QuotedString(mac) for mac in route_params['server_dest_macs']]
 
-    # --- Client Specific Fields ---
-    if entity_type == 'client':
-        # Routing: Wrap list elements (IPs)
-        client_ips = [QuotedString(ip) for ip in route_params['list_client_dest_ips']]
-        
-        yaml_config.update({
-            'sequencer_type': proto_params['sequencer_type'],
-            'num_client_threads': exp_params['num_client_threads'],
-            'cli_id': entity_id, # Integer
-            
-            # Add json_name to client config (as a QuotedString)
-            'json_name': QuotedString(json_name), 
-            
-            # Add num_failures to client config
-            'num_failures': num_failures, 
-
-            # warm up time
-            'warm_up': warm_up,
-
-            # cool down time
-            'cool_down': cool_down,
-            'interface': QuotedString(network_interface),
-            'cli_idx': entity_idx
-        })
-    
-    # --- Storage Server Specific Fields ---
-    elif entity_type == 'server':
-        # Routing: Wrap list elements (IPs)
-        server_ips = [QuotedString(ip) for ip in route_params['list_storage_server_dest_ips']]
-
-        # Randomly generated values for simplicity, as requested
-        shard_id = random.randint(0, 999)
-        shard_switch_id = random.randint(0, 9)
-
-        yaml_config.update({
-            'storage_type': proto_params['storage_server_type'],
-            'shard_id': shard_id,
-            'shard_switch_id': shard_switch_id,
-            'stor_id': entity_id, # Integer
-            'use_switch': exp_params['use_switch'],
-            'num_storage_threads': exp_params['num_storage_threads'],
-            'interface': QuotedString(network_interface)
-        })
-
-    elif entity_type == 'switch':
-        yaml_config.update({
-            'interface': QuotedString(network_interface)
-        })
-
-    return yaml_config
+    if i == base_config["experiment_parameters"]["switches_in_ring"][len(base_config["experiment_parameters"]["switches_in_ring"]) - 1]:
+        switch_config.update({'send_cntrl_pkt': 1})
+    else:
+        switch_config.update({'send_cntrl_pkt': 0})
+    """Generates the configuration dictionary for a switch."""
+    return switch_config
 
 
 def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None):
@@ -294,18 +199,18 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
 
     return yaml_config
 
-def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index):
+def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index, prefix):
     """
     Executes a program on a remote machine asynchronously using SSH, 
     redirecting stdout/stderr to a log file. Returns the Popen object and the log filename.
     """
     # NEW/MODIFIED: Log file is named after the IP address
-    log_filename = f"{ip}_{exp_index}.txt" 
+    log_filename = prefix + f"_{ip}_{exp_index}.txt" 
     
     # NEW/MODIFIED: redirect all output (&>) to the log file, and run in background (&)
-    remote_command = f'sudo {program_path} ~/{config_filename} > ~/{log_filename} &'
+    command = []
+    remote_command = f'{program_path} ~/{config_filename} > ~/{log_filename} &'
     full_remote_command = f'/bin/bash -c "{remote_command} ; sleep 1"'
-
     command = [
         'ssh',
         '-i', ssh_key,
@@ -352,7 +257,7 @@ def transfer_file(local_path, remote_ip, remote_user, ssh_key, remote_filename=N
         local_path,
         f'{remote_user}@{remote_ip}:~/{remote_filename}'
     ]
-    
+    print(f"Command: {command}")
     try:
         subprocess.run(
             command,
@@ -521,12 +426,13 @@ def cleanup_remote_yaml_files(hosts, ssh_key, ssh_user):
             
     print("Remote YAML cleanup finished.")
 
-def process_and_aggregate_results(local_target_dir):
+def process_and_aggregate_results(local_target_dir, ring_size):
     """
     Reads all JSON files in the target directory, calculates aggregate throughput and 
     total average latency PER JSON_NAME, and writes a summary JSON file for each group.
     """
     # Find all JSON files in the directory
+    print(ring_size)
     all_files = os.listdir(local_target_dir)
     # Filter out files that look like aggregated summaries (ends with just .json)
     result_files = [f for f in all_files if f.endswith('.json') and len(f.split('_')) > 1]
@@ -542,6 +448,7 @@ def process_and_aggregate_results(local_target_dir):
         # Extract the json_name_prefix from the filename
         # Assumes format is: prefix_..._threadID.json
         parts = filename.split('_')
+        print(parts)
         # Use everything up to the first underscore as the prefix
         json_name_prefix = parts[0]
             
@@ -550,7 +457,7 @@ def process_and_aggregate_results(local_target_dir):
         grouped_results[json_name_prefix].append(filename)
 
     print(f"\n--- Aggregating Results for {len(grouped_results)} experiment groups ---")
-
+    it = 0
     for json_name_prefix, files_to_aggregate in grouped_results.items():
         
         total_agg_tput = 0.0
@@ -602,8 +509,10 @@ def process_and_aggregate_results(local_target_dir):
             "agg_tput": total_agg_tput,
             "total_avg_latency": final_avg_latency,
             "num_clients": file_count,
-            "batch_size": batch_size
+            "batch_size": batch_size,
+            "num_switches_in_ring": ring_size[it]
         }
+        it += 1
 
         # Write the final aggregated JSON file named [json_name].json
         output_filename = f"{json_name_prefix}.json"
@@ -617,7 +526,7 @@ def process_and_aggregate_results(local_target_dir):
             print(f"Error: Failed to write final summary JSON to {output_filepath}: {e}")
 
 # REVISED FUNCTION: Creates three separate PNG files
-def plot_results(local_target_dir):
+def plot_results(local_target_dir, plot_param):
     """
     Reads the aggregated JSON files and plots the three required graphs as separate PNGs.
     """
@@ -626,6 +535,7 @@ def plot_results(local_target_dir):
     all_files = os.listdir(local_target_dir)
     # Filter for aggregated summary files (those without underscores in the name, e.g., 'two_clients.json')
     summary_files = [f for f in all_files if f.endswith('.json') and len(f.split('_')) == 1]
+    print(summary_files)
     
     if not summary_files:
         print(f"Warning: No aggregated summary JSON files found in {local_target_dir}. Cannot plot results.")
@@ -633,6 +543,7 @@ def plot_results(local_target_dir):
         
     # Lists to store the data points
     num_clients_list = []
+    num_switches_in_ring = []
     tput_list = []
     latency_list = []
     batch_list = []
@@ -645,43 +556,67 @@ def plot_results(local_target_dir):
                 data = json.load(f)
                 
             # Ensure all required fields exist and are numeric
-            num_clients = data.get('num_clients')
-            agg_tput = data.get('agg_tput')
-            total_avg_latency = data.get('total_avg_latency')
-            batch_size = data.get('batch_size')
-            if all(isinstance(v, (int, float)) for v in [num_clients, agg_tput, total_avg_latency]):
-                num_clients_list.append(num_clients)
-                tput_list.append(agg_tput)
-                latency_list.append(total_avg_latency)
-                batch_list.append(batch_size)
-            else:
-                print(f"Warning: Skipping file {filename} due to missing or invalid data fields.")
+            if plot_param == 'num_clients':
+                num_clients = data.get('num_clients')
+                agg_tput = data.get('agg_tput')
+                total_avg_latency = data.get('total_avg_latency')
+                batch_size = data.get('batch_size')
+                if all(isinstance(v, (int, float)) for v in [num_clients, agg_tput, total_avg_latency]):
+                    num_clients_list.append(num_clients)
+                    tput_list.append(agg_tput)
+                    latency_list.append(total_avg_latency)
+                    batch_list.append(batch_size)
+                else:
+                    print(f"Warning: Skipping file {filename} due to missing or invalid data fields.")
+            elif plot_param == 'switches_in_ring':
+                num_switches = data.get('num_switches_in_ring')
+                agg_tput = data.get('agg_tput')
+                total_avg_latency = data.get('total_avg_latency')
+                batch_size = data.get('batch_size')
+                if all(isinstance(v, (int, float)) for v in [num_switches, agg_tput, total_avg_latency]):
+                    num_switches_in_ring.append(num_switches)
+                    tput_list.append(agg_tput)
+                    latency_list.append(total_avg_latency)
+                    batch_list.append(batch_size)
+                else:
+                    print(f"Warning: Skipping file {filename} due to missing or invalid data fields.")
 
         except Exception as e:
             print(f"Error reading or processing summary file {filename}: {e}")
 
-    if not num_clients_list:
+    if not num_clients_list and not num_switches_in_ring:
+        print(num_clients_list)
+        print(num_switches_in_ring)
         print("No valid data points collected for plotting.")
         return
 
     # 2. Sort the lists by the number of clients (for cleaner X-axes)
     # Combine into tuples, sort, and unpack
-    combined = sorted(zip(num_clients_list, tput_list, latency_list))
-    num_clients_list, tput_list, latency_list = zip(*combined)
+    if plot_param == 'num_clients':
+        combined = sorted(zip(num_clients_list, tput_list, latency_list))
+        num_clients_list, tput_list, latency_list = zip(*combined)
+    elif plot_param == 'switches_in_ring':
+        combined = sorted(zip(num_switches_in_ring, tput_list, latency_list))
+        num_switches_in_ring, tput_list, latency_list = zip(*combined)
 
     # 3. Create and save plots individually
     
     # --- Plot 1: Clients vs. Aggregate Throughput (throughut_vs_clients.png) ---
     plt.figure(figsize=(8, 6))
-    plt.plot(batch_list, tput_list, marker='o', linestyle='-', color='blue')
+    if plot_param == 'num_clients':
+        plt.plot(num_clients_list, tput_list, marker='o', linestyle='-', color='blue')
+    elif plot_param == 'switches_in_ring':
+        plt.plot(num_switches_in_ring, tput_list, marker='o', linestyle='-', color='blue')
     plt.xlabel('Number of Clients')
     plt.ylabel('Aggregate Throughput')
     plt.title(f'Aggregate Throughput vs. Client Count\nExperiment: {os.path.basename(local_target_dir)}')
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.xlim(xmin=0) # NEW
     plt.ylim(ymin=0) # NEW
-    #plt.xticks(num_clients_list) # Force X-ticks to match data points
-    plt.xticks(batch_list) # Force X-ticks to match data points
+    if plot_param == 'num_clients':
+        plt.xticks(num_clients_list) # Force X-ticks to match data points
+    elif plot_param == 'switches_in_ring':
+        plt.xticks(num_switches_in_ring) # Force X-ticks to match data points
     plot_filepath_1 = os.path.join(local_target_dir, "throughput_vs_clients.png")
     plt.savefig(plot_filepath_1)
     plt.close()
@@ -690,14 +625,20 @@ def plot_results(local_target_dir):
 
     # --- Plot 2: Clients vs. Total Average Latency (latency_vs_clients.png) ---
     plt.figure(figsize=(8, 6))
-    plt.plot(num_clients_list, latency_list, marker='o', linestyle='-', color='red')
+    if plot_param == 'num_clients':
+        plt.plot(num_clients_list, latency_list, marker='o', linestyle='-', color='red')
+    elif plot_param == 'switches_in_ring':
+        plt.plot(num_switches_in_ring, latency_list, marker='o', linestyle='-', color='red')
     plt.xlabel('Number of Clients')
     plt.ylabel('Total Average Latency (ms)')
     plt.title(f'Total Average Latency vs. Client Count\nExperiment: {os.path.basename(local_target_dir)}')
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.xlim(xmin=0) # NEW
     plt.ylim(ymin=0) # NEW
-    plt.xticks(num_clients_list) # Force X-ticks to match data points
+    if plot_param == 'num_clients':
+        plt.xticks(num_clients_list) # Force X-ticks to match data points
+    elif plot_param == 'switches_in_ring':
+        plt.xticks(num_switches_in_ring) # Force X-ticks to match data points
     plot_filepath_2 = os.path.join(local_target_dir, "latency_vs_clients.png")
     plt.savefig(plot_filepath_2)
     plt.close()
@@ -709,9 +650,15 @@ def plot_results(local_target_dir):
     plt.plot(tput_list, latency_list, marker='o', linestyle='-', color='green')
     #plt.scatter(tput_list, latency_list, marker='o', color='green')
     # Annotate each point with the number of clients
-    for i, clients in enumerate(num_clients_list):
-        plt.annotate(f'{clients} Cli', (tput_list[i], latency_list[i]), 
-                     textcoords="offset points", xytext=(5,-5), ha='left')
+    if plot_param == 'num_clients':
+        for i, clients in enumerate(num_clients_list):
+            plt.annotate(f'{clients} Cli', (tput_list[i], latency_list[i]), 
+                         textcoords="offset points", xytext=(5,-5), ha='left')
+    elif plot_param == 'switches_in_ring':
+        for i, switches in enumerate(num_switches_in_ring):
+            plt.annotate(f'{switches} Switch', (tput_list[i], latency_list[i]), 
+                         textcoords="offset points", xytext=(5,-5), ha='left')
+
     #for i, batch_sz in enumerate(batch_list):
     #    plt.annotate(f'{batch_sz} Batch', (tput_list[i], latency_list[i]), 
     #                 textcoords="offset points", xytext=(5,-5), ha='left')
@@ -774,37 +721,196 @@ def run_compile_command(ip, ssh_key, ssh_user):
         print(f"ERROR connecting to {ip} for compilation: {e}")
         return False
 
-def setup_switches(config):
+def execute_scp_switch_cmd(config, program_path, binary_name):
+    print(f"Setting up the switches now!")
     # here is the setup
+    jump_host = config["switches"]["jump_host"]
+    jump_user = config["switches"]["jump_user"]
+    target_user = "root"
+    switch_ips = config["switches"]["switch_ips"]
+    switches_in_ring = config["experiment_parameters"]["switches_in_ring"]
+    config_filename = config["switches"]["config_name"]
+    print(f"Switch ips: {switch_ips}")
+    it = 0
+
+    for idx in switches_in_ring:
+        switch_ip = switch_ips[idx]
+        # 1. Connect to Jumppoint
+        jump_client = paramiko.SSHClient()
+        jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        jump_client.connect(jump_host, username=jump_user)
+        
+        # 2. Open a transport channel through the Jumppoint to the Target
+        jump_transport = jump_client.get_transport()
+        dest_addr = (switch_ip, 22)
+        local_addr = ('localhost', 0) # Source addr on jump host
+        jump_channel = jump_transport.open_channel("direct-tcpip", dest_addr, local_addr)
+        
+        # 3. Connect to Target using the Jumppoint channel as a socket
+        target_client = paramiko.SSHClient()
+        target_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        target_client.connect(switch_ip, username=target_user, sock=jump_channel)
+        
+        # 4. Run your command
+        transport = target_client.get_transport()
+        chan = transport.open_session()
+       
+        remote_path = "/root/" + binary_name
+        print(remote_path)
+        print(program_path)
+        sftp = target_client.open_sftp()
+        sftp.put(program_path, remote_path) 
+        
+        # Cleanup
+        sftp.close()
+        target_client.close()
+        jump_client.close()
+
+def execute_remote_switch_cmd(config, program_path, config_filename):
+    print(f"Setting up the switches now!")
+    # here is the setup
+    jump_host = config["switches"]["jump_host"]
+    jump_user = config["switches"]["jump_user"]
+    target_user = "root"
+    switch_ips = config["switches"]["switch_ips"]
+    switches_in_ring = config["experiment_parameters"]["switches_in_ring"]
+    print(f"Switch ips: {switch_ips}")
+    it = 0
+
+    for idx in switches_in_ring:
+        switch_ip = switch_ips[idx]
+        # 1. Connect to Jumppoint
+        jump_client = paramiko.SSHClient()
+        jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        jump_client.connect(jump_host, username=jump_user)
+        
+        # 2. Open a transport channel through the Jumppoint to the Target
+        jump_transport = jump_client.get_transport()
+        dest_addr = (switch_ip, 22)
+        local_addr = ('localhost', 0) # Source addr on jump host
+        jump_channel = jump_transport.open_channel("direct-tcpip", dest_addr, local_addr)
+        
+        # 3. Connect to Target using the Jumppoint channel as a socket
+        target_client = paramiko.SSHClient()
+        target_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        target_client.connect(switch_ip, username=target_user, sock=jump_channel)
+        
+        # 4. Run your command
+        transport = target_client.get_transport()
+        chan = transport.open_session()
+        
+        # Clean up the machine
+        #kill_prior_process = "pkill -9 -f 'bf_switchd|net_cli'"
+        #chan.exec_command(kill_prior_process)
+        #time.sleep(5)
+
+        program_command = "nohup " + program_path + f"> ~/{config_filename} 2>&1 &"
+        print(program_command)
+        chan = transport.open_session()
+        chan.exec_command(program_command)
+        time.sleep(5)
+
+        # Cleanup
+        target_client.close()
+        jump_client.close()
+
+
+def setup_switches(config):
+    print(f"Setting up the switches now!")
+    # here is the setup
+    jump_host = config["switches"]["jump_host"]
+    jump_user = config["switches"]["jump_user"]
+    target_user = "root"
     tofino_model = config["switches"]["tofino_model"]
     switchd = config["switches"]["switchd"]
-    ptf_tests = config["switches"]["ptf_test"] 
+    control_plane = config["switches"]["ptf_test"] 
     arch = config["switches"]["arch"]
-    program = config["switches"]["sequencing_only"]
     switch_ips = config["switches"]["switch_ips"]
+    switches_in_ring = config["experiment_parameters"]["switches_in_ring"]
+    config_filename = config["switches"]["config_name"]
+    print(f"Switch ips: {switch_ips}")
+    it = 0
+    for idx in switches_in_ring:
+        switch_ip = switch_ips[idx]
+        # 1. Connect to Jumppoint
+        jump_client = paramiko.SSHClient()
+        jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        jump_client.connect(jump_host, username=jump_user)
+        
+        # 2. Open a transport channel through the Jumppoint to the Target
+        jump_transport = jump_client.get_transport()
+        dest_addr = (switch_ip, 22)
+        local_addr = ('localhost', 0) # Source addr on jump host
+        jump_channel = jump_transport.open_channel("direct-tcpip", dest_addr, local_addr)
+        
+        # 3. Connect to Target using the Jumppoint channel as a socket
+        target_client = paramiko.SSHClient()
+        target_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        target_client.connect(switch_ip, username=target_user, sock=jump_channel)
+        
+        # 4. Run your command
+        transport = target_client.get_transport()
+        chan = transport.open_session()
+        
+        # Control port
+        cntrl_key = "cntrl_port_switch" + str(idx)
+        if it == 0:
+            cntrl_port = config["switches"][cntrl_key][switches_in_ring[(len(switches_in_ring)-1)]] #config["switches"][cntrl_key][(it - 1) % len(switches_in_ring)]
+        else:
+            cntrl_port = config["switches"][cntrl_key][switches_in_ring[(it-1)]] #config["switches"][cntrl_key][(it - 1) % len(switches_in_ring)]
+        it += 1
 
-    for i in len(switch_ips):
-        # Step 1: Run the tofino model
-        # cfg_tofino = "switch_tofino_model_log"
-        # execute_remote_command(switch_ips[i], tofino_model, cfg_tofino, ssh_key, ssh_user, i)
-        # sleep(10) # Crude approximation to wait for tofino setup, TODO actual indicator?
+        # Copy over config
+        server_ips = config['network_setup']['stor_ips']
+        num_client_threads = config['experiment_parameters']['num_client_threads']
+        client_recv_port = BASE_PORT + len(server_ips) * 2 + num_client_threads # TODO hardcoded
+        server_recv_port = BASE_PORT + 3 # TODO mega hardcoded
+        loopback_port = config["switches"]["loopback_ports"][idx] 
+        switch_config = generate_switch_config(config, idx, cntrl_port, len(switches_in_ring), client_recv_port, server_recv_port, loopback_port, num_client_threads)
+        # Write YAML file locally
+        with open(config_filename, 'w') as f:
+            yaml.dump(switch_config, f, default_flow_style=False)
+        print(f"Generated switch config: {config_filename}")
+        local_path = os.path.abspath(config_filename)
+        remote_path = "/root/" + config_filename
+
+        print(local_path)
+        print(remote_path)
+        sftp = target_client.open_sftp()
+        sftp.put(local_path, remote_path) 
+        sftp.close()
+
+        # Clean up the machine
+        kill_prior_process = "pkill -9 -f 'bf_switchd|run_switchd.sh'"
+        chan.exec_command(kill_prior_process)
+        time.sleep(5)
+
+        cfg_switchd = "switch_switchd_log.txt"
+        sde_command = "nohup " + switchd + f"> ~/{cfg_switchd} 2>&1 &"
+        print(f"Full SDE command: {sde_command}")
+        chan = transport.open_session()
+        chan.exec_command(sde_command)
+        time.sleep(10)
         
-        # Step 2: Run the switchd SDE
-        cfg_switchd = "switch_switchd_log"
-        execute_remote_command(switch_ips[i], switchd, cfg_switchd, ssh_key, ssh_user, i)
-        sleep(5)
-        
-        # Step 3: Run the control plane setup
-        cfg_ptf = "switch_ptf_log"
-        ptf_configure_cmd = "~/bf-sde-9.4.0/ptf-modules-9.4.0/configure --prefix=$SDE_INSTALL; cd ~/bf-sde-9.4.0/ptf-modules-9.4.0; make; make install"
-        # Step 3.1: First, compile the ptf library
-        execute_remote_command(switch_ips[i], ptf_configure_cmd, cfg_ptf, ssh_key, ssh_user, i)
-        # Step 3.2: Second, run ptf scripts
-        execute_remote_command(switch_ips[i], ptf_tests, cfg_ptf, ssh_key, ssh_user, i)
-        sleep(5)
+        # Clean up the machine
+        kill_prior_process = "pkill -9 -f 'run_p4_tests.sh|/root/bf-sde-9.4.0/install/bin/ptf'"
+        chan = transport.open_session()
+        chan.exec_command(kill_prior_process)
+        time.sleep(5)
+
+        cfg_control_plane = "control_plane_log.txt"
+        cntrl_command = "nohup " + control_plane + f"> ~/{cfg_control_plane} 2>&1 &"
+        print(f"Full Control Plane command: {cntrl_command}")
+        chan = transport.open_session()
+        chan.exec_command(cntrl_command)
+        time.sleep(5)
+
+        # Cleanup
+        target_client.close()
+        jump_client.close()
 
 # To be executed for each experiment
-def run_experiment_cycle(config, exp_index, local_results_dir):
+def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
     """Runs a single, full experiment cycle based on the merged configuration."""
     
     # Extract run-specific parameters from the merged config
@@ -835,7 +941,6 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
     switch_processes = []
     switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
     
-
     try:
         # Assumption: All servers respond to all destination MAC defined in the TOML
         server_dst_mac_for_all = config['routing']['server_dest_macs'][0]
@@ -863,20 +968,44 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             with open(config_filename, 'w') as f:
                 yaml.dump(server_config, f, default_flow_style=False)
             print(f"Generated server config: {config_filename}")
+            print(f"Server binary to copy: {path_server}")
 
             # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
-            if not transfer_file(config_filename, ip, ssh_user, ssh_key):
-                raise Exception(f"Failed to transfer config to server {ip}")
+            if not with_tunnel:
+                if not transfer_file(config_filename, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer config to server {ip}")
+                if not transfer_file(path_server, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer server binary to server {ip}")
+            else:
+                local_path = os.path.abspath(config_filename)
+                print("SCPing the server config")
+                execute_scp_switch_cmd(config, local_path, config_filename)
+                print("Done SCPing the server config")
             
             # Start remote process
-            process, log_filename = execute_remote_command(ip, path_server, config_filename, ssh_key, ssh_user, exp_index) # MODIFIED: Get log filename
-            if process:
-                server_processes.append(process)
-                server_log_files[ip] = log_filename # MODIFIED: Store log filename
+            if not with_tunnel:
+                print(path_server)
+                server_exec = os.path.basename(path_server) # Use the basename remotely
+                exec_filepath = "~/" + server_exec
+                prefix = "server"
+                process, log_filename = execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
+                print("Done executing the server!")
+                if process:
+                    server_processes.append(process)
+                    server_log_files[ip] = log_filename # MODIFIED: Store log filename
+                else:
+                    raise Exception(f"Failed to start server process on {ip}")
             else:
-                raise Exception(f"Failed to start server process on {ip}")
+                cli_binary = config['program_paths']['client_binary']
+                server_binary = config['program_paths']['server_binary']
+                print("SCPing the server binary")
+                execute_scp_switch_cmd(config, path_server, server_binary)
+                print("Executing the server binary")
+                execute_remote_switch_cmd(config, path_server, config_filename)
+                print("Done with the server binary!")
 
-        if not server_processes:
+
+        if not with_tunnel and not server_processes:
             raise Exception("No servers were successfully started.")
 
         # --- 6. Wait for Servers to Initialize ---
@@ -884,46 +1013,47 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
         time.sleep(SERVER_START_DELAY)
         
         # --- 7. Generate Switch Configuration and Start Process --- # TODO
-        print("\n--- Starting Switch ---")
-        switch_id = random.randint(100000, 999999)
-        switch_config_filename = f"switch_config_{json_output_name}.yaml" # Unique filename
-        switch_port_offset = len(server_ips) * 2
-        
-        switch_config = generate_yaml_config(
-            config, 
-            'switch',
-            switch_ip,
-            switch_port_offset,
-            entity_id=switch_id,
-            json_name=json_output_name,
-            num_failures=num_failures,
-            network_interface=switch_net_if
-        )
-        
-        # Write YAML file locally
-        with open(switch_config_filename, 'w') as f:
-            yaml.dump(switch_config, f, default_flow_style=False)
-        print(f"Generated client config: {switch_config_filename}")
+        if False: #not with_tunnel:
+            print("\n--- Starting Switch ---")
+            switch_id = random.randint(100000, 999999)
+            switch_config_filename = f"switch_config_{json_output_name}.yaml" # Unique filename
+            switch_port_offset = len(server_ips) * 2
+            
+            switch_config = generate_yaml_config(
+                config, 
+                'switch',
+                switch_ip,
+                switch_port_offset,
+                entity_id=switch_id,
+                json_name=json_output_name,
+                num_failures=num_failures,
+                network_interface=switch_net_if
+            )
+            
+            # Write YAML file locally
+            with open(switch_config_filename, 'w') as f:
+                yaml.dump(switch_config, f, default_flow_style=False)
+            print(f"Generated client config: {switch_config_filename}")
 
-        # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
-        if not transfer_file(switch_config_filename, switch_ip, ssh_user, ssh_key):
-            raise Exception(f"Failed to transfer config to server {ip}")
-        
-        # Start remote process
-        process, log_filename = execute_remote_command(switch_ip, path_switch, switch_config_filename, ssh_key, ssh_user, exp_index) # MODIFIED: Get log filename
-        if process:
-            switch_processes.append(process)
-            switch_log_files[ip] = log_filename # MODIFIED: Store log filename
-        else:
-            raise Exception(f"Failed to start server process on {ip}")
+            # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+            if not transfer_file(switch_config_filename, switch_ip, ssh_user, ssh_key):
+                raise Exception(f"Failed to transfer config to server {ip}")
+            
+            # Start remote process
+            prefix = "switch"
+            process, log_filename = execute_remote_command(switch_ip, path_switch, switch_config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
+            if process:
+                switch_processes.append(process)
+                switch_log_files[ip] = log_filename # MODIFIED: Store log filename
+            else:
+                raise Exception(f"Failed to start server process on {ip}")
 
-        if not switch_processes:
-            raise Exception("No servers were successfully started.")
+            if not switch_processes:
+                raise Exception("No servers were successfully started.")
 
-        # --- 8. Wait for Servers to Initialize --- TODO
-        print(f"\nWaiting {SWITCH_START_DELAY} seconds for software switch to initialize...")
-        time.sleep(SWITCH_START_DELAY)
-        
+            # --- 8. Wait for Servers to Initialize --- TODO
+            print(f"\nWaiting {SWITCH_START_DELAY} seconds for software switch to initialize...")
+            time.sleep(SWITCH_START_DELAY)
 
         # --- 9. Generate Client Configuration and Start Process ---
         print("\n--- Starting Client ---")
@@ -949,25 +1079,41 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
             print(f"Generated server config: {config_filename}")
 
             # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
-            if not transfer_file(config_filename, ip, ssh_user, ssh_key):
-                raise Exception(f"Failed to transfer config to server {ip}")
+            if not with_tunnel: 
+                if not transfer_file(config_filename, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer config to server {ip}")
+                if not transfer_file(path_client, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer server binary to server {ip}")
+            else:
+                local_path = os.path.abspath(config_filename)
+                execute_scp_switch_cmd(config, local_path, config_filename)
             
-            cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name)
-            client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
-                ip, 
-                path_client, 
-                config_filename, 
-                ssh_key, 
-                ssh_user,
-                exp_index
-            )
-            if client_process:
-                print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
-                print("This script is now waiting for the client process to finish...")
-                client_processes.append(client_process)
-                client_log_files.append(client_log_filename)
-            else: # TODO more error handling?
-                raise Exception("Failed to start client process.")
+            #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name) TODO
+            if not with_tunnel:
+                client_exec = os.path.basename(path_client) # Use the basename remotely
+                cli_exec_file = "~/" + client_exec
+                prefix = "client"
+                client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
+                    ip, 
+                    cli_exec_file, 
+                    config_filename, 
+                    ssh_key, 
+                    ssh_user,
+                    exp_index,
+                    prefix
+                )
+                if client_process:
+                    print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
+                    print("This script is now waiting for the client process to finish...")
+                    client_processes.append(client_process)
+                    client_log_files.append(client_log_filename)
+                else: # TODO more error handling?
+                    raise Exception("Failed to start client process.")
+            else:
+                cli_binary = config['program_paths']['client_binary']
+                execute_scp_switch_cmd(config, path_server, cli_binary)
+                execute_remote_switch_cmd(config, path_server, config_filename)
+
         i = 0 
         for proc in client_processes: 
             # Wait for the client process to finish
@@ -992,12 +1138,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
                 local_results_dir
             )
             i += 1
-            #if proc.poll() is None:
-            #    print(f"Terminating server process (PID: {proc.pid})...")
-            #    proc.kill()
 
-            
-            
     except Exception as e:
         print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
         
@@ -1080,6 +1221,18 @@ def main(config_file="config.toml"):
     all_ips = client_ips + stor_ips + [switch_ip]
     ssh_key = base_config['network_setup']['ssh_key']
     ssh_user = base_config['network_setup']['ssh_user']
+    with_tunnel = base_config['experiment_parameters']['with_tunnel']
+
+    if base_config['testing']['only_plot_gen']:
+        ring_sizes = [] 
+        for exp_index, exp_params in enumerate(experiments_to_run):
+            for key, value in exp_params.items():
+                if key == 'switches_in_ring':
+                    ring_sizes.append(len(value))
+        print("ONLY TESTING THE GRAPH GENERATION")
+        process_and_aggregate_results(base_config['testing']['local_results_dir'], ring_sizes)
+        plot_results(base_config['testing']['local_results_dir'], base_config['experiment_parameters']['plot_param'])
+        return
     
     # --- 2. Create Unique Local Results Folder (All results will be copied here) ---
     now = datetime.now()
@@ -1110,43 +1263,51 @@ def main(config_file="config.toml"):
         print("\n--- Setup Script Execution Skipped ---")
         
     # --- 4. COMPILE BINARIES ON ALL MACHINES ---
-    print("\n--- Compiling Binaries on All Machines ---")
-    for ip in all_ips:
-        if not run_compile_command(ip, ssh_key, ssh_user):
-            print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
-            return
-    print("--- Compilation Complete ---")
+    print("\n--- Compiling Binaries on All Machines ---") # TODO BRING BACK
+    #for ip in all_ips:
+    #    if not run_compile_command(ip, ssh_key, ssh_user):
+    #        print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
+    #        return
+    #print("--- Compilation Complete ---")
 
-    # --- 5. START SWITCHES --- 
-    switches_up = setup_switches(base_config)
-    num_switches = len(base_config['switches']['switch_send_ports'])
-    if switches_up:
-        print("--- All {num_switches} switches up and running ---")
-
-    # --- Start Experiment Loop ---
+        # --- Start Experiment Loop ---
     print(f"\n--- Starting {len(experiments_to_run)} Experiment Runs ---")
-    
+    ring_sizes = [] 
     for exp_index, exp_params in enumerate(experiments_to_run):
         # 1. Create a deep copy of the base config for this specific run
         current_config = deepcopy(base_config)
         
         # 2. Merge experiment-specific parameters (overrides)
         for key, value in exp_params.items():
+            print(key)
+            print(value)
             if key in current_config.get('experiment_parameters', {}):
                 current_config['experiment_parameters'][key] = value
             elif key in current_config.get('protocol_batching', {}):
                 current_config['protocol_batching'][key] = value
         
+        ring_sizes.append(len(current_config['experiment_parameters']['switches_in_ring']))
+    
+        # --- 2.5. START SWITCHES --- 
+        current_config = deepcopy(base_config)
+        switches_up = True
+        switches_up = setup_switches(current_config) #TODO 
+
+        num_switches = len(base_config['experiment_parameters']['switches_in_ring'])
+        if switches_up:
+            print("--- All {num_switches} switches up and running ---")
+    
         # 3. Run the full experiment cycle with the merged configuration
-        run_experiment_cycle(current_config, exp_index, local_results_dir)
+        run_experiment_cycle(current_config, exp_index, local_results_dir, with_tunnel)
+
         time.sleep(EXPERIMENT_DELAY)
     
     # --- Final Step A: Aggregate ALL results from the shared directory ---\
     # Only run this once after ALL experiment cycles are finished
-    process_and_aggregate_results(local_results_dir)
+    process_and_aggregate_results(local_results_dir, ring_sizes)
     
     # --- Final Step B: Plot the results after aggregation ---\
-    plot_results(local_results_dir)
+    plot_results(local_results_dir, current_config['experiment_parameters']['plot_param'])
 
     # --- Final Cleanup: Delete all temporary YAML files on remote hosts ---
     #cleanup_remote_yaml_files(all_ips, ssh_key, ssh_user)
@@ -1179,6 +1340,13 @@ if __name__ == '__main__':
     except ImportError:
         print("ERROR: 'json' module not found. This should not happen in a standard Python environment.")
         sys.exit(1)
+    
+    try:
+        import paramiko
+    except ImportError:
+        print("ERROR: 'paramiko' module not found. This should not happen in a standard Python environment.")
+        sys.exit(1)
+     
         
     # NEW CHECK for matplotlib
     try:

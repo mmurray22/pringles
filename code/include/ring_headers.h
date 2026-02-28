@@ -17,7 +17,7 @@
 // REQUIRED FOR ALL PACKETS
 struct ring_type {
     uint16_t type; // TODO add to the P4 switch processing
-    uint64_t num_entries;
+    uint16_t num_entries;
 };
 
 
@@ -29,11 +29,13 @@ struct ring_append_entry {
     // FROM CLIENT: nonce to uniquely identify this append message
     uint32_t nonce;
     // FROM CLIENT: To tell the storage server how many bytes each payload is
-    uint64_t payload_size;
+    uint32_t payload_size;
     // FROM CLIENT: To tell the storage server how many entries are in the payload
-    uint64_t num_entries;
+    uint32_t num_entries;
     // FROM NETWORK: Global sequence number of the message
     uint32_t g_idx;
+    // Number of payloads in batch
+    uint32_t batch_size;
     // FROM NETWORK: ID of shard message is written to
     uint32_t shard_id;
     // FROM NETWORK: view number of switch forwarding entry
@@ -43,13 +45,13 @@ struct ring_append_entry {
     // FROM NETWORK: number of times control packet was seen
     uint32_t cntrl_pkt_it;
     // FROM CLIENT
-    uint64_t thread_id;
+    uint32_t thread_id;
     // FROM CLIENT
-    uint64_t recv_port;
+    uint16_t recv_port;
     // FROM CLIENT
-    uint64_t cli_idx;
-    // FROM CLIENT
-    double start_time;
+    uint16_t cli_idx;
+    // TESTING
+    uint64_t timestamp;
 };
 
 // Append reply - from storage server
