@@ -6,14 +6,16 @@
 #                     include_directories : inc,
 #                     dependencies: [yaml_cpp, spdlog],
 #                     link_with : pringleslib)
-#pringles_cli = executable('cli', 'pringles_cli.cpp',
-#                          include_directories : inc,
-#                          dependencies: [yaml_cpp, spdlog, tbb_dep],
-#                          link_with : pringleslib)
-#pringles_stor = executable('stor', 'pringles_stor.cpp',
-#                          include_directories : inc,
-#                          dependencies: [yaml_cpp, spdlog, tbb_dep],
-#                          link_with : pringleslib)
+pringles_cli = executable('cli', 'pringles_cli.cpp',
+                          include_directories : inc,
+                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+                          link_with : pringleslib,
+                          link_args: ['-static-libstdc++', '-static-libgcc'])
+pringles_stor = executable('stor', 'pringles_stor.cpp',
+                          include_directories : inc,
+                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+                          link_with : pringleslib,
+                          link_args: ['-static-libstdc++', '-static-libgcc'])
 pringles_cli = executable('net_cli', 'net_cli.cpp',
                           include_directories : inc,
                           dependencies: [yaml_cpp, spdlog, tbb_dep],

@@ -111,6 +111,7 @@ void custom_udp_server(std::shared_ptr<Network> net,
     (void) thread_id;
     (void) batch_size;
     (void) batch_on;
+    (void) cli_ips;
 
     //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
     spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
@@ -182,11 +183,13 @@ void custom_udp_server(std::shared_ptr<Network> net,
 	        if (use_switch) {
      	             net->send_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_ip, switch_recv_port);
 	        } else {
-	            //spdlog::debug("Sending to IP address: {}", cli_ips[batch_append_entry->cli_idx]);
-		    // std::vector<std::string> store_ips = get_stor_ips(config);
-		    // for (uint64_t i = 0; i < ) {
-     	            net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[ntohl(batch_append_entry->cli_idx)], std::to_string(batch_append_entry->recv_port));
-		    // }
+		    char buffer[INET_ADDRSTRLEN];
+    		    if (inet_ntop(AF_INET, &batch_append_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
+		         spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
+		         memset(buffer, 0, INET_ADDRSTRLEN);
+    		    }
+		    std::string client_ip(buffer);
+     	            net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, client_ip, std::to_string(batch_append_entry->recv_port));
 	        }
 	        
 	        recv_offset += (size_of_type_hdr + size_of_hdr + old_payload_size + 1);

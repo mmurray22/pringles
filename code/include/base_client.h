@@ -22,13 +22,4 @@ class BaseClient {
         virtual void subscribe(uint64_t idx) = 0;
         // Garbage collect all log entries up to some index
         virtual bool trim(uint64_t idx) = 0;
-
-	/*** Variables ***/
-        uint64_t cid;
-	std::thread subscribe_thread;
-
-        std::unique_ptr<Network> net;
-        
-	//std::unique_ptr<Trace<T>> trace;
-        bool local;
 };

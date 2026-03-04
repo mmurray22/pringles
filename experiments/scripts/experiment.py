@@ -94,7 +94,6 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     exp_params = base_config['experiment_parameters']
     proto_params = base_config['protocol_batching']
     net_params = base_config['network_setup']
-    route_params = base_config['routing']
 
     # Calculate experiment duration, adding a delay for servers (Feature 3)
     exp_duration = exp_params['experiment_duration']
@@ -111,6 +110,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         final_duration = exp_duration + warm_up + cool_down
 
     # Initialize the base YAML structure
+    # Include the network information for EVERY component of the system in every YAML
     cli_macs = [QuotedString(mac) for mac in net_params['cli_macs']]
     cli_ips = [QuotedString(mac) for mac in net_params['cli_ips']]
     stor_macs = [QuotedString(mac) for mac in net_params['stor_macs']]
@@ -145,14 +145,9 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     }
     
     # Pre-calculate and wrap client destination MACs (used by both client to send, and server to reply)
-    client_macs = [QuotedString(mac) for mac in route_params['client_dest_macs']]
-    server_macs = [QuotedString(mac) for mac in route_params['server_dest_macs']]
 
     # --- Client Specific Fields ---
     if entity_type == 'client':
-        # Routing: Wrap list elements (IPs)
-        client_ips = [QuotedString(ip) for ip in route_params['list_client_dest_ips']]
-        
         yaml_config.update({
             'sequencer_type': proto_params['sequencer_type'],
             'num_client_threads': exp_params['num_client_threads'],
@@ -175,9 +170,6 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     
     # --- Storage Server Specific Fields ---
     elif entity_type == 'server':
-        # Routing: Wrap list elements (IPs)
-        server_ips = [QuotedString(ip) for ip in route_params['list_storage_server_dest_ips']]
-
         # Randomly generated values for simplicity, as requested
         shard_id = random.randint(0, 999)
         shard_switch_id = random.randint(0, 9)

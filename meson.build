@@ -24,7 +24,7 @@ fmt_dep = dependency('fmt', fallback: ['fmt', 'fmt_dep'], static: true)
 #spdlog = dependency('spdlog', fallback: ['spdlog', 'spdlog_dep'], static: true)
 #tbb_dep = dependency('tbb', required: true, static: true) 
 tbb_dep = declare_dependency(
-    link_args: ['/proj/ove-PG0/murray/oneTBB/build/gnu_11.4_cxx11_64_relwithdebinfo/libtbb.a'],
+    link_args: ['/proj/ove-PG0/murray/oneTBB/build/gnu_11.4_cxx11_64_release/libtbb.a'],
     include_directories: include_directories('/proj/ove-PG0/murray/oneTBB/include')
 )
 add_project_link_arguments(['-lprotobuf'], language: ['cpp'])

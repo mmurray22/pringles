@@ -14,32 +14,17 @@
 #include "base_client.h"
 #include "measure.h"
 
-const std::chrono::seconds MAX_WAIT_TIME(5);
-
-enum SequencerType {
-	DUMMY,
-	NETWORK,
-	MACHINE
-};
-
-enum PacketType {
-    	append,
-    	readentry,
-    	gettail,
-	trim,
-	dummyappendstream,
-	appendstream,
-	subscribe
-};
+std::mutex recv_q_mutex;
+tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>> recv_q;
 
 /* Client class */
 class LogClient : public BaseClient {
     public:
-	LogClient(std::string input_file, uint64_t thread_id);
+	LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_port_offset);
 	~LogClient();
         
 	// Append entries to the log
-	uint32_t append(std::string entry);
+	uint64_t append(std::string entry);
         // Read from idx in the log
 	std::string read(uint64_t idx);
         // Get latest committed entry
@@ -51,26 +36,36 @@ class LogClient : public BaseClient {
 	
         void wait_to_warmup();
         void wait_to_cooldown();
-        void wait_to_finish();
+        void wait_to_finish(bool is_append);
 	bool experiment_status();
         void execute(uint64_t thread_id);
 
-        uint32_t dummy(std::string entry);
     private:
 	/**** Variables ****/
-	std::string switch_ip;
-	std::array<uint8_t,6> switch_mac;
+	uint64_t cid;
+	uint64_t thread_id;
+	std::unique_ptr<Network> net;
 
+	/* Cluster Information */
+	bool use_switch;
+	std::string switch_ip;
+	std::vector<std::string> stor_ips;
+	std::array<uint8_t,6> switch_mac;
+	std::array<uint8_t,6> seq_mac;
+	std::string seq_ip;
+	std::string switch_receive_port;
+	std::string client_recv_port;
 
 	uint64_t min_matching_acks = 0;
 	uint64_t num_pkt_types = 0; 
+	
 	/* Receive queue which slots messages */
 	std::mutex pkt_q_lock;
-	std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
 	std::vector<std::string> pkt_types;
 	bool end_thread = false;
 	bool started_append = false;
 
+	std::string payload;
 	uint64_t payload_size;
 	uint64_t batch_size;
 	uint64_t num_work_threads;
@@ -95,46 +90,67 @@ class LogClient : public BaseClient {
 	//std::unordered_map<int64_t, std::unordered_map<uint64_t, uint64_t>> append_ack_map;
 	
 	std::unordered_map<uint32_t, uint64_t> append_ack_map;
+	
+	/* Variables for receving thread */
+	std::thread recv_thread;
+	std::condition_variable append_resp_cv;
+	std::mutex append_resp_q_mutex;
+	tbb::concurrent_queue<char*> append_resp_q;
 
-	/* Hash/ID of pending append entries */
-        std::vector<uint64_t> pending_append_entries;
-        std::vector<uint64_t> pending_read_entries;
+	std::condition_variable read_resp_cv;
+	std::mutex read_resp_q_mutex;
+	tbb::concurrent_queue<char*> read_resp_q;
+
+	std::condition_variable subscribe_resp_cv;
+	std::mutex subscribe_resp_q_mutex;
+	tbb::concurrent_queue<char*> subscribe_resp_q;
+
+	std::condition_variable tail_resp_cv;
+	std::mutex tail_resp_q_mutex;
+	tbb::concurrent_queue<char*> tail_resp_q;
+
+	/* Variables for subscribe thread */
+	std::thread subscribe_thread;
+	bool subscribe_thread_running;
 
         /* Local list of appended and read log entries and corresponding lock*/
 	std::map<uint64_t, std::string> cached_log_entries;
 	std::mutex cached_log_lock;
 
 	/* Protocol types */
-	SequencerType seq;
-	//StorageType stor;
+	uint64_t ring_view;
 
-	std::thread recv_thread;
+
 	std::thread append_thread;
 	std::thread duration_thread;
 	std::thread execution_thread;
 	std::vector<std::thread> cli_threads;
 	std::vector<std::thread> recv_threads;
 
-	std::unique_ptr<Stats> stat;
+	/* Information for Experiments */
+	std::unique_ptr<Stats> append_stat;
+	std::unique_ptr<Stats> read_stat;
 	uint64_t max_duration;
 	uint64_t warm_up;
 	uint64_t cool_down;
 	std::atomic<bool> collect_stats; 
-
 	uint64_t global_thread_id;
+	uint64_t dur;
 
-	std::array<uint8_t,6> seq_mac;
-	std::string seq_ip;
+	// Append Experiments
+	uint32_t append_nonce;
+	uint64_t append_cntr;
+	uint64_t highest_idx_seen;
+	std::unique_ptr<struct ring_type> append_type_hdr;
+	std::unique_ptr<struct ring_append_entry> append_entry_hdr;
+
+	// Read Experiments
+	uint32_t read_nonce;
+	uint64_t read_cntr;
+        std::unique_ptr<struct ring_type> read_type_hdr;
+	std::unique_ptr<struct ring_read_entry> read_entry_hdr;
 	
 	/**** Functions ****/
-
-        void run_append();
-        void wait_for_subscribe(uint64_t idx, uint64_t pkt_type);
-
-	void pringles_recv_queue();
-		
-
-	std::vector<int> get_pkt_eth_types();
-	size_t get_size_of_hdr(uint64_t pkt_type);
-	int get_eth_type(uint64_t pkt_type);
+	void receiver();
+        void wait_for_subscribe(uint64_t idx);
 };

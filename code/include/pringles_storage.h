@@ -1,5 +1,4 @@
 #include <vector>
-
 #include <optional>
 #include <set>
 #include "network.h"
@@ -13,15 +12,7 @@ enum StorageType {
 	HASHMAP
 };
 
-enum PacketType {
-    	append,
-	dummyread,
-    	readentry,
-	dummyappendstream,
-	appendstream
-};
-
-
+const uint64_t MAX_WAIT_TIME = 100;
 class LogStorage : public BaseStorage {
 
     public:
@@ -32,46 +23,44 @@ class LogStorage : public BaseStorage {
 	bool store(uint64_t idx, std::string entry);
 	std::string get(uint64_t idx);
 	void wait_to_finish();
+	void change_view(uint64_t new_view_num);
 
     private:
-	// Storage server ID
+	/* ACTUAL STORAGE SERVER INFO */
         uint64_t ssid;
-	StorageType stor;
-        // Network object
         std::unique_ptr<Network> net;
-	uint64_t num_pkt_types;
-        
-	std::array<uint8_t,6> switch_mac;
-	std::string switch_ip;
-
-	// In-memory Key-Value Store
-        std::map<uint64_t, std::string> kv_store;
-        // Key-Value Store Lock
-        std::mutex kv_store_lock;
-
-	std::set<uint64_t> nonces;
-	
-	// Mutable
+        std::unordered_map<uint64_t, std::string> storage = {};
+        tbb::concurrent_hash_map<uint64_t, std::string> concurrent_stor;
+        tbb::concurrent_queue<char*> recv_q;
+      
 	uint64_t shard_id;
 	uint64_t shard_switch_id;
 	uint64_t view_num;
 	bool end_thread = false;
-	//std::thread recv_thread;
-	std::vector<std::thread> recv_threads;
 
-	// Immutable
+
+	std::string switch_ip;
+	bool use_switch;
+	std::thread recv_thread;
 	uint64_t max_duration;
+	uint64_t append_cntr = 0;
+	uint64_t read_cntr = 0;
+	uint64_t max_append_idx = 0;
 	
-	// Function
-	void change_view(uint64_t new_view_num);
-	uint64_t index_project(uint64_t idx);
-	void pringles_recv_queue();
-	std::unique_ptr<char[]> create_pkt(PacketType pkt_type, 
-		                           uint32_t nonce,
-				           std::optional<std::string> entry = std::nullopt,
-			   	           std::optional<int64_t> idx = 0);
-	std::vector<int> get_pkt_eth_types();
-	size_t get_size_of_hdr(uint64_t pkt_type);
-	int get_eth_type(uint64_t pkt_type);
 
+	std::array<uint8_t,6> switch_mac;
+
+	std::condition_variable append_req_cv;
+	std::mutex append_req_q_mutex;
+	tbb::concurrent_queue<char*> append_req_q;
+
+	std::condition_variable read_req_cv;
+	std::mutex read_req_q_mutex;
+	tbb::concurrent_queue<char*> read_req_q;
+
+
+	// Functions
+	void receiver();
+	void append_server();
+	void read_server();
 };

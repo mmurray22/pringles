@@ -186,7 +186,8 @@ void custom_client(std::shared_ptr<Network> net,
     uint64_t highest_idx = 0;
 
     std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
-    std::unique_ptr<struct ring_type> ring_type_hdr = create_ring_type(ETH_APPEND_REQ);
+
+
     
     spdlog::info("Simple Network: Sending/Receiving to remote host");
     spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid(), thread_id);
@@ -196,20 +197,19 @@ void custom_client(std::shared_ptr<Network> net,
     std::string payload(payload_size, 'x');
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
-    std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(nonce, thread_id);
-    hdr.get()->cid = htonl(thread_id);
-    std::unique_ptr<struct ring_type> type_hdr = create_ring_type(ETH_APPEND_REQ);
+    std::unique_ptr<struct ring_append_entry> hdr = std::make_unique<struct ring_append_entry>();
+    std::unique_ptr<struct ring_type> type_hdr = std::make_unique<struct ring_type>();
     type_hdr.get()->type = htons(ETH_APPEND_REQ);
     type_hdr.get()->num_entries = htonl(1);
+    type_hdr.get()->shard_id = 0;
+    type_hdr.get()->cid = htonl(thread_id);
     spdlog::debug("Type header: {}, size of: {} and type hdr: {}", type_hdr.get()->type, size_of_hdr, size_of_type_hdr);
     hdr.get()->payload_size = htonl(payload_size);
     hdr.get()->num_entries = htonl(1);
     hdr.get()->thread_id = htonl(thread_id);
     hdr.get()->recv_port = htons(client_recv_port);
-    hdr.get()->cli_idx = htons(0);
     hdr.get()->g_idx = 0;
     hdr.get()->batch_size = 0;
-    hdr.get()->shard_id = 0;
     hdr.get()->timestamp = 0;
     hdr.get()->ring_view = htonl(1);
     hdr.get()->status = htonl(1);
