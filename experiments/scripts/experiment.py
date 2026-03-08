@@ -1005,7 +1005,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
         time.sleep(SERVER_START_DELAY)
         
         # --- 7. Generate Switch Configuration and Start Process --- # TODO
-        if False: #not with_tunnel:
+        if not config['experiment_parameters']['use_hardware_switch']: #not with_tunnel:
             print("\n--- Starting Switch ---")
             switch_id = random.randint(100000, 999999)
             switch_config_filename = f"switch_config_{json_output_name}.yaml" # Unique filename
@@ -1281,13 +1281,14 @@ def main(config_file="config.toml"):
         ring_sizes.append(len(current_config['experiment_parameters']['switches_in_ring']))
     
         # --- 2.5. START SWITCHES --- 
-        current_config = deepcopy(base_config)
-        switches_up = True
-        switches_up = setup_switches(current_config) #TODO 
+        if current_config['experiment_parameters']['use_hardware_switch']:
+            current_config = deepcopy(base_config)
+            switches_up = True
+            switches_up = setup_switches(current_config) #TODO 
 
-        num_switches = len(base_config['experiment_parameters']['switches_in_ring'])
-        if switches_up:
-            print("--- All {num_switches} switches up and running ---")
+            num_switches = len(base_config['experiment_parameters']['switches_in_ring'])
+            if switches_up:
+                print("--- All {num_switches} switches up and running ---")
     
         # 3. Run the full experiment cycle with the merged configuration
         run_experiment_cycle(current_config, exp_index, local_results_dir, with_tunnel)

@@ -1,6 +1,7 @@
 #include <vector>
 #include <optional>
 #include <set>
+#include <tbb/concurrent_unordered_set.h>
 #include "network.h"
 #include "base_storage.h"
 #include "measure.h"
@@ -28,10 +29,11 @@ class LogStorage : public BaseStorage {
     private:
 	/* ACTUAL STORAGE SERVER INFO */
         uint64_t ssid;
-        std::unique_ptr<Network> net;
+        std::shared_ptr<Network> net;
         std::unordered_map<uint64_t, std::string> storage = {};
+	// Maps stream ID -> {set of sequence numbers for that ID}
+        tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>> concurrent_stream_tracker;
         tbb::concurrent_hash_map<uint64_t, std::string> concurrent_stor;
-        tbb::concurrent_queue<char*> recv_q;
       
 	uint64_t shard_id;
 	uint64_t shard_switch_id;
@@ -40,8 +42,11 @@ class LogStorage : public BaseStorage {
 
 
 	std::string switch_ip;
+	std::string switch_recv_port;
 	bool use_switch;
 	std::thread recv_thread;
+	std::thread append_thread;
+	std::thread read_thread;
 	uint64_t max_duration;
 	uint64_t append_cntr = 0;
 	uint64_t read_cntr = 0;

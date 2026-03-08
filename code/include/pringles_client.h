@@ -14,9 +14,6 @@
 #include "base_client.h"
 #include "measure.h"
 
-std::mutex recv_q_mutex;
-tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>> recv_q;
-
 /* Client class */
 class LogClient : public BaseClient {
     public:
@@ -34,17 +31,22 @@ class LogClient : public BaseClient {
         // Garbage collect all log entries up to some index
         bool trim(uint64_t idx);
 	
+	
+	uint64_t append_stream(std::string entry, uint32_t stream_id);
+	//std::string read_stream(uint64_t idx, uint32_t stream_id);
+	//void subscribe_stream(std::string entry, uint32_t stream_id);
+
         void wait_to_warmup();
         void wait_to_cooldown();
         void wait_to_finish(bool is_append);
 	bool experiment_status();
-        void execute(uint64_t thread_id);
+	void launch_append_execute();
 
     private:
 	/**** Variables ****/
 	uint64_t cid;
 	uint64_t thread_id;
-	std::unique_ptr<Network> net;
+	std::shared_ptr<Network> net;
 
 	/* Cluster Information */
 	bool use_switch;
@@ -54,14 +56,13 @@ class LogClient : public BaseClient {
 	std::array<uint8_t,6> seq_mac;
 	std::string seq_ip;
 	std::string switch_receive_port;
+	std::string stor_receive_port;
 	std::string client_recv_port;
 
 	uint64_t min_matching_acks = 0;
 	uint64_t num_pkt_types = 0; 
 	
 	/* Receive queue which slots messages */
-	std::mutex pkt_q_lock;
-	std::vector<std::string> pkt_types;
 	bool end_thread = false;
 	bool started_append = false;
 
@@ -114,14 +115,16 @@ class LogClient : public BaseClient {
 	bool subscribe_thread_running;
 
         /* Local list of appended and read log entries and corresponding lock*/
-	std::map<uint64_t, std::string> cached_log_entries;
+	std::map<uint64_t, std::string> cached_log_entries; // TODO concurrent_hash_map
 	std::mutex cached_log_lock;
 
 	/* Protocol types */
 	uint64_t ring_view;
 
-
-	std::thread append_thread;
+	std::thread append_test_thread;
+	bool testing_append;
+	std::thread read_test_thread;
+	bool testing_read;
 	std::thread duration_thread;
 	std::thread execution_thread;
 	std::vector<std::thread> cli_threads;
@@ -149,8 +152,18 @@ class LogClient : public BaseClient {
 	uint64_t read_cntr;
         std::unique_ptr<struct ring_type> read_type_hdr;
 	std::unique_ptr<struct ring_read_entry> read_entry_hdr;
+
+	// Subscribe
+        std::unique_ptr<struct ring_type> sub_type_hdr;
+	std::unique_ptr<struct ring_subscribe_entry> sub_entry_hdr;
+
+	// Tail
+	uint32_t tail_nonce;
+        std::unique_ptr<struct ring_type> tail_type_hdr;
+	std::unique_ptr<struct ring_tail_req> tail_req_hdr;
 	
 	/**** Functions ****/
 	void receiver();
         void wait_for_subscribe(uint64_t idx);
+        void execute_append();
 };

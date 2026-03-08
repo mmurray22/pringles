@@ -486,13 +486,9 @@ bool Network::send_packet(std::unique_ptr<char[]> send_packet,
 
 bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TODO get rid of this
 		          uint64_t pkt_len, 
-			  uint64_t pkt_type, 
-			  int eth_type,
 			  std::string dst_ip,
 			  std::string dst_port) {
     bool sent_all = false;
-    (void) pkt_type;
-    (void) eth_type;
     
     // If socket_type is not UDP
     if (socket_type != "UDP") {
@@ -532,13 +528,9 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
 
 bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet, 
 		          uint64_t pkt_len, 
-			  uint64_t pkt_type, 
-			  int eth_type,
 			  std::string dst_ip,
 			  std::string dst_port) {
     bool sent_all = false;
-    (void) pkt_type;
-    (void) eth_type;
     
     // If socket_type is not UDP
     if (socket_type != "UDP") {
@@ -585,12 +577,10 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
         return false;
     }
   
-    // TODO TODO TODO SPECIALIZED HEADER REFERENCE
-    ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries = htonl(num_pkts); 
+    ((struct ring_type*)(final_send_packet))->num_entries = htons(num_pkts); 
     //spdlog::debug("The number of entries in this send are: {} with number of packets {}", ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries, num_pkts); 
     char* actual_test_send = (char*)std::malloc(running_pkt_size);    
     memcpy(actual_test_send, final_send_packet, running_pkt_size);
-    spdlog::debug("The number of entries in this send are: {} with total number of packets received {}", ntohl(((struct ring_append_entry*)(actual_test_send + sizeof(struct ring_type)))->num_entries), num_pkts); 
     while (!terminate && !sent_all) {
         ssize_t num_bytes = send(s_fd, actual_test_send, running_pkt_size, 0);
         

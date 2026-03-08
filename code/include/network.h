@@ -95,8 +95,8 @@ class Network {
 
 	std::string get_recv_port();
 
-	bool send_client_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::string dst_ip, std::string dst_port);
-	bool send_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::string dst_ip, std::string dst_port);
+	bool send_client_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, std::string dst_ip, std::string dst_port);
+	bool send_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, std::string dst_ip, std::string dst_port);
  	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, in_addr_t dst_ip);
  
 

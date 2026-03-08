@@ -100,6 +100,8 @@ with_tunnel = false
 # This is meant to indicate what x variable we want to plot on the final graphs
 # Right now it only supports plotting by number of switches in the ring or by number of clients 
 plot_param = 'switches_in_ring' # or 'num_clients'
+#  Boolean indicating that the streaming interface is being used
+use_streams = false
 
 
 # This should really be part of experiment parameters. Also like 3/4 of these are deprecated, I need to update TODO

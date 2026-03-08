@@ -12,7 +12,15 @@
 #define ETH_APPEND_RESP 0x861
 #define ETH_READ_REQ 0x870
 #define ETH_READ_RESP 0x871
-#define ETH_TAIL 0x840
+#define ETH_SUBSCRIBE_ENTRY 0x850
+#define ETH_TAIL_REQ 0x840
+#define ETH_TAIL_RESP 0x841
+
+#define ETH_APPEND_STREAM_REQ 0x0760
+#define ETH_APPEND_STREAM_RESP 0x761
+#define ETH_READ_STREAM_REQ 0x770
+#define ETH_READ_STREAM_RESP 0x771
+#define ETH_SUBSCRIBE_STREAM_ENTRY 0x750
 
 // The type indicator header
 // REQUIRED FOR ALL PACKETS
@@ -36,10 +44,10 @@ struct ring_append_entry {
     uint32_t nonce;
     // FROM CLIENT: To tell the storage server how many bytes each payload is
     uint32_t payload_size;
-    // FROM CLIENT: To tell the storage server how many entries are in the payload
-    uint32_t num_entries;
+    //FROM CLIENT
+    uint32_t stream_id;
     // FROM NETWORK: Global sequence number of the message
-    uint32_t g_idx;
+    uint32_t g_idx; // TODO: Make this 2^64
     // Number of payloads in batch
     uint32_t batch_size;
     // FROM NETWORK: view number of switch forwarding entry
@@ -56,7 +64,6 @@ struct ring_append_entry {
     uint16_t recv_port;
     // TESTING
     uint64_t timestamp; // Ingress timestamp? TODO
-
     // MEASUREMENT?
 };
 
@@ -65,6 +72,8 @@ struct ring_append_entry {
 struct ring_read_entry {
     // FROM CLIENT: nonce to uniquely identify this append message
     uint32_t nonce;
+    // FROM CLIENT: To tell the storage server how many bytes each payload is
+    uint32_t payload_size;
     // FROM NETWORK: Global sequence number of the message
     uint32_t g_idx;
     // FROM NETWORK: view number of switch forwarding entry
@@ -139,5 +148,9 @@ inline size_t get_ring_read_size() {
 
 inline size_t get_ring_subscribe_size() {
     return sizeof(struct ring_subscribe_entry);
+}
+
+inline size_t get_ring_tail_size() {
+    return sizeof(struct ring_tail_req);
 }
 // TODO Trim requests
