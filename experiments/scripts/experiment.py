@@ -587,6 +587,58 @@ def plot_results(local_target_dir):
     
 # --- Setup and Compile Functions (Remain unchanged from previous submission) ---
 
+def run_remote_command_sync(ip, command, ssh_key, ssh_user):
+    """
+    Executes a command on a remote machine synchronously (blocks until complete).
+    Used for setup steps that must finish before proceeding (e.g., topic creation).
+    Returns True on success, False on failure.
+    """
+    full_command = [
+        'ssh',
+        '-i', ssh_key,
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'UserKnownHostsFile=/dev/null',
+        f'{ssh_user}@{ip}',
+        command
+    ]
+    print(f"Running on {ip} (sync): {command}")
+    try:
+        subprocess.run(full_command, check=True, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: Command failed on {ip} with exit code {e.returncode}.")
+        print(f"Stderr: {e.stderr.decode().strip()}")
+        return False
+    except Exception as e:
+        print(f"ERROR running command on {ip}: {e}")
+        return False
+
+
+def kill_remote_process(ip, process_name, ssh_key, ssh_user):
+    """
+    Kills all remote processes matching process_name via pkill -f.
+    Used for comparison systems that don't self-terminate after experiment_duration.
+    """
+    command = f'pkill -f "{process_name}" || true'
+    full_command = [
+        'ssh',
+        '-i', ssh_key,
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'UserKnownHostsFile=/dev/null',
+        f'{ssh_user}@{ip}',
+        command
+    ]
+    print(f"Killing '{process_name}' on {ip}...")
+    try:
+        subprocess.run(full_command, check=True, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except Exception as e:
+        print(f"WARNING: Could not kill '{process_name}' on {ip}: {e}")
+        return False
+
+
 def run_setup_script(ip, setup_script_path, ssh_key, ssh_user):
     """Runs the specified setup script on a remote machine synchronously (blocking run)."""
     command = [
@@ -879,6 +931,29 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
 
         print("Switch processes are assumed to exit on their own after the client terminates.")
         
+def run_experiment_cycle_scalog(config, exp_index, local_results_dir):
+    """Runs a single experiment cycle for Scalog. Not yet implemented."""
+    raise NotImplementedError("run_experiment_cycle_scalog is not yet implemented.")
+
+
+def run_experiment_cycle_lazylog(config, exp_index, local_results_dir):
+    """Runs a single experiment cycle for LazyLog. Not yet implemented."""
+    raise NotImplementedError("run_experiment_cycle_lazylog is not yet implemented.")
+
+
+def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
+    """Runs a single experiment cycle for Kafka. Not yet implemented."""
+    raise NotImplementedError("run_experiment_cycle_kafka is not yet implemented.")
+
+
+EXPERIMENT_CYCLE_FNS = {
+    'pringles': run_experiment_cycle,
+    'scalog':   run_experiment_cycle_scalog,
+    'lazylog':  run_experiment_cycle_lazylog,
+    'kafka':    run_experiment_cycle_kafka,
+}
+
+
 def main(config_file="config.toml"):
     """Main function to parse config, generate YAMLs, and execute experiments in a loop."""
     
@@ -904,12 +979,24 @@ def main(config_file="config.toml"):
     base_config = full_config.copy() 
 
     # --- Initial Setup ---
+    system_name = base_config.get('system', {}).get('name', 'pringles')
+    cycle_fn = EXPERIMENT_CYCLE_FNS.get(system_name)
+    if cycle_fn is None:
+        print(f"FATAL: Unknown system '{system_name}'. Valid options: {list(EXPERIMENT_CYCLE_FNS.keys())}")
+        return
+    print(f"\n--- System: {system_name} ---")
+
     client_ips = base_config['network_setup']['cli_ips']
     stor_ips = base_config['network_setup']['stor_ips']
-    switch_ip = base_config['network_setup']['switch_ip']
-    all_ips = client_ips + stor_ips + [switch_ip]
     ssh_key = base_config['network_setup']['ssh_key']
     ssh_user = base_config['network_setup']['ssh_user']
+
+    if system_name == 'pringles':
+        switch_ip = base_config['network_setup']['switch_ip']
+        all_ips = client_ips + stor_ips + [switch_ip]
+    else:
+        seq_ips = base_config['network_setup'].get('seq_ips', [])
+        all_ips = client_ips + stor_ips + seq_ips
     
     # --- 2. Create Unique Local Results Folder (All results will be copied here) ---
     now = datetime.now()
@@ -939,13 +1026,16 @@ def main(config_file="config.toml"):
     else:
         print("\n--- Setup Script Execution Skipped ---")
         
-    # --- 4. COMPILE BINARIES ON ALL MACHINES ---
-    print("\n--- Compiling Binaries on All Machines ---")
-    for ip in all_ips:
-        if not run_compile_command(ip, ssh_key, ssh_user):
-            print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
-            return
-    print("--- Compilation Complete ---")
+    # --- 4. COMPILE BINARIES ON ALL MACHINES (Pringles only) ---
+    if system_name == 'pringles':
+        print("\n--- Compiling Binaries on All Machines ---")
+        for ip in all_ips:
+            if not run_compile_command(ip, ssh_key, ssh_user):
+                print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
+                return
+        print("--- Compilation Complete ---")
+    else:
+        print(f"\n--- Skipping Pringles meson compile (system: {system_name}) ---")
 
     # --- Start Experiment Loop ---
     print(f"\n--- Starting {len(experiments_to_run)} Experiment Runs ---")
@@ -962,7 +1052,7 @@ def main(config_file="config.toml"):
                 current_config['protocol_batching'][key] = value
         
         # 3. Run the full experiment cycle with the merged configuration
-        run_experiment_cycle(current_config, exp_index, local_results_dir)
+        cycle_fn(current_config, exp_index, local_results_dir)
         time.sleep(EXPERIMENT_DELAY)
     
     # --- Final Step A: Aggregate ALL results from the shared directory ---\
