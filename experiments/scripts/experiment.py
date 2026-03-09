@@ -931,6 +931,284 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
 
         print("Switch processes are assumed to exit on their own after the client terminates.")
         
+def generate_kafka_server_properties(node_id, ip, all_seq_ips, num_partitions, replication_factor, log_dir):
+    """Returns KRaft-mode server.properties content for a single Kafka broker node."""
+    # Each node acts as both broker and controller (combined mode).
+    # controller.quorum.voters lists every node's controller port.
+    controller_quorum_voters = ','.join(
+        f'{i + 1}@{seq_ip}:9093' for i, seq_ip in enumerate(all_seq_ips)
+    )
+    # Internal replication topics must have RF <= num brokers.
+    internal_rf = min(replication_factor, len(all_seq_ips))
+    return f"""\
+# KRaft mode (no ZooKeeper)
+node.id={node_id}
+process.roles=broker,controller
+listeners=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+advertised.listeners=PLAINTEXT://{ip}:9092
+controller.quorum.voters={controller_quorum_voters}
+controller.listener.names=CONTROLLER
+inter.broker.listener.name=PLAINTEXT
+log.dirs={log_dir}
+num.partitions={num_partitions}
+default.replication.factor={replication_factor}
+offsets.topic.replication.factor={internal_rf}
+transaction.state.log.replication.factor={internal_rf}
+transaction.state.log.min.isr=1
+"""
+
+
+def parse_kafka_results(consumer_output_path, consumer_log_path, json_name, exp_index, local_results_dir):
+    """
+    Converts kafka-log consumer output into the standard result schema and writes
+    <json_name>_<exp_index>_kafka.json into local_results_dir.
+
+    Throughput comes from the consumer's JSON output file (Overall_Throughput_MPS).
+    Average latency is computed from per-message lines in the consumer stdout log:
+      "Kafka message processing latency: 42ms"
+    Note: this latency is one-way (broker timestamp → consumer receipt), not full
+    round-trip from producer send. It is the closest proxy available without
+    modifying the kafka-log source.
+    """
+    throughput = 0.0
+    avg_latency = 0.0
+
+    try:
+        with open(consumer_output_path, 'r') as f:
+            data = json.load(f)
+        throughput = float(data.get('Overall_Throughput_MPS', 0.0))
+    except Exception as e:
+        print(f"WARNING: Could not parse Kafka consumer output JSON at {consumer_output_path}: {e}")
+
+    latencies = []
+    try:
+        with open(consumer_log_path, 'r') as f:
+            for line in f:
+                if 'Kafka message processing latency:' in line:
+                    parts = line.strip().split()
+                    if parts:
+                        try:
+                            latencies.append(float(parts[-1].replace('ms', '')))
+                        except ValueError:
+                            pass
+        if latencies:
+            avg_latency = sum(latencies) / len(latencies)
+    except Exception as e:
+        print(f"WARNING: Could not parse Kafka consumer log at {consumer_log_path}: {e}")
+
+    result = {'throughput': throughput, 'avg_latency': avg_latency, 'batch_size': 1}
+    output_path = os.path.join(local_results_dir, f'{json_name}_{exp_index}_kafka.json')
+    try:
+        with open(output_path, 'w') as f:
+            json.dump(result, f, indent=4)
+        print(f"Kafka results written to: {output_path}")
+    except IOError as e:
+        print(f"ERROR: Could not write Kafka results to {output_path}: {e}")
+    return output_path
+
+
+def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
+    """
+    Runs a single experiment cycle for the Kafka comparison system.
+
+    Expects in TOML:
+      [network_setup]   seq_ips, cli_ips, ssh_key, ssh_user
+      [program_paths]   kafka_dir (e.g. /opt/kafka), kafka_log_dir (path to kafka-log repo)
+      [comparison_parameters]  num_partitions, replication_factor
+      [experiment_parameters]  json_name, experiment_duration, warm_up, cool_down, message_size
+
+    NOTE: Multi-partition scaling requires running multiple Producer instances (one per
+    partition), which is not yet implemented. Keep num_partitions=1 for now.
+
+    NOTE: The consumer is started 30s before the producer to account for sbt JVM startup
+    time and Kafka subscription setup. Consider pre-building a fat jar to reduce this delay.
+    """
+    CONSUMER_HEAD_START = 30  # seconds to wait after consumer start before starting producer
+
+    ssh_key   = config['network_setup']['ssh_key']
+    ssh_user  = config['network_setup']['ssh_user']
+    client_ips = config['network_setup']['cli_ips']
+    seq_ips    = config['network_setup'].get('seq_ips', [])
+
+    if not seq_ips:
+        raise Exception("No seq_ips defined for Kafka brokers in [network_setup].")
+
+    cmp  = config.get('comparison_parameters', {})
+    num_partitions     = cmp.get('num_partitions', 1)
+    replication_factor = cmp.get('replication_factor', 2)
+
+    if replication_factor > len(seq_ips):
+        raise Exception(
+            f"replication_factor ({replication_factor}) > number of brokers ({len(seq_ips)}). "
+            f"Reduce replication_factor or add more seq_ips."
+        )
+
+    exp     = config['experiment_parameters']
+    json_output_name   = exp['json_name']
+    experiment_duration = exp['experiment_duration']
+    warm_up             = exp['warm_up']
+    cool_down           = exp['cool_down']
+    message_size        = exp['message_size']
+
+    kafka_dir     = config['program_paths'].get('kafka_dir', '/opt/kafka')
+    kafka_log_dir = config['program_paths'].get('kafka_log_dir', '~/kafka-log')
+    kafka_log_dir_local = '/tmp/kafka-logs'
+
+    broker_ips_str = ','.join(f'{ip}:9092' for ip in seq_ips)
+    topic_name     = 'pringles-bench'
+    cluster_uuid   = str(uuid.uuid4())
+    message_payload = 'x' * message_size
+
+    consumer_log_filename    = f'kafka_consumer_{json_output_name}_{exp_index}.log'
+    producer_log_filename    = f'kafka_producer_{json_output_name}_{exp_index}.log'
+    consumer_output_filename = f'kafka_output_{json_output_name}_{exp_index}.json'
+    consumer_output_remote   = f'~/{consumer_output_filename}'
+
+    broker_log_files = {}
+    client_ip = client_ips[0]
+
+    print(f"\n========================================================")
+    print(f"   RUNNING KAFKA EXPERIMENT {exp_index + 1}: {json_output_name}")
+    print(f"   Brokers: {seq_ips}  |  Partitions: {num_partitions}  |  RF: {replication_factor}")
+    print(f"========================================================")
+
+    try:
+        # --- 1. Generate and transfer server.properties to each broker ---
+        print("\n--- Configuring Kafka Brokers ---")
+        for i, ip in enumerate(seq_ips):
+            props = generate_kafka_server_properties(
+                node_id=i + 1,
+                ip=ip,
+                all_seq_ips=seq_ips,
+                num_partitions=num_partitions,
+                replication_factor=replication_factor,
+                log_dir=kafka_log_dir_local,
+            )
+            props_filename = f'kafka_server_{json_output_name}_{i}.properties'
+            with open(props_filename, 'w') as f:
+                f.write(props)
+            if not transfer_file(props_filename, ip, ssh_user, ssh_key):
+                raise Exception(f"Failed to transfer server.properties to {ip}")
+
+        # --- 2. Format storage on each broker (sync) ---
+        print("\n--- Formatting Kafka Storage ---")
+        for i, ip in enumerate(seq_ips):
+            props_filename = f'kafka_server_{json_output_name}_{i}.properties'
+            if not run_remote_command_sync(ip, f'rm -rf {kafka_log_dir_local}', ssh_key, ssh_user):
+                raise Exception(f"Failed to clean Kafka log dir on {ip}")
+            format_cmd = f'{kafka_dir}/bin/kafka-storage.sh format -t {cluster_uuid} -c ~/{props_filename}'
+            if not run_remote_command_sync(ip, format_cmd, ssh_key, ssh_user):
+                raise Exception(f"Failed to format Kafka storage on {ip}")
+
+        # --- 3. Start brokers (async) ---
+        print("\n--- Starting Kafka Brokers ---")
+        for i, ip in enumerate(seq_ips):
+            props_filename = f'kafka_server_{json_output_name}_{i}.properties'
+            process, log_filename = execute_remote_command(
+                ip, f'{kafka_dir}/bin/kafka-server-start.sh', props_filename,
+                ssh_key, ssh_user, exp_index
+            )
+            if not process:
+                raise Exception(f"Failed to start Kafka broker on {ip}")
+            broker_log_files[ip] = log_filename
+
+        print(f"\nWaiting {SERVER_START_DELAY}s for brokers to initialize...")
+        time.sleep(SERVER_START_DELAY)
+
+        # --- 4. Create topic (sync) ---
+        print(f"\n--- Creating topic '{topic_name}' ---")
+        create_topic_cmd = (
+            f'{kafka_dir}/bin/kafka-topics.sh --create'
+            f' --bootstrap-server {seq_ips[0]}:9092'
+            f' --topic {topic_name}'
+            f' --partitions {num_partitions}'
+            f' --replication-factor {replication_factor}'
+        )
+        if not run_remote_command_sync(seq_ips[0], create_topic_cmd, ssh_key, ssh_user):
+            raise Exception("Failed to create Kafka topic.")
+
+        # --- 5. Generate config.json and copy to kafka-log resources ---
+        client_config = {
+            'topic1': topic_name,
+            'topic2': topic_name,  # same topic so producer and consumer share it
+            'rsm_id': 1,
+            'node_id': 0,          # with rsm_size=1, node_id=0 ensures all messages are sent
+            'broker_ips': broker_ips_str,
+            'rsm_size': 1,         # TODO: >1 requires multiple producer instances
+            'benchmark_duration': experiment_duration,
+            'warmup_duration': warm_up,
+            'cooldown_duration': cool_down,
+            'message': message_payload,
+            'read_from_pipe': False,
+            'input_path': '/tmp/kafka-input',
+            'output_path': consumer_output_remote,
+            'write_dr': False,
+            'write_ccf': False,
+        }
+        config_json_filename = f'kafka_client_config_{json_output_name}_{exp_index}.json'
+        with open(config_json_filename, 'w') as f:
+            json.dump(client_config, f, indent=4)
+        if not transfer_file(config_json_filename, client_ip, ssh_user, ssh_key):
+            raise Exception(f"Failed to transfer client config.json to {client_ip}")
+
+        # Copy config into the kafka-log resources directory so ConfigReader finds it
+        setup_config_cmd = (
+            f'cp ~/{config_json_filename} {kafka_log_dir}/src/main/resources/config.json'
+        )
+        if not run_remote_command_sync(client_ip, setup_config_cmd, ssh_key, ssh_user):
+            raise Exception("Failed to place config.json in kafka-log resources directory.")
+
+        # --- 6. Start Consumer (async, head start before producer) ---
+        # Consumer uses auto.offset.reset=latest so it must be subscribed before
+        # the producer sends. sbt JVM startup can take ~30s, hence CONSUMER_HEAD_START.
+        print(f"\n--- Starting Kafka Consumer (will wait {CONSUMER_HEAD_START}s before producer) ---")
+        consumer_cmd = (
+            f'cd {kafka_log_dir} && sbt "runMain main.Consumer"'
+            f' > ~/{consumer_log_filename} 2>&1'
+        )
+        run_remote_command_sync(client_ip, f'/bin/bash -c "{consumer_cmd} &"', ssh_key, ssh_user)
+        time.sleep(CONSUMER_HEAD_START)
+
+        # --- 7. Start Producer (async) ---
+        print("\n--- Starting Kafka Producer ---")
+        producer_cmd = (
+            f'cd {kafka_log_dir} && sbt "runMain main.Producer"'
+            f' > ~/{producer_log_filename} 2>&1'
+        )
+        run_remote_command_sync(client_ip, f'/bin/bash -c "{producer_cmd} &"', ssh_key, ssh_user)
+
+        # --- 8. Wait for experiment to complete ---
+        total_wait = warm_up + experiment_duration + cool_down + 15  # 15s buffer for sbt teardown
+        print(f"\nWaiting {total_wait}s for experiment to complete...")
+        time.sleep(total_wait)
+
+        # --- 9. Retrieve results ---
+        print("\n--- Retrieving Kafka Results ---")
+        consumer_output_local = os.path.join(local_results_dir, consumer_output_filename)
+        consumer_log_local    = os.path.join(local_results_dir, consumer_log_filename)
+
+        copy_log_file_back(client_ip, ssh_user, ssh_key, consumer_output_filename, local_results_dir)
+        copy_log_file_back(client_ip, ssh_user, ssh_key, consumer_log_filename,    local_results_dir)
+        copy_log_file_back(client_ip, ssh_user, ssh_key, producer_log_filename,    local_results_dir)
+
+        # --- 10. Parse and normalize results ---
+        parse_kafka_results(
+            consumer_output_local, consumer_log_local,
+            json_output_name, exp_index, local_results_dir
+        )
+
+    except Exception as e:
+        print(f"\nFATAL ERROR during Kafka experiment cycle {exp_index + 1}: {e}")
+
+    finally:
+        # --- 11. Stop all brokers ---
+        print("\n--- Stopping Kafka Brokers ---")
+        for ip in seq_ips:
+            kill_remote_process(ip, 'kafka.Kafka', ssh_key, ssh_user)
+        for ip, log_filename in broker_log_files.items():
+            copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
+
+
 def run_experiment_cycle_scalog(config, exp_index, local_results_dir):
     """Runs a single experiment cycle for Scalog. Not yet implemented."""
     raise NotImplementedError("run_experiment_cycle_scalog is not yet implemented.")
