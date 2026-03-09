@@ -1209,9 +1209,271 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
             copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
 
 
+def generate_scalog_config(discovery_ip, order_ips, data_ips, replication_factor,
+                            ssh_key, ssh_user,
+                            discovery_port=21000, order_base_port=21100, data_base_port=21200):
+    """
+    Generates .scalog.yaml content for the Scalog cluster.
+
+    TODO: Verify every field name against chn0318/scalog .scalog.yaml and the Go config
+    structs before running. The structure below is inferred from the Scalog architecture
+    and common Go YAML config conventions.
+    """
+    order_addrs = [f'{ip}:{order_base_port + i}' for i, ip in enumerate(order_ips)]
+    data_addrs  = [f'{ip}:{data_base_port  + i}' for i, ip in enumerate(data_ips)]
+
+    cfg = {
+        # TODO: confirm top-level key names (discovery / order / data vs flat keys)
+        'discovery': {
+            'server-addr': f'{discovery_ip}:{discovery_port}',
+        },
+        'order': {
+            'server-addresses': order_addrs,
+        },
+        'data': {
+            'server-addresses': data_addrs,
+        },
+        'replication-factor': replication_factor,
+        # SSH credentials used by scalogctl to reach cluster nodes (if needed).
+        # TODO: confirm whether scalogctl embeds ssh config or manages nodes differently.
+        'ssh': {
+            'key':  ssh_key,
+            'user': ssh_user,
+        },
+        # Server-side batching intervals left at defaults intentionally.
+        # Do NOT add order-batching-interval or data-batching-interval here.
+    }
+    return yaml.dump(cfg, default_flow_style=False)
+
+
+def parse_scalog_results(client_log_path, json_name, exp_index, local_results_dir):
+    """
+    Converts Scalog client benchmark output into the standard result schema and writes
+    <json_name>_<exp_index>_scalog.json into local_results_dir.
+
+    TODO: Confirm the actual output format of the Scalog benchmark client binary and
+    update the parsing logic below accordingly. The current implementation looks for
+    common patterns; update once confirmed from the source.
+    """
+    throughput  = 0.0
+    avg_latency = 0.0
+
+    try:
+        with open(client_log_path, 'r') as f:
+            for line in f:
+                line_lower = line.lower()
+                # TODO: replace these with actual output patterns from the Scalog client
+                if 'throughput' in line_lower:
+                    # Expected pattern: "Throughput: 100000.0 ops/sec" or similar
+                    parts = line.strip().split()
+                    for part in parts:
+                        try:
+                            throughput = float(part.replace(',', ''))
+                            break
+                        except ValueError:
+                            continue
+                elif 'latency' in line_lower and 'avg' in line_lower:
+                    # Expected pattern: "Avg latency: 1.5 ms" or similar
+                    parts = line.strip().split()
+                    for part in parts:
+                        try:
+                            avg_latency = float(part.replace('ms', '').replace(',', ''))
+                            break
+                        except ValueError:
+                            continue
+    except Exception as e:
+        print(f"WARNING: Could not parse Scalog client log at {client_log_path}: {e}")
+
+    result = {'throughput': throughput, 'avg_latency': avg_latency, 'batch_size': 1}
+    output_path = os.path.join(local_results_dir, f'{json_name}_{exp_index}_scalog.json')
+    try:
+        with open(output_path, 'w') as f:
+            json.dump(result, f, indent=4)
+        print(f"Scalog results written to: {output_path}")
+    except IOError as e:
+        print(f"ERROR: Could not write Scalog results to {output_path}: {e}")
+    return output_path
+
+
 def run_experiment_cycle_scalog(config, exp_index, local_results_dir):
-    """Runs a single experiment cycle for Scalog. Not yet implemented."""
-    raise NotImplementedError("run_experiment_cycle_scalog is not yet implemented.")
+    """
+    Runs a single experiment cycle for the Scalog comparison system.
+
+    Expects in TOML:
+      [network_setup]         seq_ips (order nodes), stor_ips (data nodes), cli_ips, ssh_key, ssh_user
+      [program_paths]         path_discovery, path_order, path_data, path_client
+                              (paths to compiled Scalog binaries on the remote machines)
+      [comparison_parameters] num_shards, num_sequencer_nodes, replication_factor
+      [experiment_parameters] json_name, experiment_duration, warm_up, cool_down, message_size
+
+    Component startup order: discovery → order nodes → data nodes → client.
+    Each component is started independently via SSH using execute_remote_command.
+    The discovery node is run on seq_ips[0]; it can share the machine with an order node.
+
+    TODO: Verify .scalog.yaml field names (see generate_scalog_config).
+    TODO: Verify client binary CLI flags for duration, message size, and thread count.
+    TODO: Verify parse_scalog_results output patterns against actual client output.
+    """
+    ssh_key   = config['network_setup']['ssh_key']
+    ssh_user  = config['network_setup']['ssh_user']
+    client_ips = config['network_setup']['cli_ips']
+    seq_ips    = config['network_setup'].get('seq_ips', [])   # order layer nodes
+    stor_ips   = config['network_setup']['stor_ips']           # data layer nodes
+
+    if not seq_ips:
+        raise Exception("No seq_ips defined for Scalog order nodes in [network_setup].")
+    if not stor_ips:
+        raise Exception("No stor_ips defined for Scalog data nodes in [network_setup].")
+
+    cmp  = config.get('comparison_parameters', {})
+    num_sequencer_nodes = cmp.get('num_sequencer_nodes', len(seq_ips))
+    num_shards          = cmp.get('num_shards',          len(stor_ips))
+    replication_factor  = cmp.get('replication_factor',  2)
+
+    if num_sequencer_nodes > len(seq_ips):
+        raise Exception(f"num_sequencer_nodes ({num_sequencer_nodes}) > len(seq_ips) ({len(seq_ips)}).")
+    if num_shards > len(stor_ips):
+        raise Exception(f"num_shards ({num_shards}) > len(stor_ips) ({len(stor_ips)}).")
+
+    exp              = config['experiment_parameters']
+    json_output_name = exp['json_name']
+    duration         = exp['experiment_duration']
+    warm_up          = exp['warm_up']
+    cool_down        = exp['cool_down']
+    message_size     = exp['message_size']
+
+    paths = config['program_paths']
+    path_discovery = paths['path_discovery']
+    path_order     = paths['path_order']
+    path_data      = paths['path_data']
+    path_client    = paths['path_client']
+
+    # Discovery runs on seq_ips[0], which may also host an order node.
+    discovery_ip  = seq_ips[0]
+    active_order  = seq_ips[:num_sequencer_nodes]
+    active_data   = stor_ips[:num_shards]
+    client_ip     = client_ips[0]
+
+    scalog_yaml_filename = f'scalog_{json_output_name}_{exp_index}.yaml'
+    client_log_filename  = f'scalog_client_{json_output_name}_{exp_index}.log'
+
+    component_log_files  = {}   # ip -> log filename, for cleanup retrieval
+
+    print(f"\n========================================================")
+    print(f"   RUNNING SCALOG EXPERIMENT {exp_index + 1}: {json_output_name}")
+    print(f"   Order nodes: {active_order}")
+    print(f"   Data  nodes: {active_data}")
+    print(f"   RF: {replication_factor}")
+    print(f"========================================================")
+
+    try:
+        # --- 1. Generate and distribute .scalog.yaml ---
+        print("\n--- Generating Scalog config ---")
+        scalog_yaml = generate_scalog_config(
+            discovery_ip=discovery_ip,
+            order_ips=active_order,
+            data_ips=active_data,
+            replication_factor=replication_factor,
+            ssh_key=ssh_key,
+            ssh_user=ssh_user,
+        )
+        with open(scalog_yaml_filename, 'w') as f:
+            f.write(scalog_yaml)
+
+        all_scalog_nodes = list(dict.fromkeys(active_order + active_data + [client_ip]))
+        for ip in all_scalog_nodes:
+            if not transfer_file(scalog_yaml_filename, ip, ssh_user, ssh_key):
+                raise Exception(f"Failed to transfer scalog config to {ip}")
+
+        # --- 2. Start discovery node ---
+        print(f"\n--- Starting Scalog discovery node on {discovery_ip} ---")
+        process, log_filename = execute_remote_command(
+            discovery_ip, path_discovery, scalog_yaml_filename, ssh_key, ssh_user, exp_index
+        )
+        if not process:
+            raise Exception(f"Failed to start discovery node on {discovery_ip}")
+        component_log_files[f'discovery_{discovery_ip}'] = (discovery_ip, log_filename)
+
+        time.sleep(2)  # discovery must be up before order nodes connect
+
+        # --- 3. Start order layer nodes ---
+        print("\n--- Starting Scalog order nodes ---")
+        for ip in active_order:
+            process, log_filename = execute_remote_command(
+                ip, path_order, scalog_yaml_filename, ssh_key, ssh_user, exp_index
+            )
+            if not process:
+                raise Exception(f"Failed to start order node on {ip}")
+            component_log_files[f'order_{ip}'] = (ip, log_filename)
+
+        time.sleep(2)  # order nodes register with discovery before data nodes connect
+
+        # --- 4. Start data layer nodes ---
+        print("\n--- Starting Scalog data nodes ---")
+        for ip in active_data:
+            process, log_filename = execute_remote_command(
+                ip, path_data, scalog_yaml_filename, ssh_key, ssh_user, exp_index
+            )
+            if not process:
+                raise Exception(f"Failed to start data node on {ip}")
+            component_log_files[f'data_{ip}'] = (ip, log_filename)
+
+        print(f"\nWaiting {SERVER_START_DELAY}s for cluster to stabilize...")
+        time.sleep(SERVER_START_DELAY)
+
+        # --- 5. Run client benchmark ---
+        # TODO: Verify the client binary accepts these flags; update if it uses a config-only
+        # approach (in which case add duration/message_size/threads to scalog_yaml instead).
+        print(f"\n--- Starting Scalog client benchmark on {client_ip} ---")
+        total_bench = warm_up + duration + cool_down
+        client_extra_args = (
+            f'--duration {total_bench}'
+            f' --message-size {message_size}'
+            f' --warmup {warm_up}'
+        )
+        # execute_remote_command runs: sudo <path_client> ~/<config>
+        # We append extra flags by embedding them in the path string.
+        # TODO: adjust if the client takes flags differently.
+        client_invocation = f'{path_client} ~/{scalog_yaml_filename} {client_extra_args}'
+        client_cmd = (
+            f'sudo {client_invocation} > ~/{client_log_filename} 2>&1'
+        )
+        client_ssh_cmd = [
+            'ssh', '-i', ssh_key,
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', 'UserKnownHostsFile=/dev/null',
+            f'{ssh_user}@{client_ip}',
+            f'/bin/bash -c "{client_cmd} &"',
+        ]
+        client_process = subprocess.Popen(
+            client_ssh_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+
+        total_wait = total_bench + 15  # 15s buffer for startup/teardown
+        print(f"Waiting {total_wait}s for client benchmark to complete...")
+        time.sleep(total_wait)
+
+        # --- 6. Retrieve results ---
+        print("\n--- Retrieving Scalog results ---")
+        client_log_local = os.path.join(local_results_dir, client_log_filename)
+        copy_log_file_back(client_ip, ssh_user, ssh_key, client_log_filename, local_results_dir)
+
+        parse_scalog_results(client_log_local, json_output_name, exp_index, local_results_dir)
+
+    except Exception as e:
+        print(f"\nFATAL ERROR during Scalog experiment cycle {exp_index + 1}: {e}")
+
+    finally:
+        # --- 7. Stop all cluster components and retrieve logs ---
+        print("\n--- Stopping Scalog cluster ---")
+        for component, (ip, log_filename) in component_log_files.items():
+            copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
+
+        for ip in active_data:
+            kill_remote_process(ip, path_data, ssh_key, ssh_user)
+        for ip in active_order:
+            kill_remote_process(ip, path_order, ssh_key, ssh_user)
+        kill_remote_process(discovery_ip, path_discovery, ssh_key, ssh_user)
 
 
 def run_experiment_cycle_lazylog(config, exp_index, local_results_dir):
