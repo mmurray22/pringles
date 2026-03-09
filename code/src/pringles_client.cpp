@@ -38,6 +38,7 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_p
     uint16_t recv_port = (uint16_t)get_recv_port(config) + (uint16_t)recv_port_offset + (uint16_t)thread_id;	
     this->client_recv_port = std::to_string(recv_port);
     std::string self_ip = get_self_ip(config);
+    std::string multicast_ip = "";
     net = std::make_shared<Network>(std::to_string(send_port), 
                                    std::to_string(recv_port),
 				   get_socket_type(config),
@@ -47,7 +48,8 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_p
 				   get_batch_timeout(config),
 				   get_interface(config),
 				   get_self_ip(config),
-				   get_num_pkt_types(config),
+				   multicast_ip,
+				   false,
 				   false);
      this->use_switch = get_use_switch(config);
      this->switch_receive_port = get_switch_receive_port(config);
@@ -609,6 +611,85 @@ uint64_t LogClient::append_stream(std::string entry, uint32_t stream_id) {
     append_cntr += 1;
     return return_idx;
 }
+
+std::string LogClient::read_stream(uint64_t idx, uint32_t stream_id) {
+    spdlog::info("Simple Network: Sending/Receiving to remote host");
+    spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid());
+    
+    size_t size_of_hdr = get_ring_read_size();
+    size_t size_of_type_hdr = get_ring_type_size();
+    read_type_hdr.get()->type = htons(ETH_READ_REQ);
+    spdlog::debug("Type header: {}, size of: {} and type hdr: {}", read_type_hdr.get()->type, size_of_hdr, size_of_type_hdr);
+    read_entry_hdr.get()->g_idx = htonl(idx);
+    read_entry_hdr.get()->stream_id = htonl(stream_id);
+
+
+    // Only need to read from the map once to get the queue
+    // Create packet buffer which will be sent  
+    uint64_t allocated_packet_size = size_of_type_hdr + size_of_hdr + payload_size + 1;
+    std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+    double start_time = collect_stats ? read_stat->getStartLat() : 0;
+    read_entry_hdr.get()->nonce = htonl(read_nonce);
+    memcpy(packet.get(), reinterpret_cast<const char*>(read_type_hdr.get()), size_of_type_hdr);
+    memcpy(packet.get() + size_of_type_hdr, reinterpret_cast<const char*>(read_entry_hdr.get()), size_of_hdr);
+    memset(packet.get() + size_of_type_hdr + size_of_hdr, 0, payload.length() + 1);
+
+    spdlog::debug("Size of packet: {} and size of hdr: {}", allocated_packet_size, size_of_hdr);
+    bool res = false;
+    if (use_switch) {
+        spdlog::debug("Sending to the SWITCH at IP {} and port {} at port {} and nonce {}", switch_ip, switch_receive_port, client_recv_port, read_nonce);
+        res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, switch_ip, switch_receive_port);
+    } else {
+        for (uint64_t i = 0; i < stor_ips.size(); i++) {
+            res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, stor_ips[i], stor_receive_port);
+        }
+    }
+    if (!res) {
+        spdlog::critical("Sending read to the system failed!");
+        return 0;
+    }
+
+    bool got_quorum = false;
+    std::string return_str = "";
+    while (!got_quorum) {
+        if (end_thread) {
+            break;
+        }
+
+	// Wait to receive the packet 
+	char* recv_ptr;
+	{
+	    std::unique_lock<std::mutex> lock(read_resp_q_mutex);
+	    read_resp_cv.wait(lock, [this] {return end_thread || !read_resp_q.empty();});
+	    if (end_thread) {
+	        break;
+	    }
+	    if (!read_resp_q.try_pop(recv_ptr) || !recv_ptr) {
+	        continue;
+	    }
+	}
+
+        struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
+        struct ring_read_entry* read_entry = (struct ring_read_entry*)(recv_ptr + sizeof(struct ring_type));
+        spdlog::debug("Register the time and operation with type {} and nonce {}, original nonce {}!", ntohs(type_hdr->type), ntohl(read_entry->nonce), read_nonce);
+        if (ntohs(type_hdr->type) == ETH_READ_RESP && ntohl(read_entry->nonce) == read_nonce) {
+	    char* entry = (char*)(recv_ptr + size_of_type_hdr + size_of_hdr);
+	    return_str = std::string(entry);
+	    cached_log_entries[ntohl(read_entry->g_idx)] = return_str;
+    	    if (collect_stats && start_time > 0) {
+		read_stat->getDuration(start_time);
+                read_stat->addOp();
+    	        spdlog::debug("!!!!!!!!!!!!!!!GOT HERE IN THREAD {}, {}", thread_id, entry);
+
+    	    }
+            got_quorum = true;
+        }
+    }
+    read_nonce += 1;
+    read_cntr += 1;
+    return return_str;
+}
+
 
 
 

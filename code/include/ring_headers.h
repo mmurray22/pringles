@@ -74,6 +74,8 @@ struct ring_read_entry {
     uint32_t nonce;
     // FROM CLIENT: To tell the storage server how many bytes each payload is
     uint32_t payload_size;
+    // FROM CLIENT
+    uint32_t stream_id;
     // FROM NETWORK: Global sequence number of the message
     uint32_t g_idx;
     // FROM NETWORK: view number of switch forwarding entry
@@ -107,6 +109,9 @@ struct ring_append_ack {
 struct ring_subscribe_entry {
     // FROM NETWORK: Global sequence number of the message
     uint32_t g_idx;
+    // FROM CLIENT
+    uint32_t stream_id;
+    // Bool on whether to subscribe?
     uint32_t subscribe;
     // FROM CLIENT
     uint32_t client_ip;

@@ -339,3 +339,23 @@ uint64_t get_storage_server(YAML::Node config) {
 uint64_t get_cli_idx(YAML::Node config) {
     return config["cli_idx"].as<uint64_t>();
 }
+
+bool get_use_streams(YAML::Node config) {
+    return config["use_streams"].as<uint64_t>();
+}
+
+bool get_use_shards(YAML::Node config) {
+    return config["use_streams"].as<uint64_t>();
+}
+
+std::string get_multicast_addr(YAML::Node config) {
+    return config["shard_multicast_addr"].as<std::string>();
+}
+
+std::vector<std::string> get_all_shards(YAML::Node config) {
+    return config["all_shards"].as<std::vector<std::string>>();
+}
+
+uint64_t get_ack_threshold(YAML::Node config) {
+    return config["ack_threshold"].as<uint64_t>();
+}

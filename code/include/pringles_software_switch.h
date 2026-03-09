@@ -4,6 +4,8 @@
 #include "network.h"
 #include "measure.h"
 #include <tbb/concurrent_vector.h>
+#include <tbb/concurrent_hash_map.h>
+#include <tbb/concurrent_unordered_set.h>
 
 const uint64_t MAX_TIMEOUT = 100;
 const uint64_t MAX_POLL_TIME = 100;
@@ -14,7 +16,7 @@ class LogSoftwareSwitch {
 	~LogSoftwareSwitch();
 
 	bool recover_switch();
-	bool store_sub(std::string client_ip, std::string recv_port);
+	bool store_sub(std::string client_ip, std::string recv_port, uint32_t stream_id);
 	std::string get(uint64_t idx);
 	void change_view(uint64_t new_view_num);
 	void wait_to_finish();
@@ -28,6 +30,19 @@ class LogSoftwareSwitch {
 	std::string stor_receive_port;
 	std::vector<std::string> stor_ips;
 	bool use_store;
+	bool use_shard;
+
+	// Shards
+	bool use_shards;
+	uint64_t next_available_shard;
+        tbb::concurrent_vector<std::string> all_shards;
+        tbb::concurrent_hash_map<uint64_t, uint64_t> stream_id_to_shard_id;
+        tbb::concurrent_hash_map<uint64_t, uint64_t> seq_idx_to_shard_id;
+
+	// Stream variables 
+	bool use_streams;
+        tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>> concurrent_stream_tracker;
+
 
 	uint64_t view_num;
 	bool end_thread = false;
@@ -42,6 +57,11 @@ class LogSoftwareSwitch {
 	std::atomic<uint64_t> max_idx; 
 	
 	tbb::concurrent_vector<std::vector<std::string>> subscribe_stor;
+	tbb::concurrent_hash_map<uint32_t, tbb::concurrent_vector<std::vector<std::string>>> stream_subscribe_stor;
+
+	// Acknowledgement counting
+	tbb::concurrent_hash_map<uint64_t, uint64_t> ack_map;
+	uint64_t ack_threshold;
 	
 	std::condition_variable append_req_cv;
 	std::mutex append_req_q_mutex;
@@ -76,4 +96,8 @@ class LogSoftwareSwitch {
 	void read_response();
 	void tail_request();
 	void subscribe_request();
+	
+	// Helper functions
+	std::string get_quad_ip(uint32_t ip_addr);
+	void send_subscriber_pkts(tbb::concurrent_vector<std::vector<std::string>> sub_it, size_t num_subscribers, uint64_t reply_pkt_size, char* recv_ptr);
 };

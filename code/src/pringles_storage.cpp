@@ -31,6 +31,13 @@
 LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
     spdlog::critical("Pringles Storage is starting!");
     YAML::Node config = YAML::LoadFile(input_file);
+    
+    // Shards
+    this->shard_id = get_shard_id(config);
+    this->use_shards = get_use_shards(config);
+
+    // Streams
+    this->use_streams = get_use_streams(config);
 
     // Create network
     this->net = std::make_shared<Network>(std::to_string(get_send_port(config)), 
@@ -42,11 +49,12 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
 				   get_batch_timeout(config),
 				   get_interface(config),
 				   get_self_ip(config),
-				   get_num_pkt_types(config),
+				   get_multicast_addr(config),
+				   use_shards,
 				   false); 
 
     // Initialize storage server identity variables
-    this->shard_id = get_shard_id(config);
+
     this->shard_switch_id = get_shard_switch_id(config);
     this->view_num = 1;
     this->max_duration = get_experiment_duration(config);
@@ -149,78 +157,62 @@ void LogStorage::append_server() {
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
 
-    while (!end_thread) {
-     	bool got_quorum = false;
+     while (!end_thread) {
+         char* recv_ptr;
+         {
+     	     std::unique_lock<std::mutex> lock(append_req_q_mutex);
+     	     append_req_cv.wait(lock, [this] {return end_thread || !append_req_q.empty();});
+     	     if (!append_req_q.try_pop(recv_ptr) || !recv_ptr) {
+                 net->send_udp_packet(NULL, 0, switch_ip, switch_recv_port, false); // TODO is this needed?
+                 continue;
+             }
+         }
+         
+         uint64_t recv_offset = 0;
+         struct ring_type* type_hdr = (struct ring_type*)(recv_ptr);
+         // Update the type of the type header
+         type_hdr->type = htons(ETH_APPEND_RESP);
+         uint64_t num_entries = ntohs(type_hdr->num_entries);
+         spdlog::debug("Num entries {}", ntohs(type_hdr->num_entries));
+         for (uint64_t i = 0; i < num_entries; i++) {
+             // Get the append entry header
+             struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
+     	     // Get append payload
+ 	     uint64_t sequence_no = ntohl(batch_append_entry->g_idx);
+             char* entry = (char*)(recv_ptr + recv_offset + size_of_type_hdr + size_of_hdr);
+           
+	      
+     	     // Actually store the entry
+             std::string string_to_store(entry); 
+             store(sequence_no, string_to_store);
+     	     max_append_idx = sequence_no;
+             spdlog::debug("The updated index is: {}, Entry: {}, Recv port: {}", max_append_idx, string_to_store, ntohs(batch_append_entry->recv_port));
+ 
+     	     // Create reply packet
+             uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr + ntohl(batch_append_entry->payload_size) + 1;
+             std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
 
-        while (!got_quorum) {
-	    if (end_thread) {
-	        break;
-	    }
 
-	    char* recv_ptr;
-	    {
-		std::unique_lock<std::mutex> lock(append_req_q_mutex);
-		append_req_cv.wait(lock, [this] {return end_thread || !append_req_q.empty();});
-		if (!append_req_q.try_pop(recv_ptr) || !recv_ptr) {
-            	    net->send_udp_packet(NULL, 0, switch_ip, switch_recv_port); // TODO is this needed?
-	            continue;
-	        }
-	    }
-	    struct ring_type* append_type = (struct ring_type*)recv_ptr;
-	    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-	    uint64_t num_entries = ntohs(append_type->num_entries);
-	    
-	    // Update the type of the type header
-	    uint64_t recv_offset = 0;
-	    spdlog::debug("Num entries {}, Payload size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size));
-	    for (uint64_t i = 0; i < num_entries; i++) {
-	        struct ring_type* type_hdr = (struct ring_type*)(recv_ptr + recv_offset);
-	        type_hdr->type = htons(ETH_APPEND_RESP);
-
-	         // Get the next append entry header to process and its payload
-	        struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
-	        char* entry = (char*)(recv_ptr + recv_offset + size_of_type_hdr + size_of_hdr);
-	        
-	       	// Create reply packet
- 	        uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr + ntohl(batch_append_entry->payload_size) + 1;
-     	        std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
-
-
-	        // Actually store the entry
-	        std::string dummy(entry); 
-	        store(ntohl(batch_append_entry->g_idx), dummy);
-		max_append_idx = ntohl(batch_append_entry->g_idx);
-	        spdlog::debug("The updated index is: {}, Entry: {}, Recv port: {}", max_append_idx, dummy, ntohs(batch_append_entry->recv_port));
-	        
-	        // Copy both the type header and the append entry header into the reply packet buffer
-	        uint64_t old_payload_size = ntohl(batch_append_entry->payload_size);
-                memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
-	        
-	        if (use_switch) {
-		     spdlog::debug("Sending to the switch! IP: {} and Port: {}", switch_ip, switch_recv_port);
-     	             net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, switch_recv_port);
-	        } else {
-		    char buffer[INET_ADDRSTRLEN];
-    		    if (inet_ntop(AF_INET, &batch_append_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
-		         spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
-		         memset(buffer, 0, INET_ADDRSTRLEN);
-			 throw;
-    		    }
-		    std::string client_ip(buffer);
-     	            net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, client_ip, std::to_string(ntohs(batch_append_entry->recv_port)));
-	        }
-		append_cntr += 1;
-	        
-	        recv_offset += (size_of_type_hdr + size_of_hdr + old_payload_size + 1);
-	    }
-	    got_quorum = true;
-	}
-	
-	// Create packet buffer which will be sent  
-	if (end_thread) {
-	    break;
-	}
-    }
+             // Copy both the type header and the append entry header into the reply packet buffer
+             memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
+             
+             if (use_switch) {
+     	     spdlog::debug("Sending to the switch! IP: {} and Port: {}", switch_ip, switch_recv_port);
+                 net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, switch_recv_port, false);
+             } else {
+     	         char buffer[INET_ADDRSTRLEN];
+     	         if (inet_ntop(AF_INET, &batch_append_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
+     	             spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
+     	             memset(buffer, 0, INET_ADDRSTRLEN);
+     		     throw;
+     	         }
+     	         std::string client_ip(buffer);
+                 net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, client_ip, std::to_string(ntohs(batch_append_entry->recv_port)));
+             }
+     	     append_cntr += 1;
+             recv_offset += reply_pkt_size;
+         }
+     }
     spdlog::critical("=============== Number of append packets processed is {} with max append sequence number {} ===========================", append_cntr, max_append_idx);
 }
 
@@ -244,7 +236,7 @@ void LogStorage::read_server() {
 		std::unique_lock<std::mutex> lock(read_req_q_mutex);
 		read_req_cv.wait(lock, [this] {return end_thread || !read_req_q.empty();});
 		if (!read_req_q.try_pop(recv_ptr) || !recv_ptr) {
-            	    net->send_udp_packet(NULL, 0, switch_ip, switch_recv_port); // TODO is this needed?
+            	    net->send_udp_packet(NULL, 0, switch_ip, switch_recv_port, false); // TODO is this needed?
 	            continue;
 	        }
 	    }
@@ -271,7 +263,7 @@ void LogStorage::read_server() {
             memcpy(reply_packet.get() + size_of_type_hdr + size_of_hdr, entry.c_str(), ntohl(read_entry->payload_size) + 1);
 	    
 	    if (use_switch) {
-     	         net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, switch_recv_port);
+     	         net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, switch_recv_port, false);
 	    } else {
 	        char buffer[INET_ADDRSTRLEN];
     	        if (inet_ntop(AF_INET, &read_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {

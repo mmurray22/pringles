@@ -33,7 +33,7 @@ class LogClient : public BaseClient {
 	
 	
 	uint64_t append_stream(std::string entry, uint32_t stream_id);
-	//std::string read_stream(uint64_t idx, uint32_t stream_id);
+	std::string read_stream(uint64_t idx, uint32_t stream_id);
 	//void subscribe_stream(std::string entry, uint32_t stream_id);
 
         void wait_to_warmup();

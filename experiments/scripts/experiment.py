@@ -83,7 +83,7 @@ def generate_switch_config(base_config, i, cntrl_port_num, ring_size, client_bas
     return switch_config
 
 
-def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None):
+def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None, shard_id=None, total_shards=None, shard_multicast=None):
     """Generates the configuration dictionary for a client or server."""
     
     # Base port calculation to ensure uniqueness
@@ -100,7 +100,6 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     warm_up = exp_params['warm_up']
     cool_down = exp_params['cool_down']
 
-
     if entity_type == 'server':
         # Servers run longer than the client to ensure no early termination
         final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY
@@ -108,13 +107,14 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         final_duration = exp_duration + warm_up + cool_down + SWITCH_START_DELAY
     else:
         final_duration = exp_duration + warm_up + cool_down
-
+    
     # Initialize the base YAML structure
     # Include the network information for EVERY component of the system in every YAML
     cli_macs = [QuotedString(mac) for mac in net_params['cli_macs']]
     cli_ips = [QuotedString(mac) for mac in net_params['cli_ips']]
     stor_macs = [QuotedString(mac) for mac in net_params['stor_macs']]
     stor_ips = [QuotedString(mac) for mac in net_params['stor_ips']]
+
     yaml_config = {
         'log_level': exp_params['log_level'],
         'switch_ip': QuotedString(net_params['switch_ip']),
@@ -141,7 +141,9 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         'experiment_duration': final_duration, 
         'payload_size': exp_params['message_size'],
         'use_switch': exp_params['use_switch'],
-        'use_store': exp_params['use_store']
+        'use_store': exp_params['use_store'],
+        'ack_threshold': exp_params['ack_threshold'],
+        'use_client_count_acks': exp_params['use_client_count_acks'] 
     }
     
     # Pre-calculate and wrap client destination MACs (used by both client to send, and server to reply)
@@ -170,8 +172,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     
     # --- Storage Server Specific Fields ---
     elif entity_type == 'server':
-        # Randomly generated values for simplicity, as requested
-        shard_id = random.randint(0, 999)
+        # TODO dummy shard_switch_id
         shard_switch_id = random.randint(0, 9)
 
         yaml_config.update({
@@ -181,12 +182,14 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'stor_id': entity_id, # Integer
             'use_switch': exp_params['use_switch'],
             'num_storage_threads': exp_params['num_storage_threads'],
-            'interface': QuotedString(network_interface)
+            'interface': QuotedString(network_interface),
+            'shard_multicast_addr': QuotedString(shard_mutlicast)
         })
 
     elif entity_type == 'switch':
         yaml_config.update({
-            'interface': QuotedString(network_interface)
+            'interface': QuotedString(network_interface),
+            'all_shards': total_shards
         })
 
     return yaml_config
@@ -933,6 +936,25 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
     switch_processes = []
     switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
     
+    # Setup shards TODO only for a single switch
+    size_of_shard = config['experiment_parameters']['number_of_machines_per_shard']
+    total_list_of_shards = []
+    ip_to_shard = {}
+    shard_to_multicast_addr = []
+    num_of_shard = 0
+    base_mutlicast_addr = "239.1.1."
+    for i in range(0, len(server_ips)):
+        shard = []
+        for j in range(i, i+size_of_shard):
+            shard.append(server_ips[j])
+            ip_to_shard[server_ips[j]] = num_of_shard
+        total_list_of_shard.append(shard)
+        i += size_of_shard
+        num_of_shard += 1
+    for i in range(0, num_of_shard): #255 <-- TODO max number of shards
+        shard_to_multicast_addr[i] = base_multicast_addr + str(i);
+    yaml_shard_to_multicast_addr = [QuotedString(addr) for addr in shard_to_multicast_addr]
+
     try:
         # Assumption: All servers respond to all destination MAC defined in the TOML
         server_dst_mac_for_all = config['routing']['server_dest_macs'][0]
@@ -949,11 +971,13 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
                 config, 
                 'server', 
                 ip, 
-                port_offset, 
+                port_offset,
                 entity_id=server_id,
                 entity_idx=i,
                 dst_mac=server_dst_mac_for_all,
-                network_interface=server_net_ifs[i]
+                network_interface=server_net_ifs[i],
+                shard_id=ip_to_shard[ip],
+                shard_multicast=shard_to_multicast_addr[ip_to_shard[ip]]
             )
             
             # Write YAML file locally
@@ -1020,6 +1044,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
                 json_name=json_output_name,
                 num_failures=num_failures,
                 network_interface=switch_net_if
+                total_shards=yaml_shard_to_multicast_addr
             )
             
             # Write YAML file locally

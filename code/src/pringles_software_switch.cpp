@@ -38,6 +38,8 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
     spdlog::critical("Pringles Software Switch is starting!");
     YAML::Node config = YAML::LoadFile(input_file);
 
+    this->use_shards = get_use_shards(config);
+
     // Create network
     this->net = std::make_shared<Network>(std::to_string(get_send_port(config)), 
                                    get_switch_receive_port(config),
@@ -48,12 +50,26 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
 				   get_batch_timeout(config),
 				   get_interface(config),
 				   get_self_ip(config),
-				   get_num_pkt_types(config),
+				   get_multicast_addr(config),
+				   use_shards,
 				   false); 
 
     // Initialize storage server identity variables
     this->switch_id = switch_id;
     this->use_store = get_use_stor(config);
+    
+    // Sharding information
+    std::vector<std::string> yaml_vec = get_all_shards(config);
+    for (std::string entry : yaml_vec) {
+        this->all_shards.push_back(entry);
+    }
+
+    // Streaming information
+    this->use_streams = get_use_streams(config);
+
+    // Acks
+    this->ack_threshold = get_ack_threshold(config);
+
     // TODO use_client?
     this->view_num = 1;
     set_spdlog_level(get_log_level(config));
@@ -192,7 +208,7 @@ void LogSoftwareSwitch::append_request() {
     	       if (!append_req_q.try_pop(recv_ptr) || !recv_ptr) {
     	           if (use_store) {
     	               for (uint64_t i = 0; i < stor_ips.size(); i++) {
-                           net->send_udp_packet(NULL, 0, stor_ips[i], stor_receive_port);
+                           net->send_udp_packet(NULL, 0, stor_ips[i], stor_receive_port, false);
     	               }  
     	           }
                    continue;
@@ -215,34 +231,77 @@ void LogSoftwareSwitch::append_request() {
                 	    // Send the network packet
             bool res = false;
     	    if (use_store) {
-    	        //spdlog::debug("Sending multiple packets!");
-    	        for (uint64_t i = 0; i < stor_ips.size(); i++) {
-		    spdlog::debug("Final request packet payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}",  ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
-            	    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-    	            // Copy batch header into the reply packet, and the batch content 
+	        if (use_streams) {
+	            uint32_t stream_id = ntohl(append_entry->stream_id);
+	            tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>>::const_accessor acc;
+		    
+		    // If the stream isn't being tracked yet, add it to the store
+		    if (!concurrent_stream_tracker.find(acc, stream_id)) {
+		        tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>>::accessor put_acc;
+		        concurrent_stream_tracker.insert(put_acc, stream_id);
+			put_acc.release();
+		    }
+		
+	            tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>>::accessor update_set_acc;
+  		    if (concurrent_stream_tracker.find(update_set_acc, stream_id)) { // Should find stream_id
+		        auto result = update_set_acc->second.insert(ntohl(append_entry->g_idx));
+		        if (!result.second) {
+		            spdlog::critical("Unable to add seq no {} in stream ID {} to the set!", ntohl(append_entry->g_idx), stream_id);
+		        }	
+			update_set_acc.release();
+		    }
+	        }
+
+		if (use_shards) {
+		    std::string multicast_addr;
+		    uint64_t key_id = 0;
+		    if (use_streams) {
+			key_id = ntohl(append_entry->stream_id);
+		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
+		        if (stream_id_to_shard_id.find(acc, key_id)) {
+		            multicast_addr = acc->second;
+		        } else {
+                            std::string multicast_addr = all_shards[next_available_shard];
+		            next_available_shard = (next_available_shard + 1) % all_shards.size();
+		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
+		            stream_id_to_shard_id.insert(put_acc, key_id);
+			    put_acc.release();
+		        }
+		    } else { // If streams aren't used, then sequence number will be used
+		        key_id = ntohl(append_entry->g_idx) % all_shards.size(); // TODO bit shift?
+			tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
+		        if (seq_idx_to_shard_id.find(acc, key_id)) {
+		            multicast_addr = acc->second;
+		        } else {
+                            std::string multicast_addr = all_shards[next_available_shard];
+		            next_available_shard = (next_available_shard + 1) % all_shards.size();
+		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
+		            seq_idx_to_shard_id.insert(put_acc, key_id);
+			    put_acc.release();
+		        }
+		    }
+		    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
             	    memcpy(reply_packet.get(), recv_ptr, pkt_size);
-	            res = net->send_udp_packet(std::move(reply_packet), pkt_size, stor_ips[i], stor_receive_port);
-    	        }
+		    net->send_udp_packet(std::move(reply_packet), pkt_size, multicast_addr, stor_receive_port, true);
+		} else {
+    	             for (uint64_t i = 0; i < stor_ips.size(); i++) {
+		         spdlog::debug("Req payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}",  ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
+            	         std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+    	                 // Copy batch header into the reply packet, and the batch content 
+            	         memcpy(reply_packet.get(), recv_ptr, pkt_size);
+	                 res = net->send_udp_packet(std::move(reply_packet), pkt_size, stor_ips[i], stor_receive_port, false);
+    	             }
+		}
     	    } else {
                 struct ring_type* append_type = (struct ring_type*)(recv_ptr + sizeof(struct ring_type));
-		spdlog::debug("Final request packet number of entries: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
+		spdlog::debug("Final # entry: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
                 std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
     	        // Copy batch header into the reply packet, and the batch content 
                 memcpy(reply_packet.get(), recv_ptr, pkt_size);
     	
-    	        //spdlog::debug("Only sending a single packet!");
     	        ((struct ring_type*)reply_packet.get())->type = htons(ETH_APPEND_RESP);
     
-    		// 2. Prepare a buffer for the string
-    		// INET_ADDRSTRLEN is a standard constant (usually 16)
-    		char buffer[INET_ADDRSTRLEN];
-    
-    		// 3. Convert the 4 bytes into a dotted-quad string
-    		if (inet_ntop(AF_INET, &append_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
-		     spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
-		     memset(buffer, 0, INET_ADDRSTRLEN);
-    		}
-		std::string client_ip(buffer);
+		std::string client_ip = get_quad_ip(append_entry->client_ip);
 
                 net->send_client_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(append_entry->recv_port));
     	        res = true;
@@ -264,95 +323,89 @@ void LogSoftwareSwitch::append_response() {
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
     uint64_t pkt_resp_cntr = 0;
 
+    while (!end_thread) {
 
-    if (true) {
-        // Request header
-	while (!end_thread) {
-            bool got_quorum = false;
+	// The packet size of the append request while waiting for the batch to fill up
 
-	    // The packet size of the append request while waiting for the batch to fill up
+        // Calculate the batch size for this type of packet
+        size_t size_of_hdr = get_ring_append_size();
+        size_t size_of_type_hdr = get_ring_type_size();
 
-            // Calculate the batch size for this type of packet
-            size_t size_of_hdr = get_ring_append_size();
-            size_t size_of_type_hdr = get_ring_type_size();
+        //double lat_start_time = stat->getStartLat();
+	    
+ 	// Wait to receive the packet 
+	char* recv_ptr;
+	{
+	    std::unique_lock<std::mutex> lock(append_resp_q_mutex);
+	    append_resp_cv.wait(lock, [this] {return end_thread || !append_resp_q.empty();});
+	    if (!append_resp_q.try_pop(recv_ptr) || !recv_ptr) {
+	        continue;
+	    }
+	}
 
-            //double lat_start_time = stat->getStartLat();
-            while (!got_quorum) {
-		 // Stop receiving/sending messages since the experiment is over
-                 if (end_thread) {
-                     break;
-                 }
-		
-		// Wait to receive the packet 
-		char* recv_ptr;
-	    	{
-	            std::unique_lock<std::mutex> lock(append_resp_q_mutex);
-		    append_resp_cv.wait(lock, [this] {return end_thread || !append_resp_q.empty();});
-		    if (!append_resp_q.try_pop(recv_ptr) || !recv_ptr) {
-	                continue;
-	            }
-	    	}
+	// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
 
-		// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
+	// Isolate the ethernet header from the receive ptr
+            // Get the append entry header from the storage reply
+	struct ring_type* append_type = (struct ring_type*)(recv_ptr);
+	uint64_t num_entries = ntohs(append_type->num_entries);
+	uint64_t recv_offset = 0;
+	for (uint64_t i = 0; i < num_entries; i++) { // TODO: If there's multiple entries, currently there is assumption that there are multiple type headers
+	    // Create reply buffer packet
+ 	    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
+	    struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
+            uint64_t seq_no = ntohl(batch_append_entry->g_idx);
 
-		// Isolate the ethernet header from the receive ptr
-                    // Get the append entry header from the storage reply
-		struct ring_type* append_type = (struct ring_type*)(recv_ptr);
-		uint64_t num_entries = ntohs(append_type->num_entries);
-		uint64_t recv_offset = 0;
-		for (uint64_t i = 0; i < num_entries; i++) {
-		    // Create reply buffer packet
- 		    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
-		    type_hdr->type = ntohs(ETH_APPEND_RESP);
-
-		    struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
-		    
-		    uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr + ntohl(batch_append_entry->payload_size) + 1;
-     	            std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
-
-
-	            // 2. Prepare a buffer for the string
-    		    // INET_ADDRSTRLEN is a standard constant (usually 16)
-    		    char buffer[INET_ADDRSTRLEN];
-    
-    		    // 3. Convert the 4 bytes into a dotted-quad string
-		    spdlog::debug("Client ip: {}", batch_append_entry->client_ip);
-    		    if (inet_ntop(AF_INET, &batch_append_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
-		         spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
-		         memset(buffer, 0, INET_ADDRSTRLEN);
-    		    }
-		    std::string client_ip(buffer);
-
-		    spdlog::debug("Sending append response with payload size: {}, and total {} entries, this is entry #{}. This is going to IP {} and port {}", ntohl(batch_append_entry->payload_size), num_entries, i, client_ip, ntohs(batch_append_entry->recv_port));
-
-		    // Copy contents into the packet
-                    memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
-		    net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, client_ip, std::to_string(ntohs(batch_append_entry->recv_port)));
-
-
-		    size_t current_size = subscribe_stor.size();
-                    for (size_t i = 0; i < current_size; i++) {
-     	                std::unique_ptr<char[]> send_sub_packet = std::make_unique<char[]>(reply_pkt_size);
-                        memcpy(send_sub_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
-			((struct ring_type*)(send_sub_packet.get()))->type = ntohs(ETH_SUBSCRIBE_ENTRY);
-                        const std::vector<std::string>& entry = subscribe_stor[i];
-		        net->send_client_udp_packet(std::move(send_sub_packet), reply_pkt_size, entry[0], entry[1]);
-                    }
-		    recv_offset += reply_pkt_size;
-		    //spdlog::debug("Send packet response with size {}!", reply_pkt_size);
-		}
-                
-		pkt_resp_cntr += num_entries;
-                got_quorum = true;
+	    // Check the acknowledgements first
+	    bool got_quorum = false;
+            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor acc;
+            if (ack_map.find(acc, seq_no)) {
+                acc->second += 1;
+	        if (acc->second < ack_threshold) {
+	            got_quorum = true;
+	        }
+            } else {
+                bool succ = ack_map.insert(acc, seq_no);
+                if (succ) {
+                    acc->second = 1;
+                }
             }
+            acc.release();
+	    if (!got_quorum) {
+	        continue;
+	    }
+ 
+    	    // INET_ADDRSTRLEN is a standard constant (usually 16)
+	    std::string client_ip = get_quad_ip(batch_append_entry->client_ip);
+	    if (client_ip.length() == 0) {
+		continue;
+	    }
 
-            // Create packet buffer which will be sent  
-            if (end_thread) {
-                break;
-            }
-        }
-    } else {
-        // Request header
+	    spdlog::debug("Sending append response with payload size: {}, and total {} entries, this is entry #{}. This is going to IP {} and port {}", ntohl(batch_append_entry->payload_size), num_entries, i, client_ip, ntohs(batch_append_entry->recv_port));
+	    uint32_t stream_id = ntohl(batch_append_entry->stream_id);
+
+	    // Copy contents into the packet
+	    type_hdr->type = ntohs(ETH_APPEND_RESP);
+	    uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr + ntohl(batch_append_entry->payload_size) + 1;
+     	    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
+            memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
+	    net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, client_ip, std::to_string(ntohs(batch_append_entry->recv_port)));
+
+
+	    // Send new entry to all subscribers
+	    if (use_streams) {
+		tbb::concurrent_hash_map<uint32_t, tbb::concurrent_vector<std::vector<std::string>>>::const_accessor acc;
+		if (stream_subscribe_stor.find(acc, stream_id)) {
+		    send_subscriber_pkts(acc->second, acc->second.size(), reply_pkt_size + recv_offset, recv_ptr);
+	        }  // TODO semantics of acc release?
+	    } else {
+		send_subscriber_pkts(subscribe_stor, subscribe_stor.size(), reply_pkt_size + recv_offset, recv_ptr);
+	    }
+            recv_offset += reply_pkt_size;
+	    //spdlog::debug("Send packet response with size {}!", reply_pkt_size);
+	}
+        
+	pkt_resp_cntr += num_entries;
     }
     spdlog::critical("Done here! Resp cntr: {}", pkt_resp_cntr); 
     // Get some statistics,
@@ -360,14 +413,23 @@ void LogSoftwareSwitch::append_response() {
     //spdlog::debug("Stats results: Lat: {}, Tput: {}, Total Ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
 }
 
-void LogSoftwareSwitch::read_request() {
+void LogSoftwareSwitch::send_subscriber_pkts(tbb::concurrent_vector<std::vector<std::string>> sub_it, size_t num_subscribers, uint64_t reply_pkt_size, char* recv_ptr) {
+    for (size_t i = 0; i < num_subscribers; i++) {
+        std::unique_ptr<char[]> send_sub_packet = std::make_unique<char[]>(reply_pkt_size);
+        memcpy(send_sub_packet.get(), recv_ptr, reply_pkt_size);
+        ((struct ring_type*)(send_sub_packet.get()))->type = ntohs(ETH_SUBSCRIBE_ENTRY);
+        const std::vector<std::string>& entry = sub_it[i];
+        net->send_client_udp_packet(std::move(send_sub_packet), reply_pkt_size, entry[0], entry[1]);
+    }
+}
+
+void LogSoftwareSwitch::read_request() { // TODO: Should check use_store ahead of time
     spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
     spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
     uint64_t pkt_req_cntr = 0;
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
-
 
     // Request header
     while (!end_thread) {
@@ -385,42 +447,75 @@ void LogSoftwareSwitch::read_request() {
                std::unique_lock<std::mutex> lock(read_req_q_mutex);
     	       read_req_cv.wait(lock, [this] {return end_thread || !read_req_q.empty();});
     	       if (!read_req_q.try_pop(recv_ptr) || !recv_ptr) {
-    	           if (use_store) {
+    	           if (use_store) { // TODO what is this for?
     	               for (uint64_t i = 0; i < stor_ips.size(); i++) {
-                           net->send_udp_packet(NULL, 0, stor_ips[i], stor_receive_port);
+                           net->send_udp_packet(NULL, 0, stor_ips[i], stor_receive_port, false);
     	               }  
     	           }
                    continue;
                }
             }
-    
-    	    // Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
+   
+            struct ring_read_entry* read_entry = (struct ring_read_entry*)(recv_ptr + sizeof(struct ring_type));
+            uint64_t pkt_size = size_of_type_hdr + size_of_hdr + read_entry->payload_size + 1;
 
-    	    // Isolate the ethernet header from the receive ptr
-             	    	
-    	    // Get the correct header (ring append entry) from the received packet
-            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-            uint64_t pkt_size = size_of_type_hdr + size_of_hdr + append_entry->payload_size + 1;
-        	
-            // If the batch isn't full and the timeout not expired exceed
+	    // If the batch isn't full and the timeout not expired exceed
     	    // Create the packet to send to the storage server with the running packet size and the additional header
-            spdlog::debug("Final request packet payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
+            spdlog::debug("Final request packet payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohl(read_entry->payload_size), ntohl(read_entry->nonce), ntohs(read_entry->recv_port), pkt_size);
             std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
 
     	    // Copy batch header into the reply packet, and the batch content 
             memcpy(reply_packet.get(), recv_ptr, pkt_size);
     	
-    	    // Send the network packet
+
+	    if (ntohl(read_entry->g_idx) > max_idx) {
+	        spdlog::critical("Index is too high! Read rejected.");
+		std::string client_ip = get_quad_ip(read_entry->client_ip);
+	        net->send_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(read_entry->recv_port), false); // TODO: Error indicator to header?
+		continue;
+	    }
+        	
             bool res = false;
     	    if (use_store) {
-    	        //spdlog::debug("Sending multiple packets!");
-    	        for (uint64_t i = 0; i < stor_ips.size(); i++) {
-	            res = net->send_udp_packet(std::move(reply_packet), pkt_size, stor_ips[i], stor_receive_port);
-    	        }
+		if (use_shards) {
+                    std::string multicast_addr;
+		    uint64_t key_id = 0;
+		    if (use_streams) {
+		        key_id = ntohl(read_entry->stream_id);
+		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
+		        if (stream_id_to_shard_id.find(acc, key_id)) {
+		            multicast_addr = acc->second;
+		        } else {
+                            std::string multicast_addr = all_shards[next_available_shard];
+		            next_available_shard = (next_available_shard + 1) % all_shards.size();
+		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
+		            stream_id_to_shard_id.insert(put_acc, key_id);
+			    put_acc.release();
+		        }
+		    } else {
+		        key_id = ntohl(read_entry->g_idx) % all_shards.size();  
+		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
+		        if (seq_idx_to_shard_id.find(acc, key_id)) {
+		            multicast_addr = acc->second;
+		        } else {
+                            std::string multicast_addr = all_shards[next_available_shard];
+		            next_available_shard = (next_available_shard + 1) % all_shards.size();
+		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
+		            seq_idx_to_shard_id.insert(put_acc, key_id);
+			    put_acc.release();
+		        }
+		    }
+		    res = net->send_udp_packet(std::move(reply_packet), pkt_size, multicast_addr, stor_receive_port, true);
+	        }  else {
+		    // Send every read request to every storage server
+    	            for (uint64_t i = 0; i < stor_ips.size(); i++) {
+	                res = net->send_udp_packet(std::move(reply_packet), pkt_size, stor_ips[i], stor_receive_port, false);
+    	            }
+		}
     	    }
     	    pkt_req_cntr += 1;
             if (!res) {
-           	   continue;
+                continue;
     	    }
             got_quorum = true;
         }
@@ -481,17 +576,8 @@ void LogSoftwareSwitch::read_response() {
 		    uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr + ntohl(batch_read_entry->payload_size) + 1;
      	            std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
 
-
-	            // 2. Prepare a buffer for the string
-    		    // INET_ADDRSTRLEN is a standard constant (usually 16)
-    		    char buffer[INET_ADDRSTRLEN];
-    
-    		    // 3. Convert the 4 bytes into a dotted-quad string
-    		    if (inet_ntop(AF_INET, &batch_read_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
-		         spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
-		         memset(buffer, 0, INET_ADDRSTRLEN);
-    		    }
-		    std::string client_ip(buffer);
+		    uint32_t cli_ip_int = batch_read_entry->client_ip;
+		    std::string client_ip = get_quad_ip(cli_ip_int);
 
 		    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
 		    type_hdr->type = ntohs(ETH_READ_RESP);
@@ -565,14 +651,11 @@ void LogSoftwareSwitch::tail_request() {
 
     	    // Copy batch header into the reply packet, and the batch content 
             memcpy(reply_packet.get(), recv_ptr, pkt_size);
-
-            char buffer[INET_ADDRSTRLEN];
-    	    if (inet_ntop(AF_INET, &tail_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
-	         spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
-	         memset(buffer, 0, INET_ADDRSTRLEN);
-    	    }
-	    std::string client_ip(buffer);
-
+	    
+	    std::string client_ip = get_quad_ip(tail_entry->client_ip);
+	    if (client_ip.length() == 0) {
+		continue;
+	    }
             net->send_client_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(ntohs(tail_entry->recv_port)));
         }
     }
@@ -599,23 +682,35 @@ void LogSoftwareSwitch::subscribe_request() {
         }
     
         struct ring_subscribe_entry* sub_entry = (struct ring_subscribe_entry*)(recv_ptr + sizeof(struct ring_type));
-	
-	char buffer[INET_ADDRSTRLEN];
-    	if (inet_ntop(AF_INET, &sub_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
-	     spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
-	     memset(buffer, 0, INET_ADDRSTRLEN);
-    	}
-	std::string client_ip(buffer);
-	store_sub(client_ip, std::to_string(ntohs(sub_entry->recv_port)));
+	uint32_t stream_id = ntohl(sub_entry->stream_id);	
+	std::string client_ip = get_quad_ip(sub_entry->client_ip);
+	if (client_ip.length() == 0) {
+	    continue;
+	}
+	store_sub(client_ip, std::to_string(ntohs(sub_entry->recv_port)), stream_id);
         pkt_cntr += 1;
     }
-    spdlog::critical("Done here! Req cntr: {}", pkt_cntr); 
+    spdlog::critical("=================================== Done here! Req cntr: {} ====================================", pkt_cntr); 
 }
 
-bool LogSoftwareSwitch::store_sub(std::string client_ip, std::string recv_port) {
+bool LogSoftwareSwitch::store_sub(std::string client_ip, std::string recv_port, uint32_t stream_id) {
+    bool succ = true;
     std::vector<std::string> entry = {client_ip, recv_port};
-    subscribe_stor.push_back(entry);
-    return true;
+    if (use_streams) {
+	tbb::concurrent_hash_map<uint32_t, tbb::concurrent_vector<std::vector<std::string>>>::accessor acc;
+	if (stream_subscribe_stor.find(acc, stream_id)) {
+	    acc->second.push_back(entry);
+	} else {
+    	    succ = stream_subscribe_stor.insert(acc, stream_id);
+    	    if (succ) {
+                acc->second.push_back(entry);
+    	    }
+    	    acc.release();
+	}
+    } else {
+        subscribe_stor.push_back(entry);
+    }
+    return succ;
 }
 
 bool LogSoftwareSwitch::recover_switch() {
@@ -630,4 +725,17 @@ void LogSoftwareSwitch::wait_to_finish() {
     while (true) {
         std::chrono::seconds sleep_duration(15);
     }
+}
+
+std::string LogSoftwareSwitch::get_quad_ip(uint32_t ip_addr) {
+    // INET_ADDRSTRLEN is a standard constant (usually 16)
+    char buffer[INET_ADDRSTRLEN];
+    
+    // Convert the 4 bytes into a dotted-quad string
+    if (inet_ntop(AF_INET, &ip_addr, buffer, INET_ADDRSTRLEN) == nullptr) {
+         spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
+         return "";
+    }	
+    std::string client_ip(buffer);
+    return client_ip;
 }

@@ -31,7 +31,8 @@ Network::Network(std::string send_port,
 		 uint64_t batch_timeout,
                  std::string send_interface,
                  std::string self_ip,
-		 uint64_t num_pkt_type,
+		 std::string multicast_ip,
+		 bool use_shards,
 		 bool run_threads) :  rcv_pkt(1000000)
 { 
     /*if (geteuid() != 0) { // Check if we are running as root
@@ -46,8 +47,8 @@ Network::Network(std::string send_port,
     this->send_interface = send_interface;
     this->batch_size = batch_size;
     this->self_ip = self_ip;
+    this->multicast_ip = multicast_ip;
     this->batch_on = batch_on;
-    this->num_pkt_type = num_pkt_type;
     SEND_PORT = send_port;
     RECV_PORT = recv_port;
     spdlog::critical("Send port: {}, Receive port: {}", SEND_PORT, RECV_PORT);
@@ -68,6 +69,13 @@ Network::Network(std::string send_port,
         spdlog::critical("RECEIVER Socket creation unsuccessful. Aborting");
         throw std::runtime_error("Can't create receiving socket");
     }
+    if (use_shards) {
+	bool success = setup_multicast_receiver();
+        if (!success) {
+            spdlog::critical("RECEIVER Socket creation unsuccessful. Aborting");
+            throw std::runtime_error("Can't create receiving socket");
+        }
+    }
     spdlog::debug("The socket fd is {}", recv_socket);
 
     this->send_ip_hdr = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
@@ -75,18 +83,17 @@ Network::Network(std::string send_port,
     this->final_send_packet = (char*)std::malloc(MAX_PACKET_SIZE);
     //this->send_eth_hdr = create_eth_hdr(send_socket);
 
-
     this->sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
     this->sin.sll_halen = ETH_ALEN;
     if (run_threads) {
-   	 this->send_thread = std::thread(&Network::run_send, this);	
+   	 //this->send_thread = std::thread(&Network::run_send, this);	
    	 this->recv_thread = std::thread(&Network::run_recv, this, recv_socket);
     }
     /* End of new initializing socket */
 }
     
 Network::~Network() {
-	// TODO cleanup???
+    // TODO cleanup???
 }
 
 std::string Network::get_recv_port() {
@@ -101,113 +108,6 @@ unsigned short Network::checksum(unsigned short *buf, int nwords) {
     sum = (sum >> 16) + (sum &0xffff);
     sum += (sum >> 16);
     return (unsigned short)(~sum);
-}
-
-// Threadpool send thread function
-// Send packets as they are queued
-void Network::run_send() {
-    /*spdlog::critical("Network Send Thread starting with TID = {}", gettid());
-    uint64_t cnt = 0;
-    
-    std::unique_ptr<struct iphdr> ip = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
-
-    char* send_packet = (char*)std::malloc(MAX_PACKET_SIZE);
-    while (!terminate) {
-
-        uint64_t pkt_len = 0;
-        {
-            std::unique_lock<std::mutex> lock(send_pkt_qs_mutex); // TODO: PER QUEUE LOCK
-            mutex_condition.wait(lock, [&, this] {
-                return !send_pkt_qs[pkt_type].empty() || terminate;        
-            });
-
-	    if (terminate && send_pkt_qs[pkt_type].empty()) {
-		    break;
-	    }
-            
-	    pkt_len = send_pkt_qs[pkt_type].front().first;
-	    memcpy(send_packet, send_pkt_qs[pkt_type].front().second.get(), pkt_len);//std::move(send_pkt_qs[pkt_type].front().second);
-	    if (send_packet == NULL) { // TODO should this ever be NUL?
-		spdlog::debug("The received packet is NULL?");
-	    	return;
-	    }
-	    //spdlog::debug("The number of queued packets is: {}", send_pkt_qs[pkt_type].size());
-	    //spdlog::debug("Packet has been found! {}", send_packet.get());
-
-	    //spdlog::debug("Debug: {}", pkt_len);
-            send_pkt_qs[pkt_type].pop();
-        }
-        //spdlog::debug("Past preprocessing! The packet value is still: {}", send_packet.get()); 
-*/
-
-	// If socket_type UDP
-        /*if (socket_type == "UDP") {
-	    spdlog::debug("Sending a UDP packet!");
-	    for (size_t i = 0; i < pkt_type_to_ip[pkt_type].size(); i++) {
-	    	//std::shared_ptr<struct addrinfo> it = std::make_shared<struct addrinfo>();
-            	int s_fd = pkt_type_to_fd[pkt_type][i]; //setup_talker_socket(pkt_type_to_ip[pkt_type][0], it); // TODO: Send to all entries!
-            	if (s_fd < 0) {
-                    spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", pkt_type);
-                    throw std::runtime_error("Can't create sending socket");
-                } 
-            	ssize_t num_bytes = sendto(s_fd, send_packet, pkt_len, 0, fd_to_it[s_fd]->ai_addr, fd_to_it[s_fd]->ai_addrlen);
-            	if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
-                    spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-		    {
-            		std::unique_lock<std::mutex> lock(send_pkt_qs_mutex); // TODO: PER QUEUE LOCK         
-	    		send_pkt_qs[pkt_type].pop();
-	    	    }
-                    continue;
-            	}
-            	spdlog::info("Successfully sent {} bytes to the receiver with packet value {}", std::to_string(num_bytes), send_packet);
-	    }
-            continue;
-        }
-
-        // If the packet type is a descriptive string to indicate header type
-	std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
-	for (size_t i = 0; i < send_fds.size(); i++) {
-	    int s_fd = send_fds[i];
-            if (s_fd < 0) {
-                spdlog::critical("No socket found, dropping buffers");
-                continue;
-            }
-            
-            std::string ip_addr = pkt_type_to_ip[pkt_type][i];
-            //spdlog::critical("IP Address: {}", ip_addr);
-            size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
-            spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
-
-            std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size); // TODO phase this out eventually
-       
-            memcpy(packet.get(), eth_hdr_vecs[i].get(), sizeof(struct ethhdr));
-            
-	    ip.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
-            ip.get()->daddr = inet_addr(ip_addr.c_str()); // destination address
-            ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header^
-
-            memcpy(packet.get() + sizeof(struct ethhdr), ip.get(), sizeof(struct iphdr));
-
-            //spdlog::debug("Total packet size is {}", packet_size);
-
-            memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet), pkt_len);
-            ssize_t num_bytes = 0;
-   	    for (int j = 0; j < 6; j++) { // 48 bit mac address - local broadcast
-       		sin.sll_addr[j] = eth_hdr_vecs[i].get()->h_dest[j];
-   	    }
-            
-            if ((num_bytes = sendto(s_fd, packet.get(), packet_size, 0, (struct sockaddr*)(&sin), sizeof(sin))) < 0 || 
-                    ((uint64_t)num_bytes != packet_size)) {
-                spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
-                spdlog::debug("Num bytes sent: {} vs. expected: {}", num_bytes, packet_size);
-                continue;
-            }
-            spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
-	    cnt += final_send_packetmemset(send_packet, 0, MAX_PACKET_SIZE);*/
-    //}
-    //free(send_packet);
-    //spdlog::debug("Done with the send thread focused on {}", pkt_type);
-    //spdlog::critical("Network send this many packets: {} for thread {}", cnt, gettid());
 }
 
 std::string Network::get_ip(uint64_t pkt_type, int idx) {
@@ -295,51 +195,9 @@ void Network::run_recv(int s_fd) {
     spdlog::critical("Network received this many GENERIC packets: {} for thread {}", cnt, gettid());
 }
 
-// this is the compiled pointer to protobuf string
-void Network::add_to_send_queue(std::unique_ptr<char[]> buf, uint64_t packet_type, uint64_t packet_size) {
-    std::unique_lock<std::mutex> lock(send_pkt_qs_mutex);
-    if (terminate) {
-        spdlog::info("No more packets accepted!");
-        return;
-    }
-    spdlog::debug("Going to send packet type: {}, with content: {} of size {}.", packet_type, buf.get(), packet_size);
-    send_pkt_qs[packet_type].push(std::pair<uint64_t, std::unique_ptr<char[]>>(packet_size, std::move(buf)));
-    mutex_condition.notify_one();
-    return;
-}
-
-char* Network::read_from_recv_queue() {
-    /*if (rcv_pkt.empty()) {
-	return NULL;
-    }
-    std::unique_lock<std::mutex> lock(rcv_queue_mutex);
-    //spdlog::debug("Number of packets received: {}", rcv_pkt.size());
-    char* receive_pkt = rcv_pkt.front();
-    rcv_pkt.pop();
-    return receive_pkt;*/
-    char* receive_pkt = NULL;
-    bool succeeded = rcv_pkt.try_dequeue(receive_pkt);
-    if (!succeeded) {
-        return NULL;
-    }
-    return receive_pkt;
-}
-
 // To only be called by the sender
 void Network::done() {
     stop_threads();
-}
-
-bool Network::pkts_in_queue() {
-    {
-        std::unique_lock<std::mutex> lock(send_pkt_qs_mutex);
-        for (const auto& [pkt_type, q] : send_pkt_qs) {
-            if (!q.empty()) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 /*Sets up a datagram receiver socket for chosen_ip_addr*/  
@@ -407,36 +265,76 @@ int Network::setup_listener_socket(std::string curr_ip) {
 }
 
 /*Sets up a datagram UDP socket for destination IP */  
-int Network::setup_talker_socket(std::string dst_ip, std::string dst_port) {
-    struct addrinfo hints, *servinfo, *temp;
+int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, bool use_multicast) {
     int s_fd;
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_DGRAM; // Normal UDP Datagram Socket
-    int64_t status = getaddrinfo(dst_ip.c_str(), dst_port.c_str(), &hints, &servinfo);
-    if (status != 0) {
-        spdlog::debug("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", dst_ip.c_str(), status, gai_strerror(status));
-        return -1;
-    }
-    for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
-        if ((s_fd = socket(temp->ai_family, temp->ai_socktype, temp->ai_protocol)) == -1) {
-            spdlog::debug("No socket created! Error {} occurred: {}. Still searching...", std::to_string(errno), strerror(errno));
-            continue;
-        }
-        if (connect(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
+    if (use_multicast) { 
+        s_fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (s_fd < 0) {
+            perror("Socket creation failed");
+            return -1;
+        }       
+
+        // Setup the Group Address
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(string_to_u16(dst_port));
+        addr.sin_addr.s_addr = inet_addr(dst_ip.c_str());
+
+        // Set Multicast TTL
+        unsigned char ttl = 1; 
+        setsockopt(s_fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl));
+
+        // Connect the socket to the multicast group
+        // This fixes the destination address for this socket instance.
+        if (connect(s_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+            perror("Connect failed");
             close(s_fd);
-            spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            continue;
+            return -1;
         }
-        //memcpy(it.get(), temp, sizeof (struct addrinfo));
-        break;
+    } else {
+        struct addrinfo hints, *servinfo, *temp;
+        memset(&hints, 0, sizeof hints);
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_DGRAM; // Normal UDP Datagram Socket
+        int64_t status = getaddrinfo(dst_ip.c_str(), dst_port.c_str(), &hints, &servinfo);
+        if (status != 0) {
+            spdlog::debug("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", dst_ip.c_str(), status, gai_strerror(status));
+            return -1;
+        }
+        for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
+            if ((s_fd = socket(temp->ai_family, temp->ai_socktype, temp->ai_protocol)) == -1) {
+                spdlog::debug("No socket created! Error {} occurred: {}. Still searching...", std::to_string(errno), strerror(errno));
+                continue;
+            }
+            if (connect(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
+                close(s_fd);
+                spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+                continue;
+            }
+            //memcpy(it.get(), temp, sizeof (struct addrinfo));
+            break;
+        }
+        if (temp == NULL) {
+            spdlog::critical("Failed to create socket!");
+            return -1;
+        }
+        freeaddrinfo(servinfo);
     }
-    if (temp == NULL) {
-        spdlog::critical("Failed to create socket!");
-        return -1;
-    }
-    freeaddrinfo(servinfo);
     return s_fd;
+}
+
+bool Network::setup_multicast_receiver() {
+    struct ip_mreq mreq;
+    mreq.imr_multiaddr.s_addr = inet_addr(multicast_ip.c_str());
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY); // Use default interface
+
+    if (setsockopt(recv_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq, sizeof(mreq)) < 0) {
+        perror("Adding multicast group error");
+        close(recv_socket);
+        return false;
+    } 
+    return true;
 }
 
 bool Network::send_packet(std::unique_ptr<char[]> send_packet, 
@@ -506,7 +404,7 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
             throw std::runtime_error("Can't create sending socket");
 	}
     } else {
-        s_fd = setup_talker_socket(dst_ip, dst_port);
+        s_fd = setup_talker_socket(dst_ip, dst_port, false);
         if (s_fd < 0) {
             spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
             throw std::runtime_error("Can't create sending socket");
@@ -529,16 +427,15 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
 bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet, 
 		          uint64_t pkt_len, 
 			  std::string dst_ip,
-			  std::string dst_port) {
+			  std::string dst_port,
+			  bool use_multicast) {
     bool sent_all = false;
-    
     // If socket_type is not UDP
     if (socket_type != "UDP") {
         return false;
     }
     
     int s_fd;
-    //spdlog::debug("Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
     std::string combined_addr = dst_ip + ":" + dst_port;
     if (port_to_fd.count(combined_addr) > 0) {
         s_fd = port_to_fd[combined_addr];
@@ -547,7 +444,7 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
             throw std::runtime_error("Can't create sending socket");
 	}
     } else {
-        s_fd = setup_talker_socket(dst_ip, dst_port);
+        s_fd = setup_talker_socket(dst_ip, dst_port, use_multicast);
         if (s_fd < 0) {
             spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
             throw std::runtime_error("Can't create sending socket");
@@ -556,7 +453,6 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     }
 
     if (batch_on && pkt_len > 0) {
-	//spdlog::debug("Packet length: {}, Num pkts: {}", running_pkt_size, num_pkts);
         memcpy(final_send_packet + running_pkt_size, send_packet.get(), pkt_len);
         running_pkt_size += pkt_len; 
 	num_pkts += 1;
@@ -568,7 +464,6 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     auto curr_time = (std::chrono::steady_clock::now()).time_since_epoch();
     double curr_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(curr_time).count();
     double dur = curr_time_s - batch_timer;
-    //spdlog::debug("Packet length: {}, Packet length: {}, Num pkts: {}, Batch size: {}, Batch timeout: {}, Duration: {}, Batch on: {}", running_pkt_size, pkt_len, num_pkts, batch_size, batch_timeout, dur, batch_on);
     if (batch_on && num_pkts < batch_size && (running_pkt_size + pkt_len) < MAX_PACKET_SIZE && dur < batch_timeout) {
         // Copy new packet into the batch and update the running packet size for the append request batch
 	return false;
@@ -578,17 +473,14 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     }
   
     ((struct ring_type*)(final_send_packet))->num_entries = htons(num_pkts); 
-    //spdlog::debug("The number of entries in this send are: {} with number of packets {}", ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries, num_pkts); 
     char* actual_test_send = (char*)std::malloc(running_pkt_size);    
     memcpy(actual_test_send, final_send_packet, running_pkt_size);
     while (!terminate && !sent_all) {
         ssize_t num_bytes = send(s_fd, actual_test_send, running_pkt_size, 0);
-        
         if (num_bytes < 0 || ((uint64_t)num_bytes != running_pkt_size)) {
             spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
         } else {
             //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
-            //memset(final_send_packet, 0, MAX_PACKET_SIZE);
 	    sent_all = true;
         }
     }
@@ -681,17 +573,12 @@ bool Network::validate_ip_address(const std::string &ip_addr) {
     return result != 0;
 }
 
-void Network::add_pkt_type(uint64_t pkt_type) {
-    //send_pkt_qs.insert(std::pair<uint64_t, std::queue<std::unique_ptr<char[]>>>(pkt_type, std::queue<std::unique_ptr<char[]>>()));
-    (void) pkt_type;
-}
-
-bool Network::remove_pkt_type(uint64_t pkt_type) {
-    for (auto it = send_pkt_qs.begin(); it != send_pkt_qs.end(); it++) {
-        if (it->first == pkt_type) {
-            send_pkt_qs.erase(it);
-            return true;
-        }
+uint16_t Network::string_to_u16(const std::string& str) {
+    unsigned long value = std::stoul(str);
+    
+    if (value > 65535) {
+        throw std::out_of_range("Value too large for uint16_t");
     }
-    return false;
+    
+    return static_cast<uint16_t>(value);
 }

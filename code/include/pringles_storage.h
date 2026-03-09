@@ -31,10 +31,15 @@ class LogStorage : public BaseStorage {
         uint64_t ssid;
         std::shared_ptr<Network> net;
         std::unordered_map<uint64_t, std::string> storage = {};
+	
 	// Maps stream ID -> {set of sequence numbers for that ID}
-        tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>> concurrent_stream_tracker;
+	bool use_streams;
+	std::string multicast_addr;
+
         tbb::concurrent_hash_map<uint64_t, std::string> concurrent_stor;
-      
+
+	// Shards
+	bool use_shards;      
 	uint64_t shard_id;
 	uint64_t shard_switch_id;
 	uint64_t view_num;

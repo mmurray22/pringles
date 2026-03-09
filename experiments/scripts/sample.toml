@@ -11,7 +11,7 @@ stor_macs = ["11:11:11:11:11:11"]
 # This is the IP address of every storage server being used
 stor_ips = ["555.555.55.55"]
 # This is the network interface the storage servers use to send/receive
-stor_net_ifs = ["igb0"] 
+stor_net_ifs = ["igb0"]
 ######## Client Network Info #######
 # This is the mac address of every client machine
 cli_macs = ["00:25:90:53:e6:00"]
@@ -101,7 +101,7 @@ with_tunnel = false
 # Right now it only supports plotting by number of switches in the ring or by number of clients 
 plot_param = 'switches_in_ring' # or 'num_clients'
 #  Boolean indicating that the streaming interface is being used
-use_streams = false
+use_streams = 1
 
 
 # This should really be part of experiment parameters. Also like 3/4 of these are deprecated, I need to update TODO
