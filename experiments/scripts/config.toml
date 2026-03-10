@@ -1,9 +1,9 @@
 [network_setup]
 # Storage server information
 stor_recv_port = "30003"
-stor_macs = ["fc:15:b4:21:b1:83"]
-stor_ips = ["10.10.1.4"]
-stor_net_ifs = ["enp1s0d1"] 
+stor_macs = ["fc:15:b4:21:b1:83", "fc:15:b4:1f:1d:d3"]
+stor_ips = ["10.10.1.4", "10.10.1.5"]
+stor_net_ifs = ["enp1s0d1", "enp1s0d1"] 
 # Client information
 cli_macs = ["fc:15:b4:1f:9d:e3"]
 cli_ips = ["10.10.1.2"]
@@ -42,7 +42,7 @@ num_storage_threads = 1
 json_name = "test_append"
 experiment_name = "gonna_be_Bad"
 num_failures = 0 # NEW
-number_of_machines_per_shard = 1
+number_of_machines_per_shard = 2
 git_hash = "" # TODO
 use_switch = 1
 use_store = 1
@@ -54,7 +54,7 @@ switches_in_ring = [2, 3] # indices of the switches active in the ring, list of 
 with_tunnel = false
 plot_param = 'switches_in_ring'
 use_hardware_switch = false
-ack_threshold = 1
+ack_threshold = 2
 use_client_count_acks = 0
 
 [protocol_batching]

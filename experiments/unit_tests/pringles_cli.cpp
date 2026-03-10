@@ -43,14 +43,35 @@ void run_sub_client(std::string input_file, uint64_t i, uint64_t num_threads) {
 // Simplest Correctness Test of append, read, getTail
 void run_basic_client(std::string input_file, uint64_t i, uint64_t num_threads, uint64_t payload_size) {
     LogClient pringles_cli = LogClient(input_file, i, num_threads);
-    std::string payload(payload_size, 'X');
-    uint64_t idx = pringles_cli.append(payload);
-    spdlog::critical("Got append idx {}", idx);
-    std::string entry = pringles_cli.read(idx);
-    spdlog::critical("Got read entry {}", entry);
-    assert(entry == payload);
+    uint64_t idx = 0;
+    std::string entry = "";
+
+    std::string payload_x(payload_size, 'X');
+    idx = pringles_cli.append(payload_x);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 1);
+    entry = pringles_cli.read(idx);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_x);
+
+    std::string payload_y(payload_size, 'Y');
+    idx = pringles_cli.append(payload_y);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 2);
+    entry = pringles_cli.read(idx);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_y);
+
+    std::string payload_z(payload_size, 'Z');
+    idx = pringles_cli.append(payload_z);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 3);
+    entry = pringles_cli.read(idx);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_z);
+
     uint64_t tail = pringles_cli.getTail();
-    spdlog::critical("Tail idx: {}", tail);
+    spdlog::critical("TAIL idx: {}", tail);
     assert(idx == tail);
     pringles_cli.wait_to_cooldown();
 }

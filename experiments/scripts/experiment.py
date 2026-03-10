@@ -170,7 +170,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             # cool down time
             'cool_down': cool_down,
             'interface': QuotedString(network_interface),
-            'cli_idx': entity_idx
+            'cli_idx': entity_idx,
             'shard_multicast_addr': QuotedString(dummy)
         })
     
@@ -194,7 +194,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         dummy = ""
         yaml_config.update({
             'interface': QuotedString(network_interface),
-            'all_shards': total_shards
+            'all_shards': total_shards,
             'shard_multicast_addr': QuotedString(dummy)
         })
 
@@ -950,14 +950,15 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
     shard_to_multicast_addr = []
     num_of_shard = 0
     base_multicast_addr = "239.1.1."
-    for i in range(0, len(server_ips)): # TODO check whether the number of servers divides evenly into shard size
+    for i in range(0, len(server_ips), size_of_shard): # TODO check whether the number of servers divides evenly into shard size
         shard = []
         for j in range(i, i+size_of_shard):
+            print(server_ips[j])
             shard.append(server_ips[j])
             ip_to_shard[server_ips[j]] = num_of_shard
         total_list_of_shards.append(shard)
-        i += size_of_shard
         num_of_shard += 1
+
     for i in range(0, num_of_shard): #255 <-- TODO max number of shards
         shard_to_multicast_addr.append((base_multicast_addr + str(i)));
     yaml_shard_to_multicast_addr = [QuotedString(addr) for addr in shard_to_multicast_addr]
