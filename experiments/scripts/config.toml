@@ -47,7 +47,7 @@ git_hash = "" # TODO
 use_switch = 1
 use_store = 1
 use_shard = 1
-use_streams = 0
+use_streams = 1
 batch_size = 1 # Number of packets
 batch_usec_timeout = 460
 switches_in_ring = [2, 3] # indices of the switches active in the ring, list of unique values, each val 0 <= v <= 3

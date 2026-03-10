@@ -236,32 +236,36 @@ void LogSoftwareSwitch::append_request() {
                 	    // Send the network packet
             bool res = false;
     	    if (use_store) {
-	        if (use_streams) {
+	        /*if (use_streams) { // TODO do I need this?
+		    spdlog::debug("Stream processing here now!");
 	            uint32_t stream_id = ntohl(append_entry->stream_id);
 	            tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>>::const_accessor acc;
 		    
 		    // If the stream isn't being tracked yet, add it to the store
 		    if (!concurrent_stream_tracker.find(acc, stream_id)) {
+		        spdlog::debug("Stream is being added to the tracker: {}", stream_id);
 		        tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>>::accessor put_acc;
 		        concurrent_stream_tracker.insert(put_acc, stream_id);
 			put_acc.release();
 		    }
-		
+	            	
 	            tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>>::accessor update_set_acc;
   		    if (concurrent_stream_tracker.find(update_set_acc, stream_id)) { // Should find stream_id
-		        auto result = update_set_acc->second.insert(ntohl(append_entry->g_idx));
+			spdlog::debug("Concurrent stream tracker being updated");
+			auto result = update_set_acc->second.insert(ntohl(append_entry->g_idx));
 		        if (!result.second) {
 		            spdlog::critical("Unable to add seq no {} in stream ID {} to the set!", ntohl(append_entry->g_idx), stream_id);
 		        }	
-			update_set_acc.release();
 		    }
-	        }
+		    update_set_acc.release();
+	        }*/
 
 		if (use_shards) {
 		    std::string multicast_addr;
 		    uint64_t key_id = 0;
 		    if (use_streams) {
 			key_id = ntohl(append_entry->stream_id);
+			spdlog::debug("Stream, yes shard Key ID for which shard to send to: {}", key_id);
 		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
 		        if (stream_id_to_shard_id.find(acc, key_id)) {
 		            multicast_addr = all_shards[acc->second];
@@ -275,6 +279,7 @@ void LogSoftwareSwitch::append_request() {
 			    put_acc.release();
 		            next_available_shard = (next_available_shard + 1) % all_shards.size();
 		        }
+			spdlog::debug("Stream multicast addr: {}", multicast_addr);
 		    } else { // If streams aren't used, then sequence number will be used
 		        key_id = ntohl(append_entry->g_idx) % all_shards.size(); // TODO bit shift?
 			spdlog::debug("No stream, yes shard Key ID for which shard to send to: {}", key_id);
@@ -490,6 +495,13 @@ void LogSoftwareSwitch::read_request() { // TODO: Should check use_store ahead o
 	        spdlog::critical("Index is too high! Read rejected.");
 		std::string client_ip = get_quad_ip(read_entry->client_ip);
 	        net->send_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(read_entry->recv_port), false); // TODO: Error indicator to header?
+		continue;
+	    }
+
+            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor acc;
+	    if (!ack_map.find(acc, ntohl(read_entry->g_idx)) || (acc->second < ack_threshold)) {
+	        spdlog::critical("Index is too high! Read rejected.");
+	        net->send_udp_packet(std::move(reply_packet), pkt_size, switch_ip, switch_recv_port, false); // Recirculate
 		continue;
 	    }
         	

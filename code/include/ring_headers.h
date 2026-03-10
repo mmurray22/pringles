@@ -63,7 +63,7 @@ struct ring_append_entry {
     // FROM CLIENT
     uint16_t recv_port;
     // TESTING
-    uint64_t timestamp; // Ingress timestamp? TODO
+    uint32_t timestamp; // Ingress timestamp? TODO
     // MEASUREMENT?
 };
 
@@ -89,7 +89,7 @@ struct ring_read_entry {
     // FROM CLIENT
     uint32_t client_ip;
     // TESTING
-    uint64_t timestamp;
+    uint32_t timestamp;
     uint32_t circs; // to keep track of how many times the packet has recirculated, for timeout reasons
 };
 

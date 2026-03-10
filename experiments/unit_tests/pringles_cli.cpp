@@ -33,6 +33,7 @@ void run_append_client(std::string input_file, uint64_t i, uint64_t num_threads)
 }
 
 
+/*********** SHARDS ******************/
 // Simplest Correctness Test of subscribe
 void run_sub_client(std::string input_file, uint64_t i, uint64_t num_threads) {
     LogClient pringles_cli = LogClient(input_file, i, num_threads);
@@ -76,6 +77,52 @@ void run_basic_client(std::string input_file, uint64_t i, uint64_t num_threads, 
     pringles_cli.wait_to_cooldown();
 }
 
+/*********** STREAMS ******************/
+// Simplest Correctness Test of subscribe
+void run_stream_sub_client(std::string input_file, uint64_t i, uint64_t num_threads) {
+    LogClient pringles_cli = LogClient(input_file, i, num_threads);
+    pringles_cli.subscribe_stream(1);
+}
+
+
+// Simplest Correctness Test of append, read, getTail
+// Number of streams: 1, 2
+void run_basic_stream_client(std::string input_file, uint64_t i, uint64_t num_threads, uint64_t payload_size) {
+    LogClient pringles_cli = LogClient(input_file, i, num_threads);
+    uint64_t idx = 0;
+    std::string entry = "";
+
+    std::string payload_x(payload_size, 'X');
+    idx = pringles_cli.append_stream(payload_x, 1);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 1);
+    entry = pringles_cli.read_stream(idx, 1);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_x);
+
+    std::string payload_y(payload_size, 'Y');
+    idx = pringles_cli.append_stream(payload_y, 2);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 2);
+    entry = pringles_cli.read_stream(idx, 2); 
+    // Should I know the idx/stream pairing? or is this idx supposed to be idx = 0
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_y);
+
+    std::string payload_z(payload_size, 'Z');
+    idx = pringles_cli.append_stream(payload_z, 1);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 3);
+    entry = pringles_cli.read_stream(idx, 1);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_z);
+
+    uint64_t tail = pringles_cli.getTail();
+    spdlog::critical("TAIL idx: {}", tail);
+    assert(idx == tail);
+    pringles_cli.wait_to_cooldown();
+}
+
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -90,10 +137,18 @@ int main(int argc, char* argv[]) {
     //basics.join();
 
     // Basic test subscribe
-    std::thread basicsub(&run_sub_client, input_file, 0, 2);	
-    std::thread basics(&run_basic_client, input_file, 1, 2, get_payload_size(config));	
+    //std::thread basicsub(&run_sub_client, input_file, 0, 2);	
+    //std::thread basics(&run_basic_client, input_file, 1, 2, get_payload_size(config));	
+    //basicsub.join();
+    //basics.join();
+
+
+    // Basic test subscribe streams
+    std::thread basicsub(&run_stream_sub_client, input_file, 0, 2);	
+    std::thread basics(&run_basic_stream_client, input_file, 1, 2, get_payload_size(config));	
     basicsub.join();
     basics.join();
+
 
     //// Basic scaling experiments
     //std::vector<std::thread> cli_threads = {};
