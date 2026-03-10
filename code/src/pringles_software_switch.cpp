@@ -51,7 +51,7 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
 				   get_interface(config),
 				   get_self_ip(config),
 				   get_multicast_addr(config),
-				   use_shards,
+				   false,
 				   false); 
 
     // Initialize storage server identity variables
@@ -61,6 +61,7 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
     // Sharding information
     std::vector<std::string> yaml_vec = get_all_shards(config);
     for (std::string entry : yaml_vec) {
+        spdlog::critical("Shard multicast: {}", entry);
         this->all_shards.push_back(entry);
     }
 
@@ -120,6 +121,7 @@ void LogSoftwareSwitch::receiver() {
 	}
 	struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
 	if (ntohs(type_hdr->type) == ETH_APPEND_RESP) {
+	    spdlog::debug("Appending response being processed!");
             struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
 	    uint64_t pkt_size = ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1);
             char* pkt = (char*)std::malloc(pkt_size);
@@ -151,6 +153,7 @@ void LogSoftwareSwitch::receiver() {
             }
 	    read_resp_cv.notify_all();
 	} else if (ntohs(type_hdr->type) == ETH_READ_REQ) {
+	    spdlog::debug("Received read request!");
             struct ring_read_entry* ring = (struct ring_read_entry*)(recv_ptr + sizeof(struct ring_type));
             char* pkt = (char*)std::malloc(type_hdr->num_entries*(sizeof(struct ring_type) + sizeof(struct ring_read_entry) + ring->payload_size + 1));
             memcpy(pkt, recv_ptr, type_hdr->num_entries*(sizeof(struct ring_type) + sizeof(struct ring_read_entry) + ring->payload_size + 1)); 
@@ -160,6 +163,7 @@ void LogSoftwareSwitch::receiver() {
             }
 	    read_req_cv.notify_all();
 	} else if (ntohs(type_hdr->type) == ETH_SUBSCRIBE_ENTRY) {
+	    spdlog::debug("Received subscribe entry!");
             char* pkt = (char*)std::malloc((sizeof(struct ring_type) + sizeof(struct ring_subscribe_entry)));
             memcpy(pkt, recv_ptr, (sizeof(struct ring_type) + sizeof(struct ring_subscribe_entry))); 
 	    sub_q.push(pkt);
@@ -168,6 +172,7 @@ void LogSoftwareSwitch::receiver() {
             }
 	    sub_cv.notify_all();
 	} else if (ntohs(type_hdr->type) == ETH_TAIL_REQ) {
+	    spdlog::debug("Received tail request!");
             char* pkt = (char*)std::malloc((sizeof(struct ring_type) + sizeof(struct ring_tail_req)));
             memcpy(pkt, recv_ptr, (sizeof(struct ring_type) + sizeof(struct ring_tail_req))); 
 	    tail_req_q.push(pkt);
@@ -259,26 +264,34 @@ void LogSoftwareSwitch::append_request() {
 			key_id = ntohl(append_entry->stream_id);
 		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
 		        if (stream_id_to_shard_id.find(acc, key_id)) {
-		            multicast_addr = acc->second;
+		            multicast_addr = all_shards[acc->second];
 		        } else {
-                            std::string multicast_addr = all_shards[next_available_shard];
-		            next_available_shard = (next_available_shard + 1) % all_shards.size();
+                            multicast_addr = all_shards[next_available_shard];
 		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
-		            stream_id_to_shard_id.insert(put_acc, key_id);
+		            bool insert_succ = stream_id_to_shard_id.insert(put_acc, key_id);
+			    if (insert_succ) {
+			        put_acc->second = next_available_shard;
+			    }
 			    put_acc.release();
+		            next_available_shard = (next_available_shard + 1) % all_shards.size();
 		        }
 		    } else { // If streams aren't used, then sequence number will be used
 		        key_id = ntohl(append_entry->g_idx) % all_shards.size(); // TODO bit shift?
+			spdlog::debug("No stream, yes shard Key ID for which shard to send to: {}", key_id);
 			tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
 		        if (seq_idx_to_shard_id.find(acc, key_id)) {
-		            multicast_addr = acc->second;
+		            multicast_addr = all_shards[acc->second];
 		        } else {
-                            std::string multicast_addr = all_shards[next_available_shard];
-		            next_available_shard = (next_available_shard + 1) % all_shards.size();
+                            multicast_addr = all_shards[next_available_shard];
 		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
-		            seq_idx_to_shard_id.insert(put_acc, key_id);
+		            bool insert_succ = seq_idx_to_shard_id.insert(put_acc, key_id);
+			    if (insert_succ) {
+			        put_acc->second = next_available_shard;
+			    }
 			    put_acc.release();
+		            next_available_shard = (next_available_shard + 1) % all_shards.size();
 		        }
+			spdlog::debug("No stream multicast addr: {}", multicast_addr);
 		    }
 		    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
             	    memcpy(reply_packet.get(), recv_ptr, pkt_size);
@@ -361,14 +374,19 @@ void LogSoftwareSwitch::append_response() {
             tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor acc;
             if (ack_map.find(acc, seq_no)) {
                 acc->second += 1;
-	        if (acc->second < ack_threshold) {
+	        if (acc->second >= ack_threshold) {
 	            got_quorum = true;
 	        }
+		spdlog::debug("The current number of acks is {} for seq no {}", acc->second, seq_no);
             } else {
                 bool succ = ack_map.insert(acc, seq_no);
                 if (succ) {
                     acc->second = 1;
+		    if (acc->second >= ack_threshold) {
+	                got_quorum = true;
+	            }
                 }
+		spdlog::debug("The current number of acks is {} for seq no {}", acc->second, seq_no);
             }
             acc.release();
 	    if (!got_quorum) {
@@ -478,32 +496,27 @@ void LogSoftwareSwitch::read_request() { // TODO: Should check use_store ahead o
             bool res = false;
     	    if (use_store) {
 		if (use_shards) {
-                    std::string multicast_addr;
+                    std::string multicast_addr = "";
 		    uint64_t key_id = 0;
 		    if (use_streams) {
 		        key_id = ntohl(read_entry->stream_id);
 		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
 		        if (stream_id_to_shard_id.find(acc, key_id)) {
-		            multicast_addr = acc->second;
-		        } else {
-                            std::string multicast_addr = all_shards[next_available_shard];
-		            next_available_shard = (next_available_shard + 1) % all_shards.size();
-		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
-		            stream_id_to_shard_id.insert(put_acc, key_id);
-			    put_acc.release();
+		            multicast_addr = all_shards[acc->second];
 		        }
 		    } else {
 		        key_id = ntohl(read_entry->g_idx) % all_shards.size();  
 		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
 		        if (seq_idx_to_shard_id.find(acc, key_id)) {
-		            multicast_addr = acc->second;
-		        } else {
-                            std::string multicast_addr = all_shards[next_available_shard];
-		            next_available_shard = (next_available_shard + 1) % all_shards.size();
-		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
-		            seq_idx_to_shard_id.insert(put_acc, key_id);
-			    put_acc.release();
+		            multicast_addr = all_shards[acc->second];
 		        }
+		    }
+		    spdlog::debug("The multicast addr to send to is: {}", multicast_addr);
+		    if (multicast_addr.size() == 0) {
+		        spdlog::critical("Sequence number or Stream is not stored yet. Read rejected.");
+		        std::string client_ip = get_quad_ip(read_entry->client_ip);
+	                net->send_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(read_entry->recv_port), false); // TODO: Error indicator to header?
+		        continue;
 		    }
 		    res = net->send_udp_packet(std::move(reply_packet), pkt_size, multicast_addr, stor_receive_port, true);
 	        }  else {

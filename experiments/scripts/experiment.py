@@ -142,6 +142,8 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         'payload_size': exp_params['message_size'],
         'use_switch': exp_params['use_switch'],
         'use_store': exp_params['use_store'],
+        'use_shard': exp_params['use_shard'],
+        'use_streams': exp_params['use_streams'],
         'ack_threshold': exp_params['ack_threshold'],
         'use_client_count_acks': exp_params['use_client_count_acks'] 
     }
@@ -150,6 +152,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
 
     # --- Client Specific Fields ---
     if entity_type == 'client':
+        dummy = ""
         yaml_config.update({
             'sequencer_type': proto_params['sequencer_type'],
             'num_client_threads': exp_params['num_client_threads'],
@@ -168,6 +171,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'cool_down': cool_down,
             'interface': QuotedString(network_interface),
             'cli_idx': entity_idx
+            'shard_multicast_addr': QuotedString(dummy)
         })
     
     # --- Storage Server Specific Fields ---
@@ -183,13 +187,15 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'use_switch': exp_params['use_switch'],
             'num_storage_threads': exp_params['num_storage_threads'],
             'interface': QuotedString(network_interface),
-            'shard_multicast_addr': QuotedString(shard_mutlicast)
+            'shard_multicast_addr': QuotedString(shard_multicast)
         })
 
     elif entity_type == 'switch':
+        dummy = ""
         yaml_config.update({
             'interface': QuotedString(network_interface),
             'all_shards': total_shards
+            'shard_multicast_addr': QuotedString(dummy)
         })
 
     return yaml_config
@@ -938,22 +944,24 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
     
     # Setup shards TODO only for a single switch
     size_of_shard = config['experiment_parameters']['number_of_machines_per_shard']
+    print(f"Size of shards: {size_of_shard}")
     total_list_of_shards = []
     ip_to_shard = {}
     shard_to_multicast_addr = []
     num_of_shard = 0
-    base_mutlicast_addr = "239.1.1."
-    for i in range(0, len(server_ips)):
+    base_multicast_addr = "239.1.1."
+    for i in range(0, len(server_ips)): # TODO check whether the number of servers divides evenly into shard size
         shard = []
         for j in range(i, i+size_of_shard):
             shard.append(server_ips[j])
             ip_to_shard[server_ips[j]] = num_of_shard
-        total_list_of_shard.append(shard)
+        total_list_of_shards.append(shard)
         i += size_of_shard
         num_of_shard += 1
     for i in range(0, num_of_shard): #255 <-- TODO max number of shards
-        shard_to_multicast_addr[i] = base_multicast_addr + str(i);
+        shard_to_multicast_addr.append((base_multicast_addr + str(i)));
     yaml_shard_to_multicast_addr = [QuotedString(addr) for addr in shard_to_multicast_addr]
+    print(yaml_shard_to_multicast_addr)
 
     try:
         # Assumption: All servers respond to all destination MAC defined in the TOML
@@ -1043,7 +1051,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
                 entity_id=switch_id,
                 json_name=json_output_name,
                 num_failures=num_failures,
-                network_interface=switch_net_if
+                network_interface=switch_net_if,
                 total_shards=yaml_shard_to_multicast_addr
             )
             

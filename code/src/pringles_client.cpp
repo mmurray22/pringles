@@ -690,10 +690,73 @@ std::string LogClient::read_stream(uint64_t idx, uint32_t stream_id) {
     return return_str;
 }
 
+void LogClient::subscribe_stream(uint32_t stream_id) {
+    this->subscribe_thread = std::thread(&LogClient::wait_for_stream_subscribe, this, stream_id);
+    subscribe_thread_running  = true;
+}
+
+void LogClient::wait_for_stream_subscribe(uint32_t stream_id) {
+     /* send subscribe request*/
+     bool res = false;
+     sub_entry_hdr.get()->stream_id = htonl(stream_id);
+     size_t size_of_hdr = get_ring_subscribe_size();
+     size_t size_of_type_hdr = get_ring_type_size();
+     sub_type_hdr.get()->type = htons(ETH_SUBSCRIBE_ENTRY);
+     spdlog::debug("Type header: {}, size of: {} and type hdr: {}", sub_type_hdr.get()->type, size_of_hdr, size_of_type_hdr);
+     uint64_t allocated_packet_size = size_of_type_hdr + size_of_hdr;
+
+     // Only need to read from the map once to get the queue
+     // Create packet buffer which will be sent  
+     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+     memcpy(packet.get(), reinterpret_cast<const char*>(sub_type_hdr.get()), size_of_type_hdr);
+     memcpy(packet.get() + size_of_type_hdr, reinterpret_cast<const char*>(sub_entry_hdr.get()), size_of_hdr);
+
+     if (use_switch) {
+         spdlog::debug("SUBSCRIBING to SWITCH at {}:{} from client receive port {}", switch_ip, switch_receive_port, client_recv_port);
+         res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, switch_ip, switch_receive_port);
+     } else {
+	  spdlog::critical("No client<->storage subscribe support at this time.");
+	  return;
+     }
+     if (!res) {
+         spdlog::critical("Unable to send subscribe request!");
+	 return;
+     }
+
+     /* wait for new appends to roll in */
+     while (true) {
+	if (end_thread) {
+            spdlog::debug("!!!!!!!!!!!!!!TIME to stop");
+            break;
+        }
+	// Wait to receive the packet 
+	char* recv_ptr;
+	{
+	    std::unique_lock<std::mutex> lock(subscribe_resp_q_mutex);
+	    subscribe_resp_cv.wait(lock, [this] {return end_thread || !subscribe_resp_q.empty();});
+	    if (end_thread) {
+	        break;
+	    }
+	    if (!subscribe_resp_q.try_pop(recv_ptr) || !recv_ptr) {
+	        continue;
+	    }
+	}
+	
+	size_t size_of_hdr = get_ring_append_size();
+    	size_t size_of_type_hdr = get_ring_type_size();
+        struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
+        struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
+        spdlog::debug("SUBSCRIBER registering the time and operation with type {} and nonce {}!", ntohs(type_hdr->type), ntohl(append_entry->nonce));
+	char* entry = (char*)(recv_ptr + size_of_type_hdr + size_of_hdr);
+	std::string return_str = std::string(entry);
+	cached_log_entries[ntohl(append_entry->g_idx)] = return_str;
+        spdlog::debug("SUBSCRIBER Idx: {} and Entry: {}!", ntohl(append_entry->g_idx), entry);
+     }
+}
 
 
 
-// Garbage collect all log entries up to some index
+// Garbage collect all log entries up to index idx  TODO
 bool LogClient::trim(uint64_t idx) {
 	(void) idx;
 	return false;

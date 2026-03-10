@@ -65,7 +65,7 @@ class Network {
                 std::string send_interface,
                 std::string self_ip,
                 std::string multicast_ip,
-		bool use_multicast,
+		bool is_in_shard,
 		bool run_threads);
         ~Network();
 
@@ -118,7 +118,7 @@ class Network {
         std::string RECV_PORT;
         int setup_listener_socket(std::string curr_ip);
         int setup_raw_talker_socket();
-	bool setup_multicast_receiver();
+	int setup_multicast_receiver(std::string self_ip);
 
         void destroy_socket(int s_fd);
         std::shared_ptr<struct addrinfo> get_it(int s_fd);

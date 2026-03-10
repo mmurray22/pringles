@@ -34,7 +34,7 @@ class LogClient : public BaseClient {
 	
 	uint64_t append_stream(std::string entry, uint32_t stream_id);
 	std::string read_stream(uint64_t idx, uint32_t stream_id);
-	//void subscribe_stream(std::string entry, uint32_t stream_id);
+	void subscribe_stream(uint32_t stream_id);
 
         void wait_to_warmup();
         void wait_to_cooldown();
@@ -111,7 +111,7 @@ class LogClient : public BaseClient {
 	tbb::concurrent_queue<char*> tail_resp_q;
 
 	/* Variables for subscribe thread */
-	std::thread subscribe_thread;
+	std::thread subscribe_thread; // TODO using same thread for streams and non streams
 	bool subscribe_thread_running;
 
         /* Local list of appended and read log entries and corresponding lock*/
@@ -165,5 +165,6 @@ class LogClient : public BaseClient {
 	/**** Functions ****/
 	void receiver();
         void wait_for_subscribe(uint64_t idx);
+        void wait_for_stream_subscribe(uint32_t stream_id);
         void execute_append();
 };

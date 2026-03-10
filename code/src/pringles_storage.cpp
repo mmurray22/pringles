@@ -73,6 +73,7 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
     append_thread = std::thread(&LogStorage::append_server, this);
     read_thread = std::thread(&LogStorage::read_server, this);
     this->append_cntr = 0;
+    spdlog::critical("Done with the constructor!");
 }
 
 LogStorage::~LogStorage() {
@@ -125,6 +126,7 @@ void LogStorage::receiver() {
 	}
 	struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
 	if (ntohs(type_hdr->type) == ETH_APPEND_REQ) {
+	    spdlog::debug("ETH_APPEND_REQ");
             struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
 	    uint64_t pkt_size = ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1);
             char* pkt = (char*)std::malloc(pkt_size);
@@ -135,6 +137,7 @@ void LogStorage::receiver() {
             }
 	    append_req_cv.notify_all();
 	} else if (ntohs(type_hdr->type) == ETH_READ_REQ) {
+	    spdlog::debug("ETH_READ_REQ");
             struct ring_read_entry* ring = (struct ring_read_entry*)(recv_ptr + sizeof(struct ring_type));
 	    uint64_t pkt_size = ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_read_entry) + ntohl(ring->payload_size) + 1);
             char* pkt = (char*)std::malloc(pkt_size);
@@ -167,6 +170,8 @@ void LogStorage::append_server() {
                  continue;
              }
          }
+
+	spdlog::debug("RECEIVED APPEND PACKET!!!");
          
          uint64_t recv_offset = 0;
          struct ring_type* type_hdr = (struct ring_type*)(recv_ptr);
@@ -241,6 +246,7 @@ void LogStorage::read_server() {
 	        }
 	    }
 
+	    spdlog::debug("RECEIVED READ PACKET!!!");
 	    // Read entry
 	    struct ring_type* type_hdr = (struct ring_type*)(recv_ptr);
 	    struct ring_read_entry* read_entry = (struct ring_read_entry*)(recv_ptr + sizeof(struct ring_type));

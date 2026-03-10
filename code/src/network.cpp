@@ -32,7 +32,7 @@ Network::Network(std::string send_port,
                  std::string send_interface,
                  std::string self_ip,
 		 std::string multicast_ip,
-		 bool use_shards,
+		 bool is_in_shard,
 		 bool run_threads) :  rcv_pkt(1000000)
 { 
     /*if (geteuid() != 0) { // Check if we are running as root
@@ -64,17 +64,19 @@ Network::Network(std::string send_port,
         throw std::runtime_error("Can't create sending socket");
     }
     spdlog::debug("The socket fd is {}", send_socket);*/
-    recv_socket = setup_listener_socket(self_ip);
-    if (recv_socket < 0) {
-        spdlog::critical("RECEIVER Socket creation unsuccessful. Aborting");
-        throw std::runtime_error("Can't create receiving socket");
-    }
-    if (use_shards) {
-	bool success = setup_multicast_receiver();
-        if (!success) {
-            spdlog::critical("RECEIVER Socket creation unsuccessful. Aborting");
-            throw std::runtime_error("Can't create receiving socket");
+    if (is_in_shard) {
+	recv_socket = setup_multicast_receiver(self_ip);
+        if (recv_socket < 0) {
+            spdlog::critical("MULTICAST RECEIVER Socket creation unsuccessful. Aborting");
+            throw std::runtime_error("Can't create multicast receiving socket");
         }
+    } else {
+       recv_socket = setup_listener_socket(self_ip);
+       if (recv_socket < 0) {
+           spdlog::critical("RECEIVER Socket creation unsuccessful. Aborting");
+           throw std::runtime_error("Can't create receiving socket");
+       }
+
     }
     spdlog::debug("The socket fd is {}", recv_socket);
 
@@ -219,7 +221,6 @@ int Network::setup_listener_socket(std::string curr_ip) {
     
     if ((s_fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
         spdlog::critical("Cannot get socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        //continue;
         return -1;
     }
     
@@ -274,21 +275,38 @@ int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, bool 
             return -1;
         }       
 
-        // Setup the Group Address
-        struct sockaddr_in addr;
-        memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(string_to_u16(dst_port));
-        addr.sin_addr.s_addr = inet_addr(dst_ip.c_str());
+        struct ip_mreqn mreqn;
+        memset(&mreqn, 0, sizeof(mreqn));
+        
+        // Get the index of the interface you WANT to send from (e.g., "enp1s0d1")
+        mreqn.imr_ifindex = if_nametoindex(send_interface.c_str());
+        if (mreqn.imr_ifindex == 0) {
+            spdlog::error("Interface {} not found", send_interface);
+            close(s_fd);
+            return -1;
+        }
 
-        // Set Multicast TTL
-        unsigned char ttl = 1; 
-        setsockopt(s_fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl));
+        // Tell the kernel: "Send all multicast traffic from this socket via this interface"
+        if (setsockopt(s_fd, IPPROTO_IP, IP_MULTICAST_IF, (char *)&mreqn, sizeof(mreqn)) < 0) {
+            spdlog::critical("Setting outgoing multicast interface error: {}", strerror(errno));
+            close(s_fd);
+            return -1;
+        }
 
-        // Connect the socket to the multicast group
-        // This fixes the destination address for this socket instance.
-        if (connect(s_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-            perror("Connect failed");
+        // Optional: Set TTL if you need to cross routers (default is usually 1)
+        int ttl = 64;
+        setsockopt(s_fd, IPPROTO_IP, IP_MULTICAST_TTL, (char *)&ttl, sizeof(ttl));
+
+        // 1. Define the Multicast Destination
+        struct sockaddr_in dest_addr;
+        memset(&dest_addr, 0, sizeof(dest_addr));
+        dest_addr.sin_family = AF_INET;
+        dest_addr.sin_addr.s_addr = inet_addr(dst_ip.c_str());
+        dest_addr.sin_port = htons(std::stoi(dst_port));
+        
+        // 2. "Connect" the UDP socket to the multicast group
+        if (connect(s_fd, (struct sockaddr*)&dest_addr, sizeof(dest_addr)) < 0) {
+            spdlog::critical("Connect to multicast group failed: {}", strerror(errno));
             close(s_fd);
             return -1;
         }
@@ -324,17 +342,36 @@ int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, bool 
     return s_fd;
 }
 
-bool Network::setup_multicast_receiver() {
-    struct ip_mreq mreq;
-    mreq.imr_multiaddr.s_addr = inet_addr(multicast_ip.c_str());
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY); // Use default interface
+int Network::setup_multicast_receiver(std::string self_ip) {
+    (void) self_ip;
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 
-    if (setsockopt(recv_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq, sizeof(mreq)) < 0) {
-        perror("Adding multicast group error");
-        close(recv_socket);
-        return false;
+    // 1. Bind the socket to the PORT
+    struct sockaddr_in localAddr;
+    memset(&localAddr, 0, sizeof(localAddr));
+    localAddr.sin_family = AF_INET;
+    localAddr.sin_port = htons(std::stoi(RECV_PORT));
+    // Still bind to INADDR_ANY to accept the packets at the OS level
+    localAddr.sin_addr.s_addr = htonl(INADDR_ANY); 
+
+    bind(sockfd, (struct sockaddr*)&localAddr, sizeof(localAddr)); 
+
+    struct ip_mreqn mreq;
+    mreq.imr_multiaddr.s_addr = inet_addr(multicast_ip.c_str());
+    mreq.imr_address.s_addr = htonl(INADDR_ANY); //self_ip.c_str()); // Use default interface // TODO TODO
+    mreq.imr_ifindex = if_nametoindex(send_interface.c_str()); //"enp1s0d1");
+
+    if (setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq, sizeof(mreq)) < 0) {
+	spdlog::critical("Adding multicast group error");
+        close(sockfd);
+        return -1;
     } 
-    return true;
+    int reuse = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
+        spdlog::error("SO_REUSEADDR failed");
+    }
+    spdlog::debug("Multicast receiver created! Multicast IP is {}", multicast_ip);
+    return sockfd;
 }
 
 bool Network::send_packet(std::unique_ptr<char[]> send_packet, 
@@ -440,8 +477,8 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     if (port_to_fd.count(combined_addr) > 0) {
         s_fd = port_to_fd[combined_addr];
 	if (s_fd < 0) {
-            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
-            throw std::runtime_error("Can't create sending socket");
+            spdlog::critical("SENDER Socket from the port_to_fd chat for IP {} unsuccessful. Aborting", dst_ip);
+            throw std::runtime_error("Can't get sending socket");
 	}
     } else {
         s_fd = setup_talker_socket(dst_ip, dst_port, use_multicast);
@@ -511,11 +548,12 @@ int Network::get_recv_socket() {
 }
 
 char* Network::recv_packet(int udp_recv_socket) { // do you need to memset? TODO
+    (void) udp_recv_socket;
     int numbytes = 0;
     struct sockaddr_storage src_addr;
     socklen_t addr_len = sizeof src_addr;
 
-    while ((numbytes = recvfrom(udp_recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
+    while ((numbytes = recvfrom(recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
         return NULL;
     }
     return norm_buf;
