@@ -358,14 +358,46 @@ If the system's native benchmark does not emit this format, a `parse_results.py`
 
 ## Implementation Order
 
-1. **Resolve the LazyLog TCP question** before writing any code — determines whether LazyLog is feasible on available hardware
-2. Add `run_remote_command_sync` and `kill_remote_process` helpers to `experiment.py`
-3. Add `[comparison_parameters]` parsing and dispatch logic in `main`
-4. Implement `run_experiment_cycle_kafka` — TCP-native, well-documented broker
-5. Implement `run_experiment_cycle_scalog` — Go binary is straightforward; main unknown is client output format
-6. Implement `run_experiment_cycle_lazylog` — most complex; implement last once TCP transport is confirmed
-7. Write sample TOML configs for each system in `experiments/scripts/`
-8. Write `parse_results.py` wrappers as needed for each system
+1. ✅ **Resolve the LazyLog TCP question** — confirmed RDMA-only; blocked on hardware
+2. ✅ Add `run_remote_command_sync` and `kill_remote_process` helpers to `experiment.py`
+3. ✅ Add `[comparison_parameters]` parsing and dispatch logic in `main`
+4. ✅ Implement `run_experiment_cycle_kafka`
+5. ✅ Implement `run_experiment_cycle_scalog`
+6. 🚧 Implement `run_experiment_cycle_lazylog` — blocked on RDMA hardware
+7. ✅ Write sample TOML configs — `experiments/scripts/kafka.toml`, `experiments/scripts/scalog.toml`
+8. ✅ Result parsing — implemented inline in `experiment.py` as `parse_kafka_results` and `parse_scalog_results`; no separate remote wrapper scripts needed
+
+---
+
+## Implementation Status and Remaining TODOs
+
+Items marked ✅ are complete. Items marked ⚠️ require verification or further work before the first real experiment run.
+
+### Shared Infrastructure ✅
+- `run_remote_command_sync` and `kill_remote_process` helpers added
+- `[system]` dispatch and `[comparison_parameters]` parsing in `main`
+- `all_ips` built from `seq_ips` for non-Pringles systems
+- Pringles `meson compile` step skipped for other systems
+
+### Kafka ✅ (implemented, three TODOs before first run)
+
+| # | Location | TODO |
+|---|----------|------|
+| 1 | `run_experiment_cycle_kafka` | **sbt vs fat jar**: `sbt "runMain main.Consumer/Producer"` has ~30s JVM startup overhead, which the 30s consumer head-start compensates for. Building a fat jar (`sbt assembly`) and invoking it with `java -cp kafka-log.jar main.Producer` would eliminate this delay and make timing more predictable. |
+| 2 | `run_experiment_cycle_kafka` | **Multi-partition scaling**: `rsm_size` is hardcoded to 1. Scaling to `num_partitions > 1` requires running one Producer instance per partition (each with a different `node_id`). Not yet implemented. |
+| 3 | `run_experiment_cycle_kafka` | **Multi-broker KRaft quorum**: Single-broker KRaft is straightforward. Multi-broker requires correct `controller.quorum.voters` across all nodes; the `generate_kafka_server_properties` function sets this correctly, but it has not been tested with `num_sequencer_nodes > 1`. |
+
+### Scalog ⚠️ (implemented, three TODOs that may require code changes)
+
+| # | Location | TODO |
+|---|----------|------|
+| 1 | `generate_scalog_config` | **YAML field names unverified.** The generated config uses inferred field names (`discovery.server-addr`, `order.server-addresses`, `data.server-addresses`, `replication-factor`). These must be checked against the actual `.scalog.yaml` in the chn0318/scalog repo and the Go config struct before running. If field names differ, update `generate_scalog_config`. |
+| 2 | `run_experiment_cycle_scalog` | **Client CLI flags unverified.** The client is invoked with `--duration`, `--message-size`, and `--warmup` flags. The actual Scalog client binary may use different flag names, positional args, or read all parameters from the YAML config. Verify against the client source in `client/` or `cmd/` and update accordingly. |
+| 3 | `parse_scalog_results` | **Output format unknown.** The parser looks for lines containing `throughput` and `avg latency` and extracts the first float. The actual client output format must be confirmed from the source; update the parsing patterns once known. |
+
+### LazyLog 🚧 (not yet implemented)
+
+Blocked on hardware: LazyLog is RDMA-only (confirmed). Implementation can begin once RDMA-capable CloudLab nodes are available. See the LazyLog section above for the planned cycle outline.
 
 ---
 
@@ -373,10 +405,8 @@ If the system's native benchmark does not emit this format, a `parse_results.py`
 
 | File | Change |
 |------|--------|
-| `experiments/scripts/experiment.py` | Add 3 new cycle functions + dispatch logic + 2 helpers + `[comparison_parameters]` parsing |
-| `experiments/scripts/scalog.toml` | New TOML config for Scalog runs |
-| `experiments/scripts/kafka.toml` | New TOML config for Kafka runs |
-| `experiments/scripts/lazylog.toml` | New TOML config for LazyLog runs |
-| `experiments/comparison-systems/scalog/` | Clone/install Scalog here; add `parse_results.py` if needed |
-| `experiments/comparison-systems/lazylog/` | Clone/install LazyLog here; add `parse_results.py` if needed |
-| `experiments/comparison-systems/kafka/` | Clone/install kafka-log here; add `parse_results.py` if needed |
+| `experiments/scripts/experiment.py` | ✅ Added cycle functions, dispatch, helpers, parsing |
+| `experiments/scripts/scalog.toml` | ✅ Created |
+| `experiments/scripts/kafka.toml` | ✅ Created |
+| `experiments/scripts/lazylog.toml` | 🚧 Pending RDMA hardware |
+| `experiments/comparison-systems/` | No local clones needed — comparison systems are cloned and built directly on the CloudLab nodes. This directory can hold notes or helper scripts if needed. |

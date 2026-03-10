@@ -6,9 +6,10 @@ import subprocess
 import time
 import sys
 import os
-import json 
-from datetime import datetime 
-from copy import deepcopy 
+import json
+import glob
+from datetime import datetime
+from copy import deepcopy
 # NEW IMPORT: Matplotlib for plotting the results
 import matplotlib.pyplot as plt
 
@@ -639,6 +640,178 @@ def kill_remote_process(ip, process_name, ssh_key, ssh_user):
         return False
 
 
+def setup_kafka_nodes(config, ssh_key, ssh_user):
+    """
+    Sets up Kafka on broker and client nodes.
+
+    Broker nodes (seq_ips): the Kafka broker distribution is still downloaded remotely
+    since it is ~100 MB of pre-compiled JVM bytecode with no local build step needed.
+
+    Client nodes (cli_ips): kafka-log is cloned and built locally via `sbt assembly`
+    into a fat jar, then SCPed to the remote. The remote only needs Java, not sbt.
+
+    Requires in [program_paths]:
+      kafka_dir              - where to install the Kafka distribution on broker nodes
+      kafka_download_url     - full URL to a Kafka .tgz release
+      kafka_log_local_src    - local path to clone kafka-log into for building
+      kafka_log_jar_remote   - full remote path where the fat jar will be placed
+                               (e.g. /proj/.../kafka-log-assembly.jar)
+    """
+    seq_ips              = config['network_setup'].get('seq_ips', [])
+    cli_ips              = config['network_setup']['cli_ips']
+    kafka_dir            = config['program_paths'].get('kafka_dir', '/opt/kafka')
+    download_url         = config['program_paths'].get('kafka_download_url', '')
+    kafka_log_local_src  = config['program_paths']['kafka_log_local_src']
+    kafka_log_jar_remote = config['program_paths']['kafka_log_jar_remote']
+
+    if not download_url:
+        print("ERROR: kafka_download_url not set in [program_paths].")
+        return False
+
+    # --- Download Kafka broker distribution on each broker node ---
+    print("\n--- Installing Kafka broker on broker nodes ---")
+    for ip in seq_ips:
+        install_cmd = (
+            f'if [ ! -d {kafka_dir} ]; then '
+            f'wget -q {download_url} -O /tmp/kafka.tgz && '
+            f'sudo mkdir -p {kafka_dir} && '
+            f'sudo tar -xzf /tmp/kafka.tgz -C {kafka_dir} --strip-components=1 && '
+            f'sudo chmod -R 755 {kafka_dir} && '
+            f'rm /tmp/kafka.tgz; '
+            f'fi'
+        )
+        print(f"  Installing Kafka on {ip}...")
+        if not run_remote_command_sync(ip, install_cmd, ssh_key, ssh_user):
+            print(f"ERROR: Failed to install Kafka broker on {ip}")
+            return False
+
+    # --- Build fat jar locally ---
+    if not os.path.isdir(kafka_log_local_src):
+        print(f"\nCloning kafka-log into {kafka_log_local_src}...")
+        try:
+            subprocess.run(
+                ['git', 'clone', 'https://github.com/mmurray22/kafka-log', kafka_log_local_src],
+                check=True, stdin=subprocess.DEVNULL
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to clone kafka-log: {e}")
+            return False
+
+    print("\nBuilding kafka-log fat jar locally (sbt assembly)...")
+    try:
+        subprocess.run(['sbt', 'assembly'], cwd=kafka_log_local_src,
+                       check=True, stdin=subprocess.DEVNULL)
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: sbt assembly failed: {e}")
+        return False
+
+    jar_matches = glob.glob(
+        os.path.join(kafka_log_local_src, 'target', '**', '*assembly*.jar'), recursive=True
+    )
+    if not jar_matches:
+        print("ERROR: Could not find assembled jar after sbt assembly.")
+        return False
+    local_jar = jar_matches[0]
+    print(f"  Built jar: {local_jar}")
+
+    # --- SCP fat jar to each client node ---
+    print("\n--- Distributing kafka-log jar to client nodes ---")
+    jar_filename   = os.path.basename(kafka_log_jar_remote)
+    jar_remote_dir = os.path.dirname(kafka_log_jar_remote)
+    for ip in cli_ips:
+        print(f"  Sending jar to {ip}:{kafka_log_jar_remote}...")
+        if not transfer_file(local_jar, ip, ssh_user, ssh_key, remote_filename=jar_filename):
+            print(f"ERROR: Failed to transfer kafka-log jar to {ip}")
+            return False
+        move_cmd = f'mkdir -p {jar_remote_dir} && mv ~/{jar_filename} {kafka_log_jar_remote}'
+        if not run_remote_command_sync(ip, move_cmd, ssh_key, ssh_user):
+            print(f"ERROR: Failed to install kafka-log jar on {ip}")
+            return False
+
+    print("--- Kafka setup complete ---")
+    return True
+
+
+def setup_scalog_nodes(config, ssh_key, ssh_user):
+    """
+    Builds Scalog binaries locally (cross-compiled for Linux amd64) then SCPs each
+    binary to only the nodes that need it. Remote machines need no build tooling.
+
+    Requires in [program_paths]:
+      scalog_local_src - local path to clone the Scalog repo into for building
+      path_discovery   - full remote path for the discovery binary (deployed to seq_ips[0])
+      path_order       - full remote path for the order binary    (deployed to all seq_ips)
+      path_data        - full remote path for the data binary     (deployed to all stor_ips)
+      path_client      - full remote path for the client binary   (deployed to all cli_ips)
+
+    TODO: verify cmd/ subdirectory names match the Scalog repo layout and update
+    the cmd_binaries dict below if they differ.
+    """
+    seq_ips          = config['network_setup'].get('seq_ips', [])
+    stor_ips         = config['network_setup'].get('stor_ips', [])
+    cli_ips          = config['network_setup']['cli_ips']
+    scalog_local_src = config['program_paths']['scalog_local_src']
+    paths            = config['program_paths']
+
+    # Map: local binary name → (cmd subdirectory, remote path, list of target IPs)
+    # TODO: update cmd/ subdirectory names if the Scalog repo layout differs.
+    cmd_binaries = {
+        'discovery': (f'./cmd/discovery', paths['path_discovery'], [seq_ips[0]]),
+        'order':     (f'./cmd/order',     paths['path_order'],     seq_ips),
+        'data':      (f'./cmd/data',      paths['path_data'],      stor_ips),
+        'client':    (f'./cmd/client',    paths['path_client'],    cli_ips),
+    }
+
+    # --- Clone locally if not already present ---
+    if not os.path.isdir(scalog_local_src):
+        print(f"\nCloning Scalog into {scalog_local_src}...")
+        try:
+            subprocess.run(
+                ['git', 'clone', 'https://github.com/chn0318/scalog', scalog_local_src],
+                check=True, stdin=subprocess.DEVNULL
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to clone Scalog: {e}")
+            return False
+
+    # --- Cross-compile each binary for Linux amd64 ---
+    local_build_dir = os.path.join(scalog_local_src, '_build_linux_amd64')
+    os.makedirs(local_build_dir, exist_ok=True)
+    linux_env = {**os.environ, 'GOOS': 'linux', 'GOARCH': 'amd64', 'CGO_ENABLED': '0'}
+
+    print("\nCross-compiling Scalog binaries for Linux amd64...")
+    for binary_name, (cmd_pkg, remote_path, _) in cmd_binaries.items():
+        local_binary = os.path.join(local_build_dir, binary_name)
+        print(f"  Building {binary_name}...")
+        try:
+            subprocess.run(
+                ['go', 'build', '-mod=vendor', '-o', local_binary, cmd_pkg],
+                cwd=scalog_local_src, env=linux_env,
+                check=True, stdin=subprocess.DEVNULL
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to build Scalog {binary_name}: {e}")
+            return False
+
+    # --- SCP each binary to its target nodes ---
+    print("\n--- Distributing Scalog binaries to remote nodes ---")
+    for binary_name, (_, remote_path, target_ips) in cmd_binaries.items():
+        local_binary   = os.path.join(local_build_dir, binary_name)
+        remote_dir     = os.path.dirname(remote_path)
+        for ip in target_ips:
+            print(f"  Sending {binary_name} → {ip}:{remote_path}...")
+            if not transfer_file(local_binary, ip, ssh_user, ssh_key, remote_filename=binary_name):
+                print(f"ERROR: Failed to transfer {binary_name} to {ip}")
+                return False
+            install_cmd = f'mkdir -p {remote_dir} && mv ~/{binary_name} {remote_path} && chmod +x {remote_path}'
+            if not run_remote_command_sync(ip, install_cmd, ssh_key, ssh_user):
+                print(f"ERROR: Failed to install {binary_name} on {ip}")
+                return False
+
+    print("--- Scalog setup complete ---")
+    return True
+
+
 def run_setup_script(ip, setup_script_path, ssh_key, ssh_user):
     """Runs the specified setup script on a remote machine synchronously (blocking run)."""
     command = [
@@ -1012,18 +1185,15 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
     Runs a single experiment cycle for the Kafka comparison system.
 
     Expects in TOML:
-      [network_setup]   seq_ips, cli_ips, ssh_key, ssh_user
-      [program_paths]   kafka_dir (e.g. /opt/kafka), kafka_log_dir (path to kafka-log repo)
+      [network_setup]          seq_ips, cli_ips, ssh_key, ssh_user
+      [program_paths]          kafka_dir, kafka_log_jar_remote
       [comparison_parameters]  num_partitions, replication_factor
       [experiment_parameters]  json_name, experiment_duration, warm_up, cool_down, message_size
 
     NOTE: Multi-partition scaling requires running multiple Producer instances (one per
     partition), which is not yet implemented. Keep num_partitions=1 for now.
-
-    NOTE: The consumer is started 30s before the producer to account for sbt JVM startup
-    time and Kafka subscription setup. Consider pre-building a fat jar to reduce this delay.
     """
-    CONSUMER_HEAD_START = 30  # seconds to wait after consumer start before starting producer
+    CONSUMER_HEAD_START = 5  # seconds; fat jar JVM startup is fast (~1-2s)
 
     ssh_key   = config['network_setup']['ssh_key']
     ssh_user  = config['network_setup']['ssh_user']
@@ -1050,9 +1220,9 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
     cool_down           = exp['cool_down']
     message_size        = exp['message_size']
 
-    kafka_dir     = config['program_paths'].get('kafka_dir', '/opt/kafka')
-    kafka_log_dir = config['program_paths'].get('kafka_log_dir', '~/kafka-log')
-    kafka_log_dir_local = '/tmp/kafka-logs'
+    kafka_dir            = config['program_paths'].get('kafka_dir', '/opt/kafka')
+    kafka_log_jar_remote = config['program_paths']['kafka_log_jar_remote']
+    kafka_broker_log_dir = '/tmp/kafka-logs'
 
     broker_ips_str = ','.join(f'{ip}:9092' for ip in seq_ips)
     topic_name     = 'pringles-bench'
@@ -1082,7 +1252,7 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
                 all_seq_ips=seq_ips,
                 num_partitions=num_partitions,
                 replication_factor=replication_factor,
-                log_dir=kafka_log_dir_local,
+                log_dir=kafka_broker_log_dir,
             )
             props_filename = f'kafka_server_{json_output_name}_{i}.properties'
             with open(props_filename, 'w') as f:
@@ -1151,19 +1321,20 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         if not transfer_file(config_json_filename, client_ip, ssh_user, ssh_key):
             raise Exception(f"Failed to transfer client config.json to {client_ip}")
 
-        # Copy config into the kafka-log resources directory so ConfigReader finds it
+        # Place config where the fat jar's classpath will find it (classpath override).
+        # /tmp/kafka-config/ is prepended to the classpath, shadowing the bundled config.json.
         setup_config_cmd = (
-            f'cp ~/{config_json_filename} {kafka_log_dir}/src/main/resources/config.json'
+            f'mkdir -p /tmp/kafka-config && cp ~/{config_json_filename} /tmp/kafka-config/config.json'
         )
         if not run_remote_command_sync(client_ip, setup_config_cmd, ssh_key, ssh_user):
-            raise Exception("Failed to place config.json in kafka-log resources directory.")
+            raise Exception("Failed to place config.json in /tmp/kafka-config/.")
 
         # --- 6. Start Consumer (async, head start before producer) ---
         # Consumer uses auto.offset.reset=latest so it must be subscribed before
-        # the producer sends. sbt JVM startup can take ~30s, hence CONSUMER_HEAD_START.
+        # the producer sends. java -jar starts in ~1-2s, so CONSUMER_HEAD_START=5 is enough.
         print(f"\n--- Starting Kafka Consumer (will wait {CONSUMER_HEAD_START}s before producer) ---")
         consumer_cmd = (
-            f'cd {kafka_log_dir} && sbt "runMain main.Consumer"'
+            f'java -cp /tmp/kafka-config:{kafka_log_jar_remote} main.Consumer'
             f' > ~/{consumer_log_filename} 2>&1'
         )
         run_remote_command_sync(client_ip, f'/bin/bash -c "{consumer_cmd} &"', ssh_key, ssh_user)
@@ -1172,13 +1343,13 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         # --- 7. Start Producer (async) ---
         print("\n--- Starting Kafka Producer ---")
         producer_cmd = (
-            f'cd {kafka_log_dir} && sbt "runMain main.Producer"'
+            f'java -cp /tmp/kafka-config:{kafka_log_jar_remote} main.Producer'
             f' > ~/{producer_log_filename} 2>&1'
         )
         run_remote_command_sync(client_ip, f'/bin/bash -c "{producer_cmd} &"', ssh_key, ssh_user)
 
         # --- 8. Wait for experiment to complete ---
-        total_wait = warm_up + experiment_duration + cool_down + 15  # 15s buffer for sbt teardown
+        total_wait = warm_up + experiment_duration + cool_down + 5  # 5s buffer for JVM teardown
         print(f"\nWaiting {total_wait}s for experiment to complete...")
         time.sleep(total_wait)
 
@@ -1576,6 +1747,21 @@ def main(config_file="config.toml"):
         print("--- Compilation Complete ---")
     else:
         print(f"\n--- Skipping Pringles meson compile (system: {system_name}) ---")
+
+    # --- 5. SETUP COMPARISON SYSTEM BINARIES (conditional) ---
+    run_comparison_setup = base_config['program_paths'].get('run_comparison_setup', 'False').lower() == 'true'
+    if run_comparison_setup:
+        setup_fns = {'kafka': setup_kafka_nodes, 'scalog': setup_scalog_nodes}
+        setup_fn = setup_fns.get(system_name)
+        if setup_fn:
+            print(f"\n--- Setting up {system_name} binaries on remote nodes ---")
+            if not setup_fn(base_config, ssh_key, ssh_user):
+                print(f"FATAL: {system_name} setup failed. Aborting experiment.")
+                return
+        else:
+            print(f"\n--- No comparison setup defined for system '{system_name}', skipping ---")
+    else:
+        print(f"\n--- Comparison system setup skipped (run_comparison_setup = False) ---")
 
     # --- Start Experiment Loop ---
     print(f"\n--- Starting {len(experiments_to_run)} Experiment Runs ---")
