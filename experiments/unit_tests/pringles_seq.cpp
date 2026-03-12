@@ -23,7 +23,7 @@ const uint64_t MAX_WAIT_TIME = 100;
 std::string sequence_pkt_type = "sequencer";
 std::string storage_pkt_type = "storage";
 
-void custom_server(std::unique_ptr<Network> net) {
+void sequencer(std::unique_ptr<Network> net) {
     spdlog::info("Simple Net Server!");
     std::unique_ptr<std::string> rcv_str = NULL;
     uint64_t wait_time = 1;
@@ -79,8 +79,7 @@ int main(int argc, char* argv[]) {
 								    get_packet_types(config));
     set_spdlog_level(get_log_level(config));
     spdlog::info("Simple Network! Sending remote!");
-    //std::shared_ptr<Trace<std::string>> trace = std::make_shared<Trace<std::string>>(get_trace_file(config));
-    std::thread server_thread(custom_server, std::move(custom_net));
+    std::thread server_thread(sequencer, std::move(custom_net));
     server_thread.join();
     spdlog::debug("Calling custom net done!");
     return 0;

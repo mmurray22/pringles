@@ -87,4 +87,5 @@ int get_eth_type(std::string pkt_type, ClientType protocol);
 //Creation functions
 std::unique_ptr<struct get_sequence_number> create_get_sequence_num(int64_t cid);
 std::unique_ptr<struct ring_append_entry> create_ring_append_entry(int64_t nonce, int64_t cid);
+uint32_t read_ring_append_hdr(std::unique_ptr<struct ring_append_entry>);
 std::unique_ptr<struct ring_append_success> create_ring_append_reply(int64_t nonce, int64_t cid);

@@ -70,3 +70,5 @@ std::string get_string_entry_payload(YAML::Node config);
 uint64_t get_read_timeout(YAML::Node config);
 uint64_t get_write_timeout(YAML::Node config);
 std::string get_protocol_type(YAML::Node config);  // covered
+
+
