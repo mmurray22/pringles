@@ -635,6 +635,8 @@ class SequencingTest(BfRuntimeTest):
                             self.update_subscriber_table(pkt[Subscribe].subscribe_port)
                         else:
                             self.update_stream_subscriber_table(pkt[Subscribe].stream_id, pkt[Subscribe].subscribe_port)
+                    elif pkt[RingType].type == TYPE_MULTICAST:
+                        # hello
             except socket.timeout:
 	        print("Halted: Waiting for packet to send tofino request")
 		continue

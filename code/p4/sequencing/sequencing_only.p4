@@ -387,6 +387,17 @@ control MyIngress(inout headers hdr,
         }
     };
 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(highest_replicated_seq_no) get_tail = {
+        void apply(inout bit<32> curr_replicated_seq_no, out bit<32> old_replicated_seq_no) { // inout = register, out = output 
+	    if (hdr.tail.tail_seq_no < curr_replicated_seq_no) {
+	       old_replicated_seq_no = curr_replicated_seq_no;
+	    } else {
+                old_replicated_seq_no = 0;
+	    }
+        }
+    };
+
+
     Register<bit<32>, bit<1>>(1) lowest_replicated_seq_no; // TODO: How to increment/track this sequence number value?
     RegisterAction<bit<32>, bit<1>, bit<32>>(lowest_replicated_seq_no) should_read_ack_check = {
         void apply(inout bit<32> curr_lowest_replicated_seq_no, out bit<32> should_check) { // inout = register, out = output 
@@ -559,10 +570,6 @@ control MyIngress(inout headers hdr,
 
     /**** TAIL *****/
     action forward_tail(egressSpec_t port) {
-	bit<32> rep_seq = read_replicated_seq_no.execute(0);
-	if (hdr.tail.tail_seq_no < rep_seq) {
-	    hdr.tail.tail_seq_no = rep_seq;
-	}
         ig_tm_md.ucast_egress_port = port;
         hdr.tail.hops = hdr.tail.hops + 1;
     }
@@ -696,6 +703,11 @@ control MyIngress(inout headers hdr,
 		meta.route_to_client = 1; // NOTE: Currently not waiting for read quorum!
 	    }
 	} else if (hdr.tail.isValid()) {
+	    bit<32> tail_seq = hdr.tail.tail_seq_no;
+	    hdr.tail.tail_seq_no = get_tail.execute(0);
+	    if (hdr.tail.tail_seq_no == 0) {
+		hdr.tail.tail_seq_no = tail_seq;
+	    }
 	    process_tail.apply();
 	}
 
@@ -715,7 +727,7 @@ control MyIngress(inout headers hdr,
 	    }
 	    submit_subscription.apply();
 	} else if (meta.send_acks == 1) {
-	    //route_subscriber_acks.apply();
+	    route_subscriber_acks.apply();
 	}
 	
 	if (meta.route_to_client == 1 || hdr.tail.hops == NUM_SWITCHES) {
