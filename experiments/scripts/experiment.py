@@ -1826,4 +1826,9 @@ if __name__ == '__main__':
     except ImportError:
         print("ERROR: 'matplotlib' library not found. Install with 'pip install matplotlib'.")
         sys.exit(1)
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description="Run Pringles or comparison system experiments.")
+    parser.add_argument("config", nargs="?", default="config.toml",
+                        help="Path to the TOML config file (default: config.toml)")
+    args = parser.parse_args()
+    main(args.config)
