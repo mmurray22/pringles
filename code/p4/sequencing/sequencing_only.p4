@@ -76,6 +76,7 @@ header ipv4_t {
  */
 
 // Control Packet Header
+// Size: 80
 header control_pkt_t {
    // Current global sequence number.
    bit<32> global_seq_no;
@@ -88,6 +89,7 @@ header control_pkt_t {
 }
 
 // Ring type header - holds the type of the packet
+// Size: 128 bits
 header ring_type_t {
     // Type to filter packets
     bit<16> type;
@@ -102,6 +104,7 @@ header ring_type_t {
 }
 
 // AppendEntry header
+// Size: 496
 header append_entry_t {
     /** Part of header: Set by client **/
 
@@ -136,11 +139,13 @@ header append_entry_t {
     bit<32> thread_id;
     bit<32> client_ip;
     bit<16> recv_port;
-    bit<32> timestamp;
+    bit<64> start_ts;
+    bit<64> end_ts;
     bit<32> ack_cnt;
 }
 
 // ReadEntry header
+// Size: 368
 header read_entry_t {
     /** Part of header: Set by client **/
 
@@ -166,12 +171,13 @@ header read_entry_t {
     bit<32> thread_id;
     bit<16> recv_port;
     bit<32> client_ip;
-    bit<32> timestamp;
+    bit<64> start_ts;
 
     bit<32> circs;
 }
 
 // Header for requesting the current tail
+// Size: 128
 header tail_req_t {
     /** Filled in by client **/
 
@@ -193,6 +199,7 @@ header tail_req_t {
 }
 
 // Subscribe header
+// Size: 144
 header subscribe_req_t {
     bit<32> g_idx;
     // Stream ID
@@ -211,6 +218,11 @@ header control_pkt_checker_t {
    bit<32> switch_global_seq_no;
 }
 
+struct digest_append_t {
+    bit<64> duration;
+    bit<32> nonce;
+}
+
 struct metadata {
     bit<32> highest_contiguous_seq_no;
     bit<32> circulate;
@@ -220,9 +232,16 @@ struct metadata {
     bit<32> is_cntrl;
     bit<32> send_acks;
     bit<32> route_to_client;
+    bit<32> check_gsn;
+
+    // For packet generation
+    bit<32> get_pkt_gen;
+    bit<64> duration;
+    bit<32> nonce;
 }
 
 struct headers {
+    pktgen_timer_header_t   timer;
     ethernet_t              ethernet;
     control_pkt_t           cntrl;
     ipv4_t                  ipv4;
@@ -248,7 +267,16 @@ parser MyParser(packet_in packet,
 
     state start {
         tofino_parser.apply(packet, standard_metadata);
-        transition parse_ethernet;
+	pktgen_timer_header_t pkt_timer = packet.lookahead<pktgen_timer_header_t>();
+	transition select(pkt_timer.app_id) {
+	    1: parse_pktgen_timer;
+	    default: parse_ethernet;
+	}
+    }
+    
+    state parse_pktgen_timer {
+	packet.extract(hdr.timer);
+	transition parse_ethernet;
     }
 
     state parse_ethernet {
@@ -351,9 +379,18 @@ control MyIngress(inout headers hdr,
             cur_seen_seq_no = (bit<32>)hdr.cntrl.global_seq_no;
         }
     };
-    RegisterAction<bit<32>, bit<32>, bit<32>>(highest_seen_seq_no) read_seen_seq_no = {
+    RegisterAction<bit<32>, bit<32>, bit<32>>(highest_seen_seq_no) get_global_seq_no = {
         void apply(inout bit<32> new_seen_seq_no, out bit<32> old_seen_seq_no) { // inout = register, out = output 
-            old_seen_seq_no = new_seen_seq_no;
+            old_seen_seq_no = new_seen_seq_no + hdr.append.g_idx;
+        }
+    };
+    RegisterAction<bit<32>, bit<32>, bit<32>>(highest_seen_seq_no) check_seen_seq_no = {
+        void apply(inout bit<32> seen_seq_no, out bit<32> valid) { // inout = register, out = output 
+            if (hdr.append.g_idx > seen_seq_no) {
+		valid = 0;
+	    } else {
+		valid = 1;
+	    }
         }
     };
 
@@ -643,11 +680,11 @@ control MyIngress(inout headers hdr,
 	meta.read_process = 1;
 	meta.append_process = 1;
         bit<32> cntrl_pkt_it_reg = update_cntrl_pkt_it.execute();
-	
+
 	if (hdr.append.isValid()) {
-		hdr.ring_type.switch_to_process = (bit<32>)hdr.append.g_idx & (NUM_SWITCHES);
+	    hdr.ring_type.switch_to_process = (bit<32>)hdr.append.g_idx & (NUM_SWITCHES);
 	} else if (hdr.read.isValid()) {
-		hdr.ring_type.switch_to_process = (bit<32>)hdr.read.g_idx & (NUM_SWITCHES);
+	    hdr.ring_type.switch_to_process = (bit<32>)hdr.read.g_idx & (NUM_SWITCHES);
 	}
 	check_switch_routing.apply();  // Check: is the g_idx for this switch
 
@@ -661,21 +698,34 @@ control MyIngress(inout headers hdr,
 	    meta.is_cntrl = 1;
         } else if (hdr.append.isValid() && meta.append_process == 1) {
             if (hdr.append.status == 1) { // Step 1: Get local sequence number
+		hdr.append.start_ts = (bit<64>)standard_metadata.ingress_mac_tstamp;
                 hdr.append.g_idx = write_local_seq_no.execute(0);
                 hdr.append.status = 2;
 		hdr.append.cntrl_pkt_it = cntrl_pkt_it_reg;
             	meta.circulate = 1;
             } else if (hdr.append.status == 2) { // Step 2: Get global sequence number
                 if (hdr.append.cntrl_pkt_it != cntrl_pkt_it_reg) {
-                    bit<32> h_seen_seq_no_reg = read_seen_seq_no.execute(0); // TODO: Key assumption that this step will happen within one cntrl rev
-                    hdr.append.g_idx = hdr.append.g_idx + h_seen_seq_no_reg;
+		    hdr.append.cntrl_pkt_it = cntrl_pkt_it_reg;
+                    hdr.append.g_idx = get_global_seq_no.execute(0); // TODO: Key assumption that this step will happen within one cntrl rev
                     hdr.append.status = 3;
 		    meta.route_to_shard = 1;
                 } else {
 		    meta.circulate = 1;
+		} 
+		if (meta.circulate == 0 && hdr.timer.isValid()) {
+		    meta.route_to_shard = 0;
+		    meta.get_pkt_gen = 1;
 		}
-	    } else if (hdr.append.status == 3) { // Step 3: Process acknowledgements
-                // TODO : check to make sure the append sequence number is valid
+	    } else if (hdr.append.status == 3) { // Step 2.5: Make sure the sequence number is acked
+                if (hdr.append.cntrl_pkt_it != cntrl_pkt_it_reg) { // This is a proxy for determining if the global seq no is updated
+		    meta.circulate = 1;
+		 } else {
+		     hdr.append.status = 4;
+		     meta.route_to_shard = 1;
+		}
+	    } else if (hdr.append.status == 4) { // Step 3: Process acknowledgements
+                // TODO : optimization to remove status = 3
+		//bit<1> valid = check_seen_seq_no.execute(0);
 		bit<32> slot =  get_ack_idx.execute(0);
 		bit<32> ack_cnt = check_ack.execute(slot);
 		if (ack_cnt == ACK_THRESHOLD) {
@@ -728,9 +778,14 @@ control MyIngress(inout headers hdr,
 	    submit_subscription.apply();
 	} else if (meta.send_acks == 1) {
 	    route_subscriber_acks.apply();
+	} else if (meta.get_pkt_gen == 1) { // All generated packet are appends
+	    hdr.append.end_ts = (bit<64>)standard_metadata.ingress_mac_tstamp;
+	    meta.duration = hdr.append.end_ts - hdr.append.start_ts;
+	    meta.nonce = hdr.append.nonce;
+	    ig_dprsr_md.digest_type = 1;
 	}
 	
-	if (meta.route_to_client == 1 || hdr.tail.hops == NUM_SWITCHES) {
+	if (meta.route_to_client == 1 || (hdr.tail.isValid() && hdr.tail.hops == NUM_SWITCHES)) {
             ipv4_lpm.apply();
         }
     }
@@ -742,9 +797,13 @@ control MyIngressDeparser(
  in metadata ig_md,
  in ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md)
 {
-	apply {
-	        packet.emit(hdr);
- 	}
+    Digest<digest_append_t>() digest_append; 
+    apply {
+	if (ig_dprsr_md.digest_type == 1) {
+	    digest_append.pack({ig_md.duration, ig_md.nonce});
+	}
+        packet.emit(hdr);
+    }
 }
 
 /*************************************************************************
