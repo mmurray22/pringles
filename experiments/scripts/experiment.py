@@ -32,9 +32,9 @@ BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
 EXPERIMENT_DELAY = 15  # Time to wait between experiments
-SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
-COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
-RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
+SETUP_SCRIPT_PATH = "~/pringles/setup.sh"
+COMPILATION_DIR = "~/pringles/build" # Directory where 'meson compile' is run
+RESULTS_BASE_DIR = "~/pringles/experiments/results" # Base path for results folder
 
 def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None):
     """Generates the configuration dictionary for a client or server."""
@@ -600,7 +600,7 @@ def run_remote_command_sync(ip, command, ssh_key, ssh_user):
         '-o', 'StrictHostKeyChecking=no',
         '-o', 'UserKnownHostsFile=/dev/null',
         f'{ssh_user}@{ip}',
-        command
+        f'"{command}"'
     ]
     print(f"Running on {ip} (sync): {command}")
     try:
@@ -696,6 +696,19 @@ def setup_kafka_nodes(config, ssh_key, ssh_user):
         except subprocess.CalledProcessError as e:
             print(f"ERROR: Failed to clone kafka-log: {e}")
             return False
+
+    # Inject sbt-assembly plugin (not present in the upstream repo)
+    plugins_sbt_path = os.path.join(kafka_log_local_src, 'project', 'plugins.sbt')
+    with open(plugins_sbt_path, 'w') as f:
+        f.write('addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.2.0")\n')
+
+    # Add merge strategy to build.sbt to suppress deduplicate errors
+    build_sbt_path = os.path.join(kafka_log_local_src, 'build.sbt')
+    with open(build_sbt_path, 'a') as f:
+        f.write('\nassemblyMergeStrategy in assembly := {\n'
+                '  case PathList("META-INF", _*) => MergeStrategy.discard\n'
+                '  case _                        => MergeStrategy.first\n'
+                '}\n')
 
     print("\nBuilding kafka-log fat jar locally (sbt assembly)...")
     try:
@@ -1826,6 +1839,7 @@ if __name__ == '__main__':
     except ImportError:
         print("ERROR: 'matplotlib' library not found. Install with 'pip install matplotlib'.")
         sys.exit(1)
+
     import argparse
     parser = argparse.ArgumentParser(description="Run Pringles or comparison system experiments.")
     parser.add_argument("config", nargs="?", default="config.toml",
