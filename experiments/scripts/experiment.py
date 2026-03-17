@@ -200,6 +200,30 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
 
     return yaml_config
 
+def kill_process(process_name, ssh_key, ssh_user, ip):
+    """
+    Executes a program on a remote machine asynchronously using SSH, 
+    redirecting stdout/stderr to a log file. Returns the Popen object and the log filename.
+    """
+    # NEW/MODIFIED: redirect all output (&>) to the log file, and run in background (&)
+    command = []
+    remote_command = f'killall {process_name}'
+    full_remote_command = f'/bin/bash -c "{remote_command} ; sleep 1"'
+    command = [
+        'ssh',
+        '-i', ssh_key,
+        '-o', 'StrictHostKeyChecking=no', # Bypass host key check
+        '-o', 'UserKnownHostsFile=/dev/null', # Prevent known_hosts interference
+        f'{ssh_user}@{ip}',
+        remote_command # Use the command that includes logging/backgrounding
+    ]
+    
+    # UPDATED PRINT: Reflects the logging change
+    print(f"KILLING program on {ip} (as root): {' '.join(command)}...")
+
+    subprocess.Popen(command, stdout=subprocess.PIPE)
+
+
 def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index, prefix):
     """
     Executes a program on a remote machine asynchronously using SSH, 
@@ -511,7 +535,7 @@ def process_and_aggregate_results(local_target_dir, ring_size):
             "total_avg_latency": final_avg_latency,
             "num_clients": file_count,
             "batch_size": batch_size,
-            "num_switches_in_ring": ring_size[it]
+            #"num_switches_in_ring": ring_size[it]
         }
         it += 1
 
@@ -970,7 +994,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
 
         # --- 5. Generate Server Configurations and Start Processes ---
         print("\n--- Starting Storage Servers ---")
-        
+   
         for i, ip in enumerate(server_ips):
             server_id = random.randint(100000, 999999) 
             config_filename = f"server_config_{json_output_name}_{i}.yaml" # Unique filename
@@ -989,6 +1013,9 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
                 shard_multicast=shard_to_multicast_addr[ip_to_shard[ip]]
             )
             
+            server_exec = os.path.basename(path_server) # Use the basename remotely
+            kill_process(server_exec, ssh_key, ssh_user, ip)
+               
             # Write YAML file locally
             with open(config_filename, 'w') as f:
                 yaml.dump(server_config, f, default_flow_style=False)
@@ -1009,10 +1036,12 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
             
             # Start remote process
             if not with_tunnel:
+                print("MADE IT HERE ====================================================")
                 print(path_server)
-                server_exec = os.path.basename(path_server) # Use the basename remotely
                 exec_filepath = "~/" + server_exec
                 prefix = "server"
+                execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix)
+                # Second, execute the command
                 process, log_filename = execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
                 print("Done executing the server!")
                 if process:
@@ -1056,6 +1085,9 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
                 total_shards=yaml_shard_to_multicast_addr
             )
             
+            switch_exec = os.path.basename(path_switch) # Use the basename remotely
+            kill_process(switch_exec, ssh_key, ssh_user, ip)
+             
             # Write YAML file locally
             with open(switch_config_filename, 'w') as f:
                 yaml.dump(switch_config, f, default_flow_style=False)
@@ -1098,7 +1130,9 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
                  num_failures=num_failures,
                  network_interface=cli_net_ifs[i]
             )
-
+            client_exec = os.path.basename(path_client) # Use the basename remotely
+            kill_process(client_exec, ssh_key, ssh_user, ip)
+             
             # Write YAML file locally
             with open(config_filename, 'w') as f:
                 yaml.dump(client_config, f, default_flow_style=False)
@@ -1116,7 +1150,6 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
             
             #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name) TODO
             if not with_tunnel:
-                client_exec = os.path.basename(path_client) # Use the basename remotely
                 cli_exec_file = "~/" + client_exec
                 prefix = "client"
                 client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename

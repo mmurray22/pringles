@@ -22,6 +22,7 @@
 // Performance test of append
 void run_append_client(std::string input_file, uint64_t i, uint64_t num_threads) {
     LogClient pringles_cli = LogClient(input_file, i, num_threads);
+    pringles_cli.subscribe(1);
     pringles_cli.launch_append_execute();
     spdlog::critical("Pringles client created and started!");
     pringles_cli.wait_to_warmup();
@@ -137,28 +138,28 @@ int main(int argc, char* argv[]) {
     //basics.join();
 
     // Basic test subscribe
-    //std::thread basicsub(&run_sub_client, input_file, 0, 2);	
-    //std::thread basics(&run_basic_client, input_file, 1, 2, get_payload_size(config));	
+//    std::thread basicsub(&run_sub_client, input_file, 0, 2);	
+//    std::thread basics(&run_basic_client, input_file, 1, 2, get_payload_size(config));	
+//    basicsub.join();
+//    basics.join();
+//
+
+    // Basic test subscribe streams
+    //std::thread basicsub(&run_stream_sub_client, input_file, 0, 2);	
+    //std::thread basics(&run_basic_stream_client, input_file, 1, 2, get_payload_size(config));	
     //basicsub.join();
     //basics.join();
 
 
-    // Basic test subscribe streams
-    std::thread basicsub(&run_stream_sub_client, input_file, 0, 2);	
-    std::thread basics(&run_basic_stream_client, input_file, 1, 2, get_payload_size(config));	
-    basicsub.join();
-    basics.join();
-
-
-    //// Basic scaling experiments
-    //std::vector<std::thread> cli_threads = {};
-    //uint64_t num_work_threads = get_num_client_threads(config);
-    //for (uint64_t i = 0; i < num_work_threads; i++) {
-    //    cli_threads.emplace_back(std::thread(&run_append_client, input_file, i, num_work_threads));	
-    //}
-    //for (uint64_t i = 0; i < cli_threads.size(); i++) {
-    //    cli_threads[i].join();
-    //}
+    // Basic scaling experiments
+    std::vector<std::thread> cli_threads = {};
+    uint64_t num_work_threads = get_num_client_threads(config);
+    for (uint64_t i = 0; i < num_work_threads; i++) {
+        cli_threads.emplace_back(std::thread(&run_append_client, input_file, i, num_work_threads));	
+    }
+    for (uint64_t i = 0; i < cli_threads.size(); i++) {
+        cli_threads[i].join();
+    }
     return 0;
 }
 

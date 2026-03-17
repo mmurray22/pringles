@@ -8,6 +8,8 @@
 void set_spdlog_level(uint64_t log_level); //na
 uint64_t get_log_level(YAML::Node config); // covered
 
+void pin_current_thread_linux(int core_id);
+
 uint32_t generate_nonce(); // na
 
 /* YAML helper class */

@@ -1,6 +1,7 @@
 #include <chrono>
 #include <thread>
 #include <iostream>
+#include <numeric>
 #include <cstring>
 #include <utility>
 #include <cassert>
@@ -114,6 +115,7 @@ LogSoftwareSwitch::~LogSoftwareSwitch() {
 
 void LogSoftwareSwitch::receiver() {
     spdlog::critical("network recv thread starting with tid = {}", gettid());
+    pin_current_thread_linux(0);
     while (!end_thread) {
         char* recv_ptr = net->recv_packet();
 	if (!recv_ptr) {
@@ -190,14 +192,18 @@ void LogSoftwareSwitch::receiver() {
 void LogSoftwareSwitch::append_request() {
     spdlog::critical("Switch: APPEND REQUEST Thread starting with TID = {}", gettid());
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
+    pin_current_thread_linux(1);
     uint64_t pkt_req_cntr = 0;
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
+    std::vector<double> lats;
 
 
     // Request header
     while (!end_thread) {
         bool got_quorum = false;
+	auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
 
         while (!got_quorum) {
     	    // Stop receiving/sending messages since the experiment is over
@@ -219,7 +225,7 @@ void LogSoftwareSwitch::append_request() {
                    continue;
                }
             }
-    
+    	    
     	    // Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
 
     	    // Isolate the ethernet header from the receive ptr
@@ -329,9 +335,17 @@ void LogSoftwareSwitch::append_request() {
            	   continue;
     	    }
             got_quorum = true;
+	    
+	    duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	    double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+	    double dur = end_time_s - start_time_s;
+	    lats.push_back(dur);
         }
     }
-    spdlog::critical("Done here! Req cntr: {}", pkt_req_cntr); 
+    double final_avg_latency = std::accumulate(lats.begin(), lats.end(), 0.0) / lats.size();
+    final_avg_latency *= 1000;
+
+    spdlog::critical("Done here! Req cntr: {} and Latencies: {}", pkt_req_cntr, final_avg_latency); 
     //spdlog::debug("Stats results: Lat: {}, Tput: {}, Total Ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
 }
 
@@ -339,6 +353,7 @@ void LogSoftwareSwitch::append_response() {
     spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
     spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
     spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
+    pin_current_thread_linux(2);
     uint64_t pkt_resp_cntr = 0;
 
     while (!end_thread) {
@@ -586,6 +601,7 @@ void LogSoftwareSwitch::read_response() {
 	            }
 	    	}
 		spdlog::debug("Responding to the read!");
+
 
 		// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
 

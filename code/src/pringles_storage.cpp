@@ -6,6 +6,7 @@
 #include "utils.h"
 
 #include <errno.h>
+#include <numeric>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -119,6 +120,7 @@ void LogStorage::wait_to_finish() {
 
 void LogStorage::receiver() {
     spdlog::critical("network recv thread starting with tid = {}", gettid());
+    pin_current_thread_linux(0);
     while (!end_thread) {
         char* recv_ptr = net->recv_packet();
 	if (!recv_ptr) {
@@ -157,8 +159,10 @@ void LogStorage::receiver() {
 void LogStorage::append_server() {
     spdlog::critical("Network Storage Thread starting with TID = {}", gettid());
     spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
+    pin_current_thread_linux(1);
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
+    std::vector<double> lats;
 
      while (!end_thread) {
          char* recv_ptr;
@@ -171,8 +175,11 @@ void LogStorage::append_server() {
              }
          }
 
-	spdlog::debug("RECEIVED APPEND PACKET!!!");
-         
+	 spdlog::debug("RECEIVED APPEND PACKET!!!");
+         auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	 double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+
+
          uint64_t recv_offset = 0;
          struct ring_type* type_hdr = (struct ring_type*)(recv_ptr);
          // Update the type of the type header
@@ -214,16 +221,28 @@ void LogStorage::append_server() {
      	         std::string client_ip(buffer);
                  net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, client_ip, std::to_string(ntohs(batch_append_entry->recv_port)));
              }
+
+	     duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	     double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+	     double dur = end_time_s - start_time_s;
+	     lats.push_back(dur);
+
+
      	     append_cntr += 1;
              recv_offset += reply_pkt_size;
          }
      }
-    spdlog::critical("=============== Number of append packets processed is {} with max append sequence number {} ===========================", append_cntr, max_append_idx);
+     double final_avg_latency = std::accumulate(lats.begin(), lats.end(), 0.0) / lats.size();
+     final_avg_latency *= 1000;
+     spdlog::critical("=============== Number of append packets processed is {} with max append sequence number {} and avg latency {} ===========================", append_cntr, max_append_idx, final_avg_latency);
+
 }
 
 void LogStorage::read_server() {
     spdlog::critical("Network Storage Thread starting with TID = {}", gettid());
     spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
+
+    pin_current_thread_linux(2);
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
 

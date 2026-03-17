@@ -1,9 +1,9 @@
 [network_setup]
 # Storage server information
 stor_recv_port = "30003"
-stor_macs = ["fc:15:b4:21:b1:83", "fc:15:b4:1f:1d:d3"]
-stor_ips = ["10.10.1.4", "10.10.1.5"]
-stor_net_ifs = ["enp1s0d1", "enp1s0d1"] 
+stor_macs = ["fc:15:b4:21:b1:83"] #, "fc:15:b4:1f:1d:d3"]
+stor_ips = ["10.10.1.4"] #, "10.10.1.5"]
+stor_net_ifs = ["enp1s0d1"] #, "enp1s0d1"] 
 # Client information
 cli_macs = ["fc:15:b4:1f:9d:e3"]
 cli_ips = ["10.10.1.2"]
@@ -31,10 +31,10 @@ switch_binary = "switch"
 run_setup_script = "False"
 
 [experiment_parameters]
-log_level = 1
-warm_up = 1 # seconds
-cool_down = 1 # seconds
-experiment_duration = 10 # seconds
+log_level = 6
+warm_up = 10 # seconds
+cool_down = 10 # seconds
+experiment_duration = 20 # seconds
 socket_type = "UDP" # "RAW"
 message_size = 100 # 100 # bytes
 num_client_threads = 1
@@ -42,19 +42,19 @@ num_storage_threads = 1
 json_name = "test_append"
 experiment_name = "gonna_be_Bad"
 num_failures = 0 # NEW
-number_of_machines_per_shard = 2
+number_of_machines_per_shard = 1
 git_hash = "" # TODO
 use_switch = 1
 use_store = 1
 use_shard = 1
-use_streams = 1
+use_streams = 0
 batch_size = 1 # Number of packets
 batch_usec_timeout = 460
 switches_in_ring = [2, 3] # indices of the switches active in the ring, list of unique values, each val 0 <= v <= 3
 with_tunnel = false
-plot_param = 'switches_in_ring'
+plot_param = 'num_clients'
 use_hardware_switch = false
-ack_threshold = 2
+ack_threshold = 1
 use_client_count_acks = 0
 
 [protocol_batching]
@@ -75,6 +75,7 @@ only_plot_gen = 0
 local_results_dir = "/proj/ove-PG0/murray/pringles/experiments/results/100byte_onlystor_batch_run-2026-02-20_142428.941"
 
 [switches]
+#ports_ips = [132, 156]
 jump_host = "watson.millennium.berkeley.edu"
 jump_user = "micahmurray"
 jump_mac = "00:25:90:53:e6:00"
@@ -114,7 +115,7 @@ cpuTofinoInterface = "enp5s0"
 clientInterface = "ma1"
 
 [[experiment]]
-num_client_threads = 1
+num_client_threads = 20
 batch_size = 1 # Number of packets
 json_name = "ringone"
 switches_in_ring = [3] # indices of the switches active in the ring, list of unique values, each val 0 <= v <= 3

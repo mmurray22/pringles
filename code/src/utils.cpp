@@ -32,6 +32,22 @@ uint64_t get_log_level(YAML::Node config) {
     return config["log_level"].as<uint64_t>();
 }
 
+void pin_current_thread_linux(int core_id) {
+    // Create a CPU set structure and clear it
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    // Add the desired core to the CPU set
+    CPU_SET(core_id, &cpuset);
+
+    // Get the native handle of the current C++ thread
+    pthread_t current_thread = pthread_self();
+
+    // Set the affinity of the thread
+    if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0) {
+        spdlog::critical("Failed to set thread affinity");
+    }
+}
+
 /* Nonce generation function */
 uint32_t generate_nonce() {
     std::random_device rd;

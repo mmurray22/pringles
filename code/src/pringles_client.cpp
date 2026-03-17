@@ -21,6 +21,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <atomic>
+#include <chrono>
 
 #include "ring_headers.h"
 #include "ringclient.pb.h"
@@ -93,9 +94,9 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_p
      /* Statistics gathering */
      this->append_stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id, self_ip);
      this->read_stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id, self_ip);
-     this->max_duration = get_experiment_duration(config);
      this->warm_up = get_warm_up(config);
      this->cool_down = get_cool_down(config);
+     this->max_duration = get_experiment_duration(config) - warm_up - cool_down; // Duration of the actual experiment
 
      /* Content */
      // Append
@@ -181,10 +182,14 @@ LogClient::~LogClient() {
 	read_test_thread.join();
     }
     if (subscribe_thread_running) {
+	spdlog::debug("Subscribe is ending!");
         subscribe_thread.join();
     }
+    spdlog::debug("Receive is ending!");
     recv_thread.join();
+    spdlog::debug("Network is ending!");
     net->done();
+    spdlog::debug("All done!");
 }
 
 void LogClient::launch_append_execute() {
@@ -259,7 +264,6 @@ void LogClient::receiver() {
 
 uint64_t LogClient::append(std::string entry) {
     spdlog::info("Simple Network: Sending/Receiving to remote host");
-    spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid());
     
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
@@ -335,7 +339,6 @@ uint64_t LogClient::append(std::string entry) {
 
 std::string LogClient::read(uint64_t idx) {
     spdlog::info("Simple Network: Sending/Receiving to remote host");
-    spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid());
     
     size_t size_of_hdr = get_ring_read_size();
     size_t size_of_type_hdr = get_ring_type_size();
@@ -502,8 +505,12 @@ void LogClient::wait_for_subscribe(uint64_t idx) {
          spdlog::critical("Unable to send subscribe request!");
 	 return;
      }
+     auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+     double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+    
 
      /* wait for new appends to roll in */
+     uint64_t one_time = 0;
      while (true) {
 	if (end_thread) {
             spdlog::debug("!!!!!!!!!!!!!!TIME to stop");
@@ -524,13 +531,19 @@ void LogClient::wait_for_subscribe(uint64_t idx) {
 	
 	size_t size_of_hdr = get_ring_append_size();
     	size_t size_of_type_hdr = get_ring_type_size();
-        struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
         struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-        spdlog::debug("SUBSCRIBER registering the time and operation with type {} and nonce {}!", ntohs(type_hdr->type), ntohl(append_entry->nonce));
+        //spdlog::debug("SUBSCRIBER registering the time and operation with type {} and nonce {}!", ntohs(type_hdr->type), ntohl(append_entry->nonce));
 	char* entry = (char*)(recv_ptr + size_of_type_hdr + size_of_hdr);
 	std::string return_str = std::string(entry);
 	cached_log_entries[ntohl(append_entry->g_idx)] = return_str;
         spdlog::debug("SUBSCRIBER Idx: {} and Entry: {}!", ntohl(append_entry->g_idx), entry);
+	if (one_time < 1) {
+    	    duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	    double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+    	    double dur = end_time_s - start_time_s;
+    	    spdlog::critical("Duration to first message: {}", dur);
+	    one_time+=1;
+	}
      }
 }
 
@@ -538,7 +551,6 @@ void LogClient::wait_for_subscribe(uint64_t idx) {
 // TODO read_stream, subscribe_stream <-- check vcorfu for more
 uint64_t LogClient::append_stream(std::string entry, uint32_t stream_id) {
     spdlog::info("Simple Network: Sending/Receiving to remote host");
-    spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid());
     
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
@@ -614,7 +626,6 @@ uint64_t LogClient::append_stream(std::string entry, uint32_t stream_id) {
 
 std::string LogClient::read_stream(uint64_t idx, uint32_t stream_id) {
     spdlog::info("Simple Network: Sending/Receiving to remote host");
-    spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid());
     
     size_t size_of_hdr = get_ring_read_size();
     size_t size_of_type_hdr = get_ring_type_size();
