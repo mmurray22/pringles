@@ -55,17 +55,20 @@ TCP_PROTOCOL = 0x6
 UDP_PROTOCOL = 0x11
 TYPE_APPEND = 0x0860
 TYPE_APPEND_RESP = 0x0861
+TYPE_READ = 0x0870
+TYPE_READ_RESP = 0x0871
 TYPE_TAIL = 0x0840
 TYPE_SUB = 0x0850
+TYPE_SUB_RESP = 0x0851
 TYPE_CONTROL = 0x0820; 
 TYPE_CONTROL_CHECK = 0x0880; 
 TYPE_HELLO = 0x0888;
 TYPE_MULTICAST = 0x0890
 
 class Cntrl(Packet):
-    fields_desc = [ IntField("global_seq_no", 0),
-                    BitField("ring_view", 0, 32),
-                    BitField("pkt_id", 0, 32)]
+    fields_desc = [ BitField("global_seq_no", 0, 32),
+                    BitField("ring_view", 0, 16),
+                    BitField("pkt_id", 0, 16)]
 
 class Cntrl_Check(Packet):
     fields_desc = [ IntField("switch_global_seq_no", 0)]
@@ -76,55 +79,53 @@ class Hello(Packet):
 class RingType(Packet):
     fields_desc = [ XShortField("type", 0x0),
                     BitField("num_entries", 1, 16),
-                    IntField("shard_id", 0),
-                    IntField("cid", 0),
-                    IntField("switch_to_process", 1)]
+                    BitField("shard_id", 0, 32),
+                    BitField("switch_to_process", 1, 32)]
 class Append(Packet):
-    fields_desc = [ IntField("nonce", 0),
-                    IntField("payload_size", 0),
-                    IntField("stream_id", 0),
-                    IntField("g_idx", 0),
-                    IntField("batch_size", 1),
-                    IntField("ring_view", 0),
-                    IntField("status", 0),
-                    IntField("cntrl_pkt_it", 0),
-                    IntField("thread_id", 0),
-                    IntField("client_ip", 0),
+    fields_desc = [ BitField("nonce", 0, 32),
+                    BitField("payload_size", 0, 16),
+                    BitField("stream_id", 0, 32),
+                    BitField("g_idx", 0, 32), # TODO: 64
+                    BitField("cntrl_pkt_it", 0, 32), # TODO: 64
+                    BitField("client_ip", 0, 32),
                     ShortField("recv_port", 0),
-                    IntField("timestamp", 0),
-                    IntField("ack_cnt", 0)]
+                    BitField("start_ts", 0, 64),
+                    BitField("end_ts", 0, 64)]
 class Read(Packet):
     fields_desc = [ IntField("nonce", 0),
                     IntField("payload_size", 0),
                     IntField("stream_id", 0),
                     IntField("g_idx", 0),
-                    IntField("ring_view", 0),
-                    IntField("status", 0),
-                    IntField("thread_id", 0),
-                    IntField("client_ip", 0),
+                    BitField("ring_view", 0, 16),
+                    BitField("status", 0, 8),
                     ShortField("recv_port", 0),
-                    IntField("timestamp", 0),
-                    IntField("circs", 0)]
+                    IntField("client_ip", 0),
+                    IntField("start_ts", 0)]
 class Subscribe(Packet):
-    fields_desc = [ IntField("g_idx", 0),
-                    IntField("stream_id", 0),
-                    IntField("subscribe", 0),
-                    IntField("client_ip", 0),
-                    ShortField("recv_port", 0)]
+    fields_desc = [ BitField("g_idx", 0, 32),
+                    BitField("stream_id", 0, 32),
+                    BitField("subscribe", 0, 32),
+                    BitField("client_ip", 0, 32),
+                    ShortField("recv_port", 0),
+                    ShortField("subscribe_port", 0)]
 class Tail(Packet):
-    fields_desc = [ IntField("nonce", 0),
-                    IntField("hops", 0),
-                    IntField("tail_seq_no", 0),
-                    IntField("client_ip", 0),
+    fields_desc = [ BitField("nonce", 0, 32),
+                    ShortField("hops", 0),
+                    BitField("tail_seq_no", 0, 32),
+                    BitField("client_ip", 0, 32),
                     ShortField("recv_port", 0)]
-bind_layers(Ether, IP)
+
+bind_layers(Ether, IP, type=TYPE_IP)
 bind_layers(IP, UDP)
 bind_layers(UDP, RingType)
-bind_layers(RingType, Append)
-bind_layers(RingType, Read)
-bind_layers(RingType, Subscribe)
-bind_layers(RingType, Tail)
-bind_layers(Ether, Cntrl)
+bind_layers(RingType, Append, type=TYPE_APPEND)
+bind_layers(RingType, Append, type=TYPE_APPEND_RESP)
+bind_layers(RingType, Append, type=TYPE_SUB_RESP)
+bind_layers(RingType, Read, type=TYPE_READ)
+bind_layers(RingType, Read, type=TYPE_READ_RESP)
+bind_layers(RingType, Subscribe, type=TYPE_SUB)
+bind_layers(RingType, Tail, type=TYPE_TAIL)
+bind_layers(Ether, Cntrl, type=TYPE_CONTROL) # TODO: Make ringtype
 
 # L1 Multicast Node Class
 class L1Node:
@@ -270,10 +271,10 @@ class MCTree:
         self.nodes = []
         self.ecmps = []
 
-    def get_mgid():
+    def get_mgid(self):
         return self.mgid
 
-    def get_first_node():
+    def get_first_node(self):
         return self.nodes[0]
 
     def add_node(self, rid, xid, mbr_ports, mbr_lags):
@@ -478,6 +479,9 @@ class SequencingTest(BfRuntimeTest):
         table_view.info.data_field_annotation_add("view", "MyIngress.update_cntrl_view", "bit<16>")
         upper_end = self.view - 1
         updated_view = self.view
+        print(upper_end)
+        print(updated_view)
+        print("View checked!")
         table_view.entry_add(
                 target, 
                 [table_view.make_key([gc.KeyTuple('hdr.cntrl.ring_view', low=1, high=upper_end)])],
@@ -489,7 +493,7 @@ class SequencingTest(BfRuntimeTest):
         table_tail.info.key_field_annotation_add("hdr.tail.hops", "bit<32>")
         table_tail.entry_add(
                 target, 
-                [table_tail.make_key([gc.KeyTuple('hdr.tail.hops', low=1, high=(size_of_ring-1))])],
+                [table_tail.make_key([gc.KeyTuple('hdr.tail.hops', low=0, high=(size_of_ring-1))])], # size_of_ring - 1?
                 [table_tail.make_data(action_name="MyIngress.forward_tail", data_field_list_in=[gc.DataTuple(name="port", val=cntrl_port)])])
 
     def setup_subscribe_routing_table(self, target, bfrt_info, ports_to_ring_members, cpu_port):
@@ -528,34 +532,55 @@ class SequencingTest(BfRuntimeTest):
         table_acks = bfrt_info.table_get("MyIngress.route_subscriber_acks")
         table_acks.info.key_field_annotation_add("hdr.append.stream_id", "bit<32>")
 
-        # Subscription group (non-stream & stream)
-        table_acks.entry_add(
-                target, 
-                [table_acks.make_key([gc.KeyTuple('hdr.append.stream_id', 0)])],
-                [table_acks.make_data(action_name="MyIngress.forward_to_subscribers_no_stream", data_field_list_in=[gc.DataTuple(name="general_sub_gid", val=self.general_sub_group)])])
+    def update_stream_subscriber_table(self, bfrt_info, target, stream_id, subscriber_port):
+        print(stream_id)
+        print(subscriber_port)
+        print(self.stream_sub_dict)
+        if stream_id not in self.stream_sub_dict.keys():
+            table_acks = bfrt_info.table_get("MyIngress.route_subscriber_acks")
+            table_acks.info.key_field_annotation_add("hdr.append.stream_id", "bit<32>")
 
-
-    def update_subscriber_table(self, subscriber_port):
-        # Subscription group (non-stream & stream)
-        self.general_sub_mc.get_first_node().addMbrs([subscriber_port], [])
-
-    def update_stream_subscriber_table(self, stream_id, subscriber_port):
-        if stream_id in self.stream_sub_dict.keys():
             # Subscription group (non-stream & stream)
             stream_sub_mc = MCTree(self, target, self.global_group_id)
             stream_group_id = self.global_group_id
+            if stream_id == 0:
+                self.general_sub_group = stream_group_id
             rid = 0x321 + stream_group_id
             xid = 0x432 + stream_group_id
             stream_sub_mc.add_node(rid, xid, [subscriber_port], [])
             self.stream_sub_dict[stream_id] = stream_sub_mc
             self.mgid_table.entry_add(target, [self.mgid_table.make_key([gc.KeyTuple('$MGID', (rid & 0xFFFF))])])
-             
+
+            # Update mirror table with the multicast group information4
+            mirror_session_bfrt_key = self.mirror_cfg_table.make_key([gc.KeyTuple('$sid', self.sid)])
+            if stream_id == 0:
+                mirror_session_bfrt_data = self.mirror_cfg_table.make_data([
+                    gc.DataTuple('$direction', str_val="INGRESS"),
+                    gc.DataTuple('$session_enable', bool_val=True),
+                    gc.DataTuple('$mcast_grp_a', self.general_sub_group),
+                    gc.DataTuple('$mcast_grp_a_valid', bool_val=True),
+                    gc.DataTuple('$ucast_egress_port_valid', bool_val=False),
+                ], "$normal")
+                self.mirror_cfg_table.entry_add(target, [ mirror_session_bfrt_key ], [ mirror_session_bfrt_data ])
+            else:
+                mirror_session_bfrt_data = self.mirror_cfg_table.make_data([
+                    gc.DataTuple('$direction', str_val="INGRESS"),
+                    gc.DataTuple('$session_enable', bool_val=True),
+                    gc.DataTuple('$mcast_grp_a', self.general_sub_group),
+                    gc.DataTuple('$mcast_grp_a_valid', bool_val=True),
+                    gc.DataTuple('$mcast_grp_b', stream_group_id),
+                    gc.DataTuple('$mcast_grp_b_valid', bool_val=True),
+                    gc.DataTuple('$ucast_egress_port_valid', bool_val=False),
+                ], "$normal")
+                self.mirror_cfg_table.entry_add(target, [ mirror_session_bfrt_key ], [ mirror_session_bfrt_data ])
+
             # Table acks 
             table_acks.entry_add(
                     target, 
                     [table_acks.make_key([gc.KeyTuple('hdr.append.stream_id', stream_id)])],
-                    [table_acks.make_data(action_name="MyIngress.forward_to_subscribers", data_field_list_in=[gc.DataTuple(name="general_sub_gid", val=self.general_sub_group), gc.DataTuple(name="stream_gid", val=stream_group_id)])])
-            stream_global_id += 1
+                    [table_acks.make_data(action_name="MyIngress.forward_to_subscribers", data_field_list_in=[gc.DataTuple(name="mirror_session_id", val=self.sid)])])
+            self.global_group_id += 1
+            self.sid += 1
         else:
             self.stream_sub_dict[stream_id].get_first_node().addMbrs([subscriber_port], [])
 
@@ -581,9 +606,23 @@ class SequencingTest(BfRuntimeTest):
     #    table_circulate.entry_del(
     #            target,
     #           [table_circulate.make_key([gc.KeyTuple('meta.circulate', meta_circulate)])])
+    #     # Disable the application.
+    #     logger.info("disable pktgen")
+    #     pktgen_app_cfg_table.entry_mod(
+    #         target,
+    #         [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
+    #         [pktgen_app_cfg_table.make_data([gc.DataTuple('app_enable', bool_val=False)],
+    #                                         '$PKTGEN_TRIGGER_TIMER_ONE_SHOT')])
+    #     # Disable packet generation on the port
+    #     pktgen_port_cfg_table.entry_mod(
+    #         target,
+    #         [pktgen_port_cfg_table.make_key([gc.KeyTuple('dev_port', src_port)])],
+    #         [pktgen_port_cfg_table.make_data([gc.DataTuple('pktgen_enable', bool_val=False)])])
+    #     CleanupTimerTable(self, target)
+
        
     ###################### CONTROL PLANE RUNTIME ##############################3
-    def receive_pkt_from_tofino(self, interface): # TODO
+    def receive_pkt_from_tofino(self, bfrt_info, target, interface): # TODO
         os.system("taskset -p -c 0 {}".format(os.getpid()))
         # This creates a raw socket exactly like tcpdump
         recv_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
@@ -597,43 +636,39 @@ class SequencingTest(BfRuntimeTest):
         while True:
             try:
                 raw_data, addr = recv_sock.recvfrom(65535)
+                pkttype = addr[2]
+                if pkttype == 4:
+                    #print("Discarding: This is an OUTGOING packet we just sent.")
+                    continue
                 pkt = Ether(raw_data)
-                
-                #eth_header = raw_data[:14]
-                #eth = struct.unpack('!6s6sH', eth_header)
-                #eth_type = eth[2]
-	        ## 2. Parse IP Header (Next 20 bytes)
-                #ip_header = raw_data[14:34]
-                #iph = struct.unpack('!BBHHHBBH4s4s', ip_header)
-                #
-                #src_ip = socket.inet_ntoa(iph[8])
-                #dst_ip = socket.inet_ntoa(iph[9])
-                #protocol = iph[6] # 17 for UDP
-
-                ## UDP Header starts at index 34
-                #u_header = raw_data[34:42]
-                #udph = struct.unpack('!HHHH', u_header)
-                #src_port = udph[0]
-                #dest_port = udph[1]
-                #PAYLOAD_OFFSET = 42
-                #payload = raw_data[PAYLOAD_OFFSET:]
-                
                 if pkt.haslayer(RingType):
                     if pkt[RingType].type == TYPE_SUB:
                         print("RECEIVED a packet with TYPE_SUB")
-                        if pkt[Subscribe].stream_id == 0:
-                            # TODO: Get the subscriber port??
-                            self.update_subscriber_table(pkt[Subscribe].subscribe_port)
-                        else:
-                            self.update_stream_subscriber_table(pkt[Subscribe].stream_id, pkt[Subscribe].subscribe_port)
+                        pkt.show()
+                        if pkt.haslayer(Subscribe):
+                            self.update_stream_subscriber_table(bfrt_info, target, pkt[Subscribe].stream_id, pkt[Subscribe].subscribe_port)
+                    elif pkt[RingType].type == TYPE_APPEND:
+                        print("RECEIVED a packet with TYPE_APPEND")
+                        pkt.show()
                     elif pkt[RingType].type == TYPE_APPEND_RESP:
                         print("RECEIVED a packet with TYPE_APPEND_RESP")
                         pkt.show()
+                    elif pkt[RingType].type == TYPE_SUB_RESP:
+                        print("RECEIVED a packet with TYPE_SUB_RESP")
+                        pkt.show()
+                    elif pkt[RingType].type == TYPE_TAIL:
+                        print("RECEIVED a packet with TYPE_TAIL")
+                        pkt.show()
+                elif pkt.haslayer(Cntrl):
+                    print("RECEIVED a packet with TYPE_CNTRL")
+                    pkt.show()
+
+
             except socket.timeout:
 	        print("Halted: Waiting for packet to send tofino request")
 		continue
     
-    def process_pkt_gen(self, interface, tofinoSrcAddr, target_ip, target_port, target_mac, switch_mac, use_stor):
+    def process_pkt_gen(self, interface):
         # TODO
         #os.system("taskset -p -c 0 {}".format(os.getpid()))
         # This creates a raw socket exactly like tcpdump
@@ -653,20 +688,19 @@ class SequencingTest(BfRuntimeTest):
             print(total_pkts)
 
 
-    def setup_timer_pkt_gen(target, pkt_gen_app_id, pkt_gen_port):
+    def setup_timer_pkt_gen(self, target, pkt_gen_app_id, pkt_gen_port):
         logger.info("=============== Testing Packet Generator trigger by Timer ===============")
         pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         pktgen_pkt_buffer_table = bfrt_info.table_get("$PKTGEN_PKT_BUFFER")
         pktgen_port_cfg_table = bfrt_info.table_get("$PKTGEN_PORT_CFG")
-        self.i_t_table = bfrt_info.table_get("SwitchIngress.t")
+        self.i_t_table = bfrt_info.table_get("MyIngress.t")
 
         # timer pktgen app_id = 1 one shot 0
         app_id = pkt_gen_app_id
 
         # Assuming not including the pkt gen header
         # Assuming in bytes
-        pktlen = 220 # Size of: ethernet + ip + udp + ring_type + append + 100 byte payload
-
+        pktlen = 194 # # of bytes: ethernet + ip + udp + ring_type + append + 100 byte payload
 
         pgen_pipe_id = 0
         src_port = pgen_port(pgen_pipe_id)
@@ -677,129 +711,70 @@ class SequencingTest(BfRuntimeTest):
         out_port = swports[0]
         # build expected generated packets
         p = testutils.simple_eth_packet(pktlen=pktlen)
+        p = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
+              IP(dst=ip_addr)/ \
+	      UDP(dport=1234, sport=5678)/ \
+	      RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1)/ \
+              Append(nonce=nonce,payload_size=12,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0,end_ts=0)
+        
         pkt_lst = []
         pkt_len = [pktlen] * p_count * b_count
         for batch in range(b_count):
             for pkt_num in range(p_count):
                 dmac = pgen_timer_hdr_to_dmac(pgen_pipe_id, g_timer_app_id, batch, pkt_num)
-                p_exp = testutils.simple_eth_packet(pktlen=pktlen, eth_dst=dmac)
+                p_exp = Ether(dst=dmac, src=srcAddr, type=TYPE_IP)/ \
+                          IP(dst=ip_addr)/ \
+	                  UDP(dport=1234, sport=5678)/ \
+	                  RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1)/ \
+                          Append(nonce=nonce,payload_size=12,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0,end_ts=0)
+        
                 pkt_lst.append(p_exp)
 
         try:
             # Enable packet generation on the port
             logger.info("enable pktgen port")
-            #pktgen_port_cfg_table.entry_add(
-            #    target,
-            #    [pktgen_port_cfg_table.make_key([gc.KeyTuple('dev_port', pkt_gen_port)])],
-            #    [pktgen_port_cfg_table.make_data([gc.DataTuple('pktgen_enable', bool_val=True)])])
+            pktgen_port_cfg_table.entry_add(
+                target,
+                [pktgen_port_cfg_table.make_key([gc.KeyTuple('dev_port', pkt_gen_port)])],
+                [pktgen_port_cfg_table.make_data([gc.DataTuple('pktgen_enable', bool_val=True)])])
 
-            ## Read back the enable status after configuring
-            #resp = pktgen_port_cfg_table.entry_get(
-            #    target,
-            #    [pktgen_port_cfg_table.make_key([gc.KeyTuple('dev_port', src_port)])],
-            #    {"from_hw": False},
-            #    pktgen_port_cfg_table.make_data([gc.DataTuple("pktgen_enable")], get=True))
-            #data_dict = next(resp)[0].to_dict()
-            #self.assertTrue(data_dict["pktgen_enable"])
+            # Configure the packet generation timer application
+            logger.info("configure pktgen application")
+            data = pktgen_app_cfg_table.make_data([gc.DataTuple('timer_nanosec', 100),
+                                                   gc.DataTuple('app_enable', bool_val=False),
+                                                   gc.DataTuple('pkt_len', (pktlen - 6)),
+                                                   gc.DataTuple('pkt_buffer_offset', buff_offset),
+                                                   gc.DataTuple('pipe_local_source_port', src_port),
+                                                   gc.DataTuple('increment_source_port', bool_val=False),
+                                                   gc.DataTuple('batch_count_cfg', b_count - 1),
+                                                   gc.DataTuple('packets_per_batch_cfg', p_count - 1),
+                                                   gc.DataTuple('ibg', 1),
+                                                   gc.DataTuple('ibg_jitter', 0),
+                                                   gc.DataTuple('ipg', 1000),
+                                                   gc.DataTuple('ipg_jitter', 500),
+                                                   gc.DataTuple('batch_counter', 0),
+                                                   gc.DataTuple('pkt_counter', 0),
+                                                   gc.DataTuple('trigger_counter', 0)],
+                                                  '$PKTGEN_TRIGGER_TIMER_ONE_SHOT')
+            pktgen_app_cfg_table.entry_add(
+                target,
+                [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
+                [data])
 
-            ## Configure the packet generation timer application
-            #logger.info("configure pktgen application")
-            #if g_is_tofino:
-            #    data = pktgen_app_cfg_table.make_data([gc.DataTuple('timer_nanosec', 100),
-            #                                           gc.DataTuple('app_enable', bool_val=False),
-            #                                           gc.DataTuple('pkt_len', (pktlen - 6)),
-            #                                           gc.DataTuple('pkt_buffer_offset', buff_offset),
-            #                                           gc.DataTuple('pipe_local_source_port', src_port),
-            #                                           gc.DataTuple('increment_source_port', bool_val=False),
-            #                                           gc.DataTuple('batch_count_cfg', b_count - 1),
-            #                                           gc.DataTuple('packets_per_batch_cfg', p_count - 1),
-            #                                           gc.DataTuple('ibg', 1),
-            #                                           gc.DataTuple('ibg_jitter', 0),
-            #                                           gc.DataTuple('ipg', 1000),
-            #                                           gc.DataTuple('ipg_jitter', 500),
-            #                                           gc.DataTuple('batch_counter', 0),
-            #                                           gc.DataTuple('pkt_counter', 0),
-            #                                           gc.DataTuple('trigger_counter', 0)],
-            #                                          '$PKTGEN_TRIGGER_TIMER_ONE_SHOT')
-            #if g_is_tofino2:
-            #    data = pktgen_app_cfg_table.make_data([gc.DataTuple('timer_nanosec', 100),
-            #                                           gc.DataTuple('app_enable', bool_val=False),
-            #                                           gc.DataTuple('pkt_len', (pktlen - 6)),
-            #                                           gc.DataTuple('pkt_buffer_offset', buff_offset),
-            #                                           gc.DataTuple('pipe_local_source_port', src_port),
-            #                                           gc.DataTuple('increment_source_port', bool_val=False),
-            #                                           gc.DataTuple('batch_count_cfg', b_count - 1),
-            #                                           gc.DataTuple('packets_per_batch_cfg', p_count - 1),
-            #                                           gc.DataTuple('ibg', 1),
-            #                                           gc.DataTuple('ibg_jitter', 0),
-            #                                           gc.DataTuple('ipg', 1000),
-            #                                           gc.DataTuple('ipg_jitter', 500),
-            #                                           gc.DataTuple('batch_counter', 0),
-            #                                           gc.DataTuple('pkt_counter', 0),
-            #                                           gc.DataTuple('trigger_counter', 0),
-            #                                           gc.DataTuple('assigned_chnl_id', pgen_port(0))],
-            #                                          '$PKTGEN_TRIGGER_TIMER_ONE_SHOT')
-            #pktgen_app_cfg_table.entry_add(
-            #    target,
-            #    [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
-            #    [data])
+            logger.info("configure packet buffer")
+            pktgen_pkt_buffer_table.entry_add(
+                target,
+                [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
+                                                   gc.KeyTuple('pkt_buffer_size', (pktlen - 6))])],
+                [pktgen_pkt_buffer_table.make_data([gc.DataTuple('buffer', str(p)[6:])])])  # p[6:]))])
 
-            ## Read the app configuration back
-            #resp = pktgen_app_cfg_table.entry_get(
-            #    target,
-            #    [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
-            #    {"from_hw": False},
-            #    pktgen_app_cfg_table.make_data([gc.DataTuple('timer_nanosec'),
-            #                                    gc.DataTuple('app_enable'),
-            #                                    gc.DataTuple('pkt_len'),
-            #                                    gc.DataTuple('pkt_buffer_offset'),
-            #                                    gc.DataTuple('pipe_local_source_port'),
-            #                                    gc.DataTuple('increment_source_port'),
-            #                                    gc.DataTuple('batch_count_cfg'),
-            #                                    gc.DataTuple('packets_per_batch_cfg'),
-            #                                    gc.DataTuple('ibg'),
-            #                                    gc.DataTuple('ibg_jitter'),
-            #                                    gc.DataTuple('ipg'),
-            #                                    gc.DataTuple('ipg_jitter')],
-            #                                   '$PKTGEN_TRIGGER_TIMER_ONE_SHOT', get=True))
-            #data_dict = next(resp)[0].to_dict()
-            #print()
-            #data_dict
-            #ValueCheck(self, 'timer_nanosec', data_dict, 100)
-            #assert data_dict["app_enable"] == False  # app_enable field_id=12
-            #ValueCheck(self, 'pkt_len', data_dict, (pktlen - 6))
-            #ValueCheck(self, 'pkt_buffer_offset', data_dict, buff_offset)
-            #ValueCheck(self, 'pipe_local_source_port', data_dict, src_port)
-            #assert data_dict["increment_source_port"] == False  # increment_source_port field_id=16
-            #ValueCheck(self, 'batch_count_cfg', data_dict, b_count - 1)
-            #ValueCheck(self, 'packets_per_batch_cfg', data_dict, p_count - 1)
-            #ValueCheck(self, 'ibg', data_dict, 1)
-            #ValueCheck(self, 'ibg_jitter', data_dict, 0)
-            #ValueCheck(self, 'ipg', data_dict, 1000)
-            #ValueCheck(self, 'ipg_jitter', data_dict, 500)
-
-            #logger.info("configure packet buffer")
-            #pktgen_pkt_buffer_table.entry_add(
-            #    target,
-            #    [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
-            #                                       gc.KeyTuple('pkt_buffer_size', (pktlen - 6))])],
-            #    [pktgen_pkt_buffer_table.make_data([gc.DataTuple('buffer', str(p)[6:])])])  # p[6:]))])
-            #resp = pktgen_pkt_buffer_table.entry_get(
-            #    target,
-            #    [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
-            #                                       gc.KeyTuple('pkt_buffer_size', (pktlen - 6))])],
-            #    {"from_hw": False})
-            #data_dict = next(resp)[0].to_dict()
-            #print()
-            #data_dict
-
-            #logger.info("enable pktgen")
-            #pktgen_app_cfg_table.entry_mod(
-            #    target,
-            #    [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
-            #    [pktgen_app_cfg_table.make_data([gc.DataTuple('app_enable', bool_val=True)],
-            #                                    '$PKTGEN_TRIGGER_TIMER_ONE_SHOT')]
-            #)
+            logger.info("enable pktgen")
+            pktgen_app_cfg_table.entry_mod(
+                target,
+                [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
+                [pktgen_app_cfg_table.make_data([gc.DataTuple('app_enable', bool_val=True)],
+                                                '$PKTGEN_TRIGGER_TIMER_ONE_SHOT')]
+            )
 
             ## Use the per-app counters to wait for all packets to be generated.
             #for _ in range(b_count * p_count):
@@ -838,31 +813,22 @@ class SequencingTest(BfRuntimeTest):
             ## Verify generated packets
             #verify_multiple_packets(self, out_port, pkt_lst, pkt_len, tmo=5)
 
-            ## Disable the application.
-            #logger.info("disable pktgen")
-            #pktgen_app_cfg_table.entry_mod(
-            #    target,
-            #    [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
-            #    [pktgen_app_cfg_table.make_data([gc.DataTuple('app_enable', bool_val=False)],
-            #                                    '$PKTGEN_TRIGGER_TIMER_ONE_SHOT')])
-            ## Disable packet generation on the port
-            #pktgen_port_cfg_table.entry_mod(
-            #    target,
-            #    [pktgen_port_cfg_table.make_key([gc.KeyTuple('dev_port', src_port)])],
-            #    [pktgen_port_cfg_table.make_data([gc.DataTuple('pktgen_enable', bool_val=False)])])
-            #CleanupTimerTable(self, target)
         except gc.BfruntimeRpcException as e:
             raise e
         finally:
             pass
 
 
-
-
     ###################### TESTING FUNCTIONS ##############################3
     def test_connection(self, dstAddr, srcAddr, ip_addr, interface):
+        print(dstAddr)
+        print(srcAddr)
+        print(ip_addr)
+        print("SENDING THIS PACKET")
         pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
-              IP(dst=ip_addr)
+              IP(dst=ip_addr)/ \
+              UDP(dport=1234, sport=5678)/ \
+	      RingType(type=TYPE_IP, num_entries=1, shard_id=1)
         sendp(pkt, iface=interface, verbose=True)
         print("Sent packet!")
     
@@ -870,7 +836,7 @@ class SequencingTest(BfRuntimeTest):
         print("In start thread!")
         print(srcAddr)
         print(interface)
-        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_MULTICAST)/ \
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
               IP(dst=ip_addr)/ \
 	      UDP(dport=1234, sport=5678)/ \
 	      RingType(type=TYPE_MULTICAST, num_entries=1, shard_id=1)
@@ -883,47 +849,109 @@ class SequencingTest(BfRuntimeTest):
         sock.bind((interface, 0))
         sock.send(pkt_buffer)
 
-    def send_test_ack_packet(self, interface, dstAddr, srcAddr, ip_addr): # TODO
+    def send_test_ack_packet(self, interface, dstAddr, srcAddr, ip_addr, seq_no):
+        packed_ip = socket.inet_aton(ip_addr)
+        ip_int = struct.unpack("!I", packed_ip)[0]
+        nonce = 0
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
+              IP(dst=ip_addr)/ \
+	      UDP(dport=1234, sport=5678)/ \
+	      RingType(type=TYPE_APPEND_RESP, num_entries=1, shard_id=1,switch_to_process=1)/ \
+              Append(nonce=nonce,payload_size=100,stream_id=0,g_idx=seq_no,cntrl_pkt_it=1,client_ip=ip_int,recv_port=192,start_ts=3333,end_ts=3344)
+        payload= Raw(load=b"Hello world!")
+        pkt = pkt/payload
+        print("ACK PACKET WE ARE SENDING:")
+	#pkt.show()
+        sendp(pkt, iface=interface, verbose=True)
+    
+    def test_subscribe_one_switch(self, interface, dstAddr, srcAddr, ip_addr):
+        print("Testing subscribe!!")
+        packed_ip = socket.inet_aton(ip_addr)
+        ip_int = struct.unpack("!I", packed_ip)[0]
+        
+        # First, send subscribe request
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
+              IP(dst=ip_addr)/ \
+	      UDP(dport=1234, sport=5678)/ \
+	      RingType(type=TYPE_SUB, num_entries=1, shard_id=1,switch_to_process=0)/ \
+              Subscribe(g_idx=0,stream_id=0,subscribe=0,client_ip=ip_int,recv_port=192,subscribe_port=192)
+        payload= Raw(load=b"Hello world!")
+        pkt = pkt/payload
+        print("SUBSCRIBE PACKET WE ARE SENDING:")
+	#pkt.show()
+        sendp(pkt, iface=interface, verbose=True)
+
+        # Then, send two acks
+        g_idx = 0
+        self.send_test_ack_packet(interface,dstAddr,srcAddr,ip_addr,g_idx)
+        self.send_test_ack_packet(interface,dstAddr,srcAddr,ip_addr,g_idx)
+
+    def test_tail(self, interface, dstAddr, srcAddr, ip_addr, in_cntrl): # TODO
+        print("Running getTail mini-test!")
+        # First, send the cntrl packet once (NO loop)
+        g_idx = 0
+        self.send_test_cntrl_packet(interface,dstAddr,srcAddr,ip_addr,in_cntrl, g_idx)
+        # Second, send an append request packet once
+        self.send_test_append_packet(interface,dstAddr,srcAddr,ip_addr)
+        # Third, send the cntrl packet again (NO loop)
+        self.send_test_cntrl_packet(interface,dstAddr,srcAddr,ip_addr,in_cntrl, g_idx)
+        g_idx = 1
+        self.send_test_cntrl_packet(interface,dstAddr,srcAddr,ip_addr,in_cntrl, g_idx)
+        #self.send_test_cntrl_packet(interface,dstAddr,srcAddr,ip_addr,in_cntrl, g_idx)
+        # Fourth, send append response packet once
+        self.send_test_ack_packet(interface,dstAddr,srcAddr,ip_addr,g_idx)
+        self.send_test_ack_packet(interface,dstAddr,srcAddr,ip_addr,g_idx)
+        # Fifth, send a tail request packet
+        time.sleep(3)
+        self.send_test_tail_packet(interface, dstAddr, srcAddr, ip_addr)
+          
+    def send_test_tail_packet(self, interface, dstAddr, srcAddr, ip_addr):
+        packed_ip = socket.inet_aton(ip_addr)
+        ip_int = struct.unpack("!I", packed_ip)[0]
+        nonce = 1
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
+              IP(dst=ip_addr)/ \
+	      UDP(dport=1234, sport=5678)/ \
+	      RingType(type=TYPE_TAIL, num_entries=1, shard_id=1,switch_to_process=0)/ \
+              Tail(nonce=nonce,hops=0,tail_seq_no=0,client_ip=ip_int,recv_port=192)
+        payload= Raw(load=b"Hello world!")
+        pkt = pkt/payload
+	pkt.show()
+        pkt_buffer = bytes(pkt)
+        sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+        sock.bind((interface, 0))
+        sock.send(pkt_buffer)
+
+     
+    def send_test_append_packet(self, interface, dstAddr, srcAddr, ip_addr):
         print("In start thread!")
         print(srcAddr)
         print(interface)
         packed_ip = socket.inet_aton(ip_addr)
         ip_int = struct.unpack("!I", packed_ip)[0]
         nonce = 1
-        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_APPEND_RESP)/ \
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
               IP(dst=ip_addr)/ \
 	      UDP(dport=1234, sport=5678)/ \
-	      RingType(type=TYPE_APPEND_RESP, num_entries=1, shard_id=1,switch_to_process=0)/ \
-              Append(nonce=nonce,payload_size=100,stream_id=1,g_idx=3,batch_size=0,ring_view=1,status=4,cntrl_pkt_it=0,thread_id=0,client_ip=ip_int,recv_port=192,timestamp=3333,ack_cnt=0)
+	      RingType(type=TYPE_APPEND, num_entries=1, shard_id=1,switch_to_process=1)/ \
+              Append(nonce=nonce,payload_size=12,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0,end_ts=0)
         payload= Raw(load=b"Hello world!")
         pkt = pkt/payload
-        print("PACKET WE ARE SENDING:")
-	pkt.show()
+        #pkt.show()
         pkt_buffer = bytes(pkt)
-        # Send socket
         sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
         sock.bind((interface, 0))
         sock.send(pkt_buffer)
 
-    def send_test_tail_packet(self, interface, dstAddr, srcAddr, ip_addr): # TODO
-        print("In start thread!")
-        print(srcAddr)
-        print(interface)
-        nonce = 1
-        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_MULTICAST)/ \
-              IP(dst=ip_addr)/ \
-	      UDP(dport=1234, sport=5678)/ \
-	      RingType(type=TYPE_APPEND_RESP, num_entries=1, shard_id=1)/ \
-              Append(nonce=nonce,payload_size=100,stream_id=1,g_idx=1,batch_size=0,ring_view=1,status=3,cntrl_pkt_it=0,thread_id=0,client_ip=100,recv_port=192,timestamp=3333,ack_cnt=0)
-        payload= Raw(load=b"Hello world!")
-        pkt = pkt/payload
-	pkt.show()
-        pkt_buffer = bytes(pkt)
-        # Send socket
-        sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
-        sock.bind((interface, 0))
-        sock.send(pkt_buffer)
-
+    def send_test_cntrl_packet(self, interface, dstAddr, srcAddr, ip_addr, in_cntrl, seq_no):
+        #print("Send cntrl packet!")
+        packed_ip = socket.inet_aton(ip_addr)
+        ip_int = struct.unpack("!I", packed_ip)[0]
+        pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_CONTROL)/ \
+              Cntrl(global_seq_no=seq_no, ring_view=1, pkt_id=in_cntrl)
+        #print("CONTROL PACKET WE ARE SENDING:")
+	#pkt.show()
+        sendp(pkt, iface=interface, verbose=True)
 
     def run_jump_sniff(self, external_interface, listen_ip, listen_port, tofino_interface, dstAddr, srcAddr, ip_addr):
 	os.system("taskset -p -c 2 {}".format(os.getpid()))
@@ -957,7 +985,7 @@ class SequencingTest(BfRuntimeTest):
               IP(dst=ip_addr)/ \
 	      UDP(dport=1234, sport=5678)/ \
 	      RingType(type=TYPE_APPEND, num_entries=1)/ \
-              Append(cid=0, nonce=nonce, g_idx=0, batch_size=0, shard_id=0, ring_view=0, status=1, cntrl_pkt_it=0)
+              Append(cid=0, nonce=nonce, g_idx=0, batch_size=0, shard_id=0, cntrl_pkt_it=0)
         payload= Raw(load=b"Hello world!")
         pkt = pkt/payload
 	pkt.show()
@@ -993,9 +1021,11 @@ class SequencingTest(BfRuntimeTest):
         self.ecmp_table = bfrt_info.table_get("$pre.ecmp")
         self.lag_table = bfrt_info.table_get("$pre.lag")
         self.prune_table = bfrt_info.table_get("$pre.prune")
+        self.mirror_cfg_table = bfrt_info.table_get("$mirror.cfg")
         
         # Setup some of the multicast tables
         self.global_group_id = 1
+        self.sid = 1
         self.stream_sub_dict = {}
 
 	# Parameters
@@ -1033,48 +1063,80 @@ class SequencingTest(BfRuntimeTest):
         ports_to_ring_members = data['ports_to_ring_members']
         print(ports_to_ring_members)
         client_ips = data['all_client_ips_and_ports']
+        print(client_ips)
         cntrl_timeout = data['cntrl_timeout']
         shard_to_port_gp = {} 
+        run_setup = True
         for entry in data['all_shards']: # Entry = [Shard ID, ...ports]
             shard_to_port_gp[entry[0]] = entry[1:]
-
-        # Initialize all 5, 21, 3, 19, 23, 7 ports (332244)
-	self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring)
-        # ============================================== UNIT TESTS ================================================= #
-        ####################### SETUP MATCH-ACTION TABLES
-        global_group_id = 1
-        # ipv4_lpm
-        self.setup_client_response_table(target, bfrt_info, client_ips) 
-        # Circulate_table
-        self.setup_circulate_table(target, bfrt_info, loopback_port)
-        # Shard port
-        self.setup_shard_multicast_groups(target, bfrt_info, shard_to_port_gp)
-        # Check switch routing
-        self.setup_switch_check(target, bfrt_info, size_of_ring, ports_to_ring_members)
-        # Cntrl ID -> IP
-        self.setup_cntrl_table(target, bfrt_info, in_cntrl, out_cntrl, cntrl_port)
-        # Ring View
-        #self.setup_view_check(target, bfrt_info)
-        # Tail
-        self.setup_tail_table(target, bfrt_info, size_of_ring, cntrl_port)
-        # Subscription 
-        self.setup_subscribe_routing_table(target, bfrt_info, ports_to_ring_members, cpu_port)
-        # Acknowledgement tables (primarily handle subscription responses)
-        self.setup_subscriber_acks_table(target, bfrt_info) 
-
+        
+        if run_setup:
+            # Initialize all 5, 21, 3, 19, 23, 7 ports (332244)
+	    self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring)
+            # ============================================== UNIT TESTS ================================================= #
+            ####################### SETUP MATCH-ACTION TABLES
+            global_group_id = 1
+            # ipv4_lpm
+            self.setup_client_response_table(target, bfrt_info, client_ips) 
+            # Circulate_table
+            self.setup_circulate_table(target, bfrt_info, loopback_port)
+            # Shard port
+            self.setup_shard_multicast_groups(target, bfrt_info, shard_to_port_gp)
+            # Check switch routing
+            self.setup_switch_check(target, bfrt_info, size_of_ring, ports_to_ring_members)
+            # Cntrl ID -> IP
+            self.setup_cntrl_table(target, bfrt_info, in_cntrl, out_cntrl, cpu_port) #cntrl_port)
+            # Ring View
+            #self.setup_view_check(target, bfrt_info) TODO
+            # Tail
+            self.setup_tail_table(target, bfrt_info, size_of_ring, cntrl_port)
+            # Subscription 
+            self.setup_subscribe_routing_table(target, bfrt_info, ports_to_ring_members, cpu_port)
+            # Acknowledgement tables (primarily handle subscription responses)
+            self.setup_subscriber_acks_table(target, bfrt_info)
+            # Pktgen
+            self.setup_timer_pkt_gen(target, pkt_gen_app_id, pkt_gen_port)
 
         ######################## SETUP DATA PLANE LISTENER
-        recv_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(cpu_interface,))
+        recv_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(bfrt_info,target,cpu_interface,))
         recv_thread.start()
         time.sleep(2)
+        
+        pktgen_thread = threading.Thread(target=self.process_pktgen, args=(cpu_interface,))
+        pktgen_thread.start()
+        time.sleep(2)
+
+
+        ####### UNIT TESTS ######################33
+        # Test connection SIMPLE
+        #self.test_connection(dstAddr,srcAddr,ipAddr,cpu_interface)
 
         # Multicast Test - DONE
         # print("BEGIN MULTICAST TEST")
         #self.send_multicast_packet(cpu_interface,dest_addr,dest_addr,ipv4_sent)
 
+        # Simple Ack test - DONE
+        #g_idx = 0
+        #self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr,g_idx)
+        #self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr,g_idx)
+
+        # Subscribe test - DONE
+        #self.test_subscribe_one_switch(cpu_interface, dstAddr, srcAddr, ipAddr)
+
+        # Tail test - DONE
+        #self.test_tail(cpu_interface, dstAddr, srcAddr, ipAddr, in_cntrl)
+
+        # Pktgen test
+        
+
+        ####### TEST 1: End-to-end sequencing test ######
+        # Send one append
+        #self.send_test_append_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
+        # Send cntrl packet (just once)
+        #self.send_test_cntrl_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
         # Ack Test
-        self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipv4_table_vals[0])
-        #self.send_ack_packet(cpu_interface,dest_addr,dest_addr,ipv4_table_vals[0])
+        #self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
+        #self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
         
         # Append test
         
@@ -1084,6 +1146,7 @@ class SequencingTest(BfRuntimeTest):
         
         # Subscribe test
 
+        ####### TEST 2: Packet generation test ######
 
         # Tofino Listener join
         recv_thread.join()
