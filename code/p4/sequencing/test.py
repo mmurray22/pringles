@@ -42,12 +42,13 @@ from ptf.thriftutils import *
 
 p4_program_name = "sequencing_only"
 
-loopback_port=68
+#loopback_port=68
 cpu_pcie_port=192 # dunno what the ptf test script is doing
 RCV_SIZE_DEFAULT = 4096
 ETH_P_ALL = 0x03
 RCV_TIMEOUT = 10000
 END_EXPERIMENT = False
+g_timer_app_id = 1
 
 # Some useful defines
 TYPE_IP= 0x800
@@ -64,6 +65,16 @@ TYPE_CONTROL = 0x0820;
 TYPE_CONTROL_CHECK = 0x0880; 
 TYPE_HELLO = 0x0888;
 TYPE_MULTICAST = 0x0890
+
+
+class PktgenTimerHeader(Packet):
+    fields_desc = [
+        BitField("_pad0", 0, 3),      # 3 bits
+        BitField("pipe_id", 0, 2),    # 2 bits
+        BitField("app_id", 0, 3),     # 3 bits (Total 8 bits / 1 byte)
+        ByteField("_pad1", 0),        # 8 bits / 1 byte
+        ShortField("batch_id", 0),    # 16 bits / 2 bytes
+        ShortField("packet_id", 0)]    # 16 bits / 2 bytes
 
 class Cntrl(Packet):
     fields_desc = [ BitField("global_seq_no", 0, 32),
@@ -89,18 +100,16 @@ class Append(Packet):
                     BitField("cntrl_pkt_it", 0, 32), # TODO: 64
                     BitField("client_ip", 0, 32),
                     ShortField("recv_port", 0),
-                    BitField("start_ts", 0, 64),
-                    BitField("end_ts", 0, 64)]
+                    BitField("start_ts", 0, 48)]
 class Read(Packet):
-    fields_desc = [ IntField("nonce", 0),
-                    IntField("payload_size", 0),
-                    IntField("stream_id", 0),
-                    IntField("g_idx", 0),
+    fields_desc = [ BitField("nonce", 0, 32),
+                    BitField("payload_size", 0, 32),
+                    BitField("stream_id", 0, 32),
+                    BitField("g_idx", 0, 32),
                     BitField("ring_view", 0, 16),
-                    BitField("status", 0, 8),
                     ShortField("recv_port", 0),
-                    IntField("client_ip", 0),
-                    IntField("start_ts", 0)]
+                    BitField("client_ip", 0, 32),
+                    BitField("start_ts", 0, 48)]
 class Subscribe(Packet):
     fields_desc = [ BitField("g_idx", 0, 32),
                     BitField("stream_id", 0, 32),
@@ -126,6 +135,75 @@ bind_layers(RingType, Read, type=TYPE_READ_RESP)
 bind_layers(RingType, Subscribe, type=TYPE_SUB)
 bind_layers(RingType, Tail, type=TYPE_TAIL)
 bind_layers(Ether, Cntrl, type=TYPE_CONTROL) # TODO: Make ringtype
+
+def ValueCheck(self, field, data_dict, expect_value):
+    value = data_dict[field]
+    if (value != expect_value):
+        logger.info("Error: data %d, expect %d", value, expect_value)
+        # assert(0)
+
+def verify_multiple_packets(test, port, pkts=[], pkt_lens=[], device_number=0, tmo=None, slack=0):
+    # tmo: time out; slack: nonezero-allow getting slack number packets less than expected.
+    rx_pkt_status = [False] * len(pkts)
+    if tmo is None:
+        tmo = ptf.ptfutils.default_negative_timeout
+    rx_pkts = 0
+    while rx_pkts < len(pkts):
+        (rcv_device, rcv_port, rcv_pkt, pkt_time) = testutils.dp_poll(
+            test,
+            device_number=device_number,
+            port_number=port,
+            timeout=tmo)
+        if not rcv_pkt:
+            if slack:
+                test.assertTrue((slack > (len(pkts) - rx_pkts)),
+                                "Timeout:Port[%d]:Got:[%d]:Allowed slack[%d]:Left[%d]\n" % (
+                                port, rx_pkts, slack, len(pkts) - rx_pkts))
+                return
+            else:
+                logger.info("No more packets but still expecting", len(pkts) - rx_pkts)
+                for i, a_pkt in enumerate(pkts):
+                    # print rx_pkt_status[i] #can be used for future debug when test case cannot pass.
+                    # print format_packet(a_pkt) #can be used for future debug when test case cannot pass.
+                    if not rx_pkt_status[i]:
+                        logger.error("%s", str(a_pkt))
+                test.assertTrue(False, "Timeout:Port:[%d]:Got[%d]:Left[%d]\n" % (port, rx_pkts, len(pkts) - rx_pkts))
+                return
+        rx_pkts = rx_pkts + 1
+        found = False
+        for i, a_pkt in enumerate(pkts):
+            if str(a_pkt) == str(rcv_pkt[:pkt_lens[i]]) and not rx_pkt_status[i]:
+                rx_pkt_status[i] = True
+                found = True
+                break
+        if not found:
+            test.assertTrue(False, "RxPort:[%u]:Pkt#[%u]:Pkt:%s:Unmatched\n" % (
+                port, rx_pkts, ":".join("{:02x}".format(ord(c)) for c in rcv_pkt[:pkt_lens[0]])))
+
+
+
+g_num_pipes = int(testutils.test_param_get("num_pipes"))
+def port_to_pipe(port):
+    local_port = port & 0x7F
+    pipe = port >> 7
+    return pipe
+
+swports = []
+for device, port, ifname in config["interfaces"]:
+    pipe = port_to_pipe(port)
+    if pipe < g_num_pipes:
+        swports.append(port)
+        swports.sort()
+
+swports_0 = []
+swports_1 = []
+# the following method categorizes the ports in ports.json file as belonging to either of the pipes (0, 1, 2, 3)
+for port in swports:
+    pipe = port_to_pipe(port)
+    if pipe == 0:
+        swports_0.append(port)
+    elif pipe == 1:
+        swports_1.append(port)
 
 # L1 Multicast Node Class
 class L1Node:
@@ -373,11 +451,12 @@ class SequencingTest(BfRuntimeTest):
 
     
     ###################### PORT SETUP ##############################
-    def setup_switch_ports(self, target, switch_ports, loopback_port, control_port, port_speed, port_fec, size_of_ring):
+    def setup_switch_ports(self, target, switch_ports, loopback_port, control_port, port_speed, port_fec, size_of_ring, pktgen_loopback_port):
         print(switch_ports)
 	for i in switch_ports:
 		self.port_setup(target, i, False, port_speed, port_fec)
 	self.port_setup(target, loopback_port, True, port_speed, port_fec)
+	self.port_setup(target, pktgen_loopback_port, True, port_speed, port_fec)
 	if size_of_ring == 1:
 	    self.port_setup(target, control_port, True, port_speed, port_fec)
 	else:
@@ -642,6 +721,7 @@ class SequencingTest(BfRuntimeTest):
                     continue
                 pkt = Ether(raw_data)
                 if pkt.haslayer(RingType):
+                    pkt.show()
                     if pkt[RingType].type == TYPE_SUB:
                         print("RECEIVED a packet with TYPE_SUB")
                         pkt.show()
@@ -668,86 +748,108 @@ class SequencingTest(BfRuntimeTest):
 	        print("Halted: Waiting for packet to send tofino request")
 		continue
     
-    def process_pkt_gen(self, interface):
+    def process_pktgen(self, bfrt_info, target, interface):
         # TODO
         #os.system("taskset -p -c 0 {}".format(os.getpid()))
         # This creates a raw socket exactly like tcpdump
         recv_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
         recv_sock.bind((interface, 0))
-        print("[*] Tofino Receive Socket Open and Listening...")
+        learn_filter = bfrt_info.learn_get("digest_append")
+        print("[*] Packet Gen Socket Open and Listening...")
         # Block until 1 packet is received
+        total_pkts = 0
         while True:
-            # TODO 
-            print("New Digest Batch!")
-            digest = self.interface.digest_get()
+            digest = None
+            try:
+                digest = self.interface.digest_get()
+            except RuntimeError:
+                continue
             # Get this batch of digests
+            print("New Digest Batch!")
             data_list = learn_filter.make_data_list(digest)
             total_pkts += len(data_list)
             for data in data_list:
-                print(data.dict()["duration"])
+                print(data) #.dict()["duration"])
             print(total_pkts)
+    
+    
+    def pgen_timer_hdr_to_dmac(self, pipe_id, app_id, batch_id, packet_id):
+        """
+        Given the fields of a 6-byte packet-gen header return an Ethernet MAC address
+        which encodes the same values.
+        """
+        pipe_shift = 3
+        return '%02x:00:%02x:%02x:%02x:%02x' % ((pipe_id << pipe_shift) | app_id,
+                                                batch_id >> 8,
+                                                batch_id & 0xFF,
+                                                packet_id >> 8,
+                                                packet_id & 0xFF)
+    def pgen_port(self, pipe_id):
+        """
+        Given a pipe return a port in that pipe which is usable for packet
+        generation.  Note that Tofino allows ports 68-71 in each pipe to be used for
+        packet generation while Tofino2 allows ports 0-7.  This example will use
+        either port 68 or port 6 in a pipe depending on chip type.
+        """
+        pipe_local_port = 68
+        return self.make_port(pipe_id, pipe_local_port)
+    
+    def make_port(self, pipe, local_port):
+        return (pipe << 7) | local_port
 
-
-    def setup_timer_pkt_gen(self, target, pkt_gen_app_id, pkt_gen_port):
+    def setup_timer_pkt_gen(self, bfrt_info, target, pkt_gen_app_id, dstAddr, srcAddr, ip_addr):
         logger.info("=============== Testing Packet Generator trigger by Timer ===============")
         pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         pktgen_pkt_buffer_table = bfrt_info.table_get("$PKTGEN_PKT_BUFFER")
         pktgen_port_cfg_table = bfrt_info.table_get("$PKTGEN_PORT_CFG")
-        self.i_t_table = bfrt_info.table_get("MyIngress.t")
 
         # timer pktgen app_id = 1 one shot 0
-        app_id = pkt_gen_app_id
+        app_id = 0 #pkt_gen_app_id
 
         # Assuming not including the pkt gen header
         # Assuming in bytes
-        pktlen = 194 # # of bytes: ethernet + ip + udp + ring_type + append + 100 byte payload
+
 
         pgen_pipe_id = 0
-        src_port = pgen_port(pgen_pipe_id)
+        src_port = 68 # self.pgen_port(pgen_pipe_id)
         
         p_count = 5  # packets per batch
-        b_count = 4  # batch number
+        b_count = 5  # batch number
         buff_offset = 144  # generated packets' payload will be taken from the offset in buffer
-        out_port = swports[0]
+        out_port = 192 #swports[0]
+        nonce = 33
+        packed_ip = socket.inet_aton(ip_addr)
+        ip_int = struct.unpack("!I", packed_ip)[0]
+       
         # build expected generated packets
-        p = testutils.simple_eth_packet(pktlen=pktlen)
-        p = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
-              IP(dst=ip_addr)/ \
-	      UDP(dport=1234, sport=5678)/ \
-	      RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1)/ \
-              Append(nonce=nonce,payload_size=12,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0,end_ts=0)
-        
-        pkt_lst = []
-        pkt_len = [pktlen] * p_count * b_count
-        for batch in range(b_count):
-            for pkt_num in range(p_count):
-                dmac = pgen_timer_hdr_to_dmac(pgen_pipe_id, g_timer_app_id, batch, pkt_num)
-                p_exp = Ether(dst=dmac, src=srcAddr, type=TYPE_IP)/ \
-                          IP(dst=ip_addr)/ \
-	                  UDP(dport=1234, sport=5678)/ \
-	                  RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1)/ \
-                          Append(nonce=nonce,payload_size=12,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0,end_ts=0)
-        
-                pkt_lst.append(p_exp)
-
+	p = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
+            IP(dst=ip_addr)/ \
+	    UDP(dport=1234, sport=5678)/ \
+	    RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1)/ \
+            Append(nonce=nonce,payload_size=10,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0)/ \
+            Raw(load=b"hhhhhhhhhh")
+        raw_p = bytes(p)
+        pktlen = len(raw_p) #102 # # of bytes: ethernet + ip + udp + ring_type + append + 100 byte payload
         try:
+            logger.info("configure forwarding table")
+
             # Enable packet generation on the port
             logger.info("enable pktgen port")
             pktgen_port_cfg_table.entry_add(
                 target,
-                [pktgen_port_cfg_table.make_key([gc.KeyTuple('dev_port', pkt_gen_port)])],
+                [pktgen_port_cfg_table.make_key([gc.KeyTuple('dev_port', src_port)])],
                 [pktgen_port_cfg_table.make_data([gc.DataTuple('pktgen_enable', bool_val=True)])])
 
             # Configure the packet generation timer application
             logger.info("configure pktgen application")
             data = pktgen_app_cfg_table.make_data([gc.DataTuple('timer_nanosec', 100),
                                                    gc.DataTuple('app_enable', bool_val=False),
-                                                   gc.DataTuple('pkt_len', (pktlen - 6)),
+                                                   gc.DataTuple('pkt_len', pktlen),
                                                    gc.DataTuple('pkt_buffer_offset', buff_offset),
                                                    gc.DataTuple('pipe_local_source_port', src_port),
                                                    gc.DataTuple('increment_source_port', bool_val=False),
-                                                   gc.DataTuple('batch_count_cfg', b_count - 1),
-                                                   gc.DataTuple('packets_per_batch_cfg', p_count - 1),
+                                                   gc.DataTuple('batch_count_cfg', b_count-1),
+                                                   gc.DataTuple('packets_per_batch_cfg', p_count-1),
                                                    gc.DataTuple('ibg', 1),
                                                    gc.DataTuple('ibg_jitter', 0),
                                                    gc.DataTuple('ipg', 1000),
@@ -756,63 +858,70 @@ class SequencingTest(BfRuntimeTest):
                                                    gc.DataTuple('pkt_counter', 0),
                                                    gc.DataTuple('trigger_counter', 0)],
                                                   '$PKTGEN_TRIGGER_TIMER_ONE_SHOT')
+                                                  #'$PKTGEN_TRIGGER_TIMER_PERIODIC')
             pktgen_app_cfg_table.entry_add(
                 target,
                 [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
                 [data])
-
             logger.info("configure packet buffer")
             pktgen_pkt_buffer_table.entry_add(
                 target,
                 [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
-                                                   gc.KeyTuple('pkt_buffer_size', (pktlen - 6))])],
-                [pktgen_pkt_buffer_table.make_data([gc.DataTuple('buffer', str(p)[6:])])])  # p[6:]))])
-
+                                                   gc.KeyTuple('pkt_buffer_size', pktlen)])],
+                [pktgen_pkt_buffer_table.make_data([gc.DataTuple('buffer', raw_p)])])  # p[6:]))])
+            #resp = pktgen_pkt_buffer_table.entry_get(
+            #    target,
+            #    [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
+            #                                       gc.KeyTuple('pkt_buffer_size', (pktlen - 6))])],
+            #    {"from_hw": False})
+            #data_dict = next(resp)[0] .to_dict()
+            #print()
+            #data_dict
             logger.info("enable pktgen")
             pktgen_app_cfg_table.entry_mod(
                 target,
                 [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
                 [pktgen_app_cfg_table.make_data([gc.DataTuple('app_enable', bool_val=True)],
                                                 '$PKTGEN_TRIGGER_TIMER_ONE_SHOT')]
+                                                #'$PKTGEN_TRIGGER_TIMER_PERIODIC')]
             )
+            
+            # Use the per-app counters to wait for all packets to be generated.
+            for _ in range(b_count * p_count):
 
-            ## Use the per-app counters to wait for all packets to be generated.
-            #for _ in range(b_count * p_count):
+                # verify pktgen related counters
+                resp = pktgen_app_cfg_table.entry_get(
+                    target,
+                    [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
+                    {"from_hw": True},
+                    pktgen_app_cfg_table.make_data([gc.DataTuple('batch_counter'),
+                                                    gc.DataTuple('pkt_counter'),
+                                                    gc.DataTuple('trigger_counter')],
+                                                   '$PKTGEN_TRIGGER_TIMER_PERIODIC', get=True)
+                )
+                data_dict = next(resp)[0].to_dict()
+                tri_value = data_dict["trigger_counter"]
+                if tri_value != 1:
+                    logger.info("Triggered %d times", tri_value)
+                    # Wait for packets to be generated
+                    time.sleep(2)
+                    continue
+                batch_value = data_dict["batch_counter"]
+                if batch_value != b_count:
+                    logger.info("Generated %d of %d batches", batch_value, b_count)
+                    # Wait for packets to be generated
+                    time.sleep(2)
+                    continue
+                pkt_value = data_dict["pkt_counter"]
+                if pkt_value != b_count * p_count:
+                    logger.info("Generated %d of %d packets", pkt_value, b_count * p_count)
+                    # Wait for packets to be generated
+                    time.sleep(2)
+                    continue
+                break
 
-            #    # verify pktgen related counters
-            #    resp = pktgen_app_cfg_table.entry_get(
-            #        target,
-            #        [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
-            #        {"from_hw": True},
-            #        pktgen_app_cfg_table.make_data([gc.DataTuple('batch_counter'),
-            #                                        gc.DataTuple('pkt_counter'),
-            #                                        gc.DataTuple('trigger_counter')],
-            #                                       '$PKTGEN_TRIGGER_TIMER_ONE_SHOT', get=True)
-            #    )
-            #    data_dict = next(resp)[0].to_dict()
-            #    tri_value = data_dict["trigger_counter"]
-            #    if tri_value != 1:
-            #        logger.info("Triggered %d of 1 times", tri_value)
-            #        # Wait for packets to be generated
-            #        time.sleep(2)
-            #        continue
-            #    batch_value = data_dict["batch_counter"]
-            #    if batch_value != b_count:
-            #        logger.info("Generated %d of %d batches", batch_value, b_count)
-            #        # Wait for packets to be generated
-            #        time.sleep(2)
-            #        continue
-            #    pkt_value = data_dict["pkt_counter"]
-            #    if pkt_value != b_count * p_count:
-            #        logger.info("Generated %d of %d packets", pkt_value, b_count * p_count)
-            #        # Wait for packets to be generated
-            #        time.sleep(2)
-            #        continue
-            #    break
-
-            ## Verify generated packets
+            # Verify generated packets
             #verify_multiple_packets(self, out_port, pkt_lst, pkt_len, tmo=5)
-
         except gc.BfruntimeRpcException as e:
             raise e
         finally:
@@ -857,7 +966,7 @@ class SequencingTest(BfRuntimeTest):
               IP(dst=ip_addr)/ \
 	      UDP(dport=1234, sport=5678)/ \
 	      RingType(type=TYPE_APPEND_RESP, num_entries=1, shard_id=1,switch_to_process=1)/ \
-              Append(nonce=nonce,payload_size=100,stream_id=0,g_idx=seq_no,cntrl_pkt_it=1,client_ip=ip_int,recv_port=192,start_ts=3333,end_ts=3344)
+              Append(nonce=nonce,payload_size=100,stream_id=0,g_idx=seq_no,cntrl_pkt_it=1,client_ip=ip_int,recv_port=192,start_ts=3333)
         payload= Raw(load=b"Hello world!")
         pkt = pkt/payload
         print("ACK PACKET WE ARE SENDING:")
@@ -894,9 +1003,9 @@ class SequencingTest(BfRuntimeTest):
         # Second, send an append request packet once
         self.send_test_append_packet(interface,dstAddr,srcAddr,ip_addr)
         # Third, send the cntrl packet again (NO loop)
-        self.send_test_cntrl_packet(interface,dstAddr,srcAddr,ip_addr,in_cntrl, g_idx)
+        #self.send_test_cntrl_packet(interface,dstAddr,srcAddr,ip_addr,in_cntrl, g_idx)
         g_idx = 1
-        self.send_test_cntrl_packet(interface,dstAddr,srcAddr,ip_addr,in_cntrl, g_idx)
+        #self.send_test_cntrl_packet(interface,dstAddr,srcAddr,ip_addr,in_cntrl, g_idx)
         #self.send_test_cntrl_packet(interface,dstAddr,srcAddr,ip_addr,in_cntrl, g_idx)
         # Fourth, send append response packet once
         self.send_test_ack_packet(interface,dstAddr,srcAddr,ip_addr,g_idx)
@@ -934,7 +1043,7 @@ class SequencingTest(BfRuntimeTest):
               IP(dst=ip_addr)/ \
 	      UDP(dport=1234, sport=5678)/ \
 	      RingType(type=TYPE_APPEND, num_entries=1, shard_id=1,switch_to_process=1)/ \
-              Append(nonce=nonce,payload_size=12,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0,end_ts=0)
+              Append(nonce=nonce,payload_size=12,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0)
         payload= Raw(load=b"Hello world!")
         pkt = pkt/payload
         #pkt.show()
@@ -1037,6 +1146,7 @@ class SequencingTest(BfRuntimeTest):
 	port_speed = data['port_speed']
 	port_fec = data['port_fec']
 	loopback_port = data['loopback_port']
+        pktgen_loopback_port = 169
 	cpu_interface = data['cpu_interface']
 	external_interface = data['external_interface']
 	list_of_switch_ports = data['switch_ports']
@@ -1072,20 +1182,20 @@ class SequencingTest(BfRuntimeTest):
         
         if run_setup:
             # Initialize all 5, 21, 3, 19, 23, 7 ports (332244)
-	    self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring)
+	    self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring, pktgen_loopback_port)
             # ============================================== UNIT TESTS ================================================= #
             ####################### SETUP MATCH-ACTION TABLES
             global_group_id = 1
             # ipv4_lpm
             self.setup_client_response_table(target, bfrt_info, client_ips) 
             # Circulate_table
-            self.setup_circulate_table(target, bfrt_info, loopback_port)
+            self.setup_circulate_table(target, bfrt_info, pktgen_loopback_port)
             # Shard port
             self.setup_shard_multicast_groups(target, bfrt_info, shard_to_port_gp)
             # Check switch routing
             self.setup_switch_check(target, bfrt_info, size_of_ring, ports_to_ring_members)
             # Cntrl ID -> IP
-            self.setup_cntrl_table(target, bfrt_info, in_cntrl, out_cntrl, cpu_port) #cntrl_port)
+            self.setup_cntrl_table(target, bfrt_info, in_cntrl, out_cntrl, cntrl_port)
             # Ring View
             #self.setup_view_check(target, bfrt_info) TODO
             # Tail
@@ -1094,17 +1204,19 @@ class SequencingTest(BfRuntimeTest):
             self.setup_subscribe_routing_table(target, bfrt_info, ports_to_ring_members, cpu_port)
             # Acknowledgement tables (primarily handle subscription responses)
             self.setup_subscriber_acks_table(target, bfrt_info)
-            # Pktgen
-            self.setup_timer_pkt_gen(target, pkt_gen_app_id, pkt_gen_port)
+        
+        print("Loopback Port")
+        print(loopback_port)
 
         ######################## SETUP DATA PLANE LISTENER
         recv_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(bfrt_info,target,cpu_interface,))
         recv_thread.start()
         time.sleep(2)
         
-        pktgen_thread = threading.Thread(target=self.process_pktgen, args=(cpu_interface,))
+        pktgen_thread = threading.Thread(target=self.process_pktgen, args=(bfrt_info, target, cpu_interface,))
         pktgen_thread.start()
         time.sleep(2)
+
 
 
         ####### UNIT TESTS ######################33
@@ -1127,7 +1239,10 @@ class SequencingTest(BfRuntimeTest):
         #self.test_tail(cpu_interface, dstAddr, srcAddr, ipAddr, in_cntrl)
 
         # Pktgen test
-        
+        self.send_test_cntrl_packet(cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl, 0)
+        time.sleep(2)
+        # One shot
+        self.setup_timer_pkt_gen(bfrt_info, target, 1, dstAddr, srcAddr, ipAddr)
 
         ####### TEST 1: End-to-end sequencing test ######
         # Send one append
