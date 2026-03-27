@@ -1,24 +1,25 @@
 #pragma once
-
-// #include <cstdint>
-// #include <string>
 #include <atomic>
-// #include <memory>
-// #include <spdlog/spdlog.h>
-#include "yaml-cpp/yaml.h"
 #include <thread>
-
+#include <string>
+#include <memory>
+#include "yaml-cpp/yaml.h"
 #include "utils.h"
 #include "spdlog/spdlog.h"
-
 #include "network.h"
 #include "trace.h"
 
-constexpr uint64_t MAX_WAIT_TIME = 1000;
+#include "structs.h"
+
+#define TIMEOUT std::chrono::seconds(10)
+
+enum SeqPacketType {
+    sendtoken
+};
 
 class CorfuSequencer {
     public:
-        CorfuSequencer(YAML::Node config);
+        CorfuSequencer(std::string input_file);
         ~CorfuSequencer();
         
         uint64_t assign_next_idx(); // Assigns the next sequence number
@@ -34,4 +35,11 @@ class CorfuSequencer {
         std::thread sequencer_thread;
         std::atomic<uint64_t> curr_idx{0};
         std::atomic<bool> terminate{false};
+
+        std::array<uint8_t, 6> switch_mac;
+        std::string switch_ip;
+
+        std::string send_port;
+
+        uint64_t num_pkt_types;
 };

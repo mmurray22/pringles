@@ -1,53 +1,83 @@
 #include "corfu_sequencer.h"
 
-CorfuSequencer::CorfuSequencer(YAML::Node config) {
-    net = std::make_unique<Network>(get_threads(config), 
-                                    std::to_string(get_send_port(config)), 
-                                    std::to_string(get_recv_port(config)),
-								    get_socket_type(config),
-                                                                    get_log_level(config),
-								    get_batch_size(config),
-								    get_batch_on(config),
-								    get_interface(config),
-								    get_self_ip(config),
-								    get_packet_types(config));
+CorfuSequencer::CorfuSequencer(std::string input_file) {
+    YAML::Node config = YAML::LoadFile(input_file);
+    this->switch_mac = get_switch_mac(config);
+    this->switch_ip = get_switch_ip(config); 
+    this->num_pkt_types = get_num_pkt_types(config);
+    
+    bool run_threads = false;
+    net = std::make_shared<Network>(
+        std::to_string(get_send_port(config)), 
+        std::to_string(get_recv_port(config)),
+        get_socket_type(config),
+        get_log_level(config),
+        get_batch_size(config),
+        get_batch_on(config),
+        get_batch_timeout(config),
+        get_interface(config),
+        get_self_ip(config),
+        num_pkt_types,
+        run_threads
+    );
+
+    this->send_port = std::to_string(get_send_port(config));
+
+    terminate = false;
+    curr_idx.store(0);
 
     sequencer_thread = std::thread(&CorfuSequencer::run_sequencer_thread, this);
 }
 
 CorfuSequencer::~CorfuSequencer() {
     terminate = true;
-    net->done();
-    sequencer_thread.join();
+    if (sequencer_thread.joinable()) {
+        sequencer_thread.join();
+    }
+    spdlog::debug("Sequencer thread joined!");
 }
 
 void CorfuSequencer::run_sequencer_thread() {
-    std::unique_ptr<std::string> rcv_str;
-    uint64_t wait_time = 10;
+    spdlog::info("Sequencer active polling thread started.");
+
     while (!terminate) {
-        if (wait_time >= MAX_WAIT_TIME) {
-            spdlog::debug("!!!!!!!!!!!!!!No more packets to receive.");
-            break;
+        char* recv_ptr = net->recv_packet();
+        
+        if (!recv_ptr) {
+            continue; 
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
-        wait_time += 10;
+        // we received a packet!!!!!
+        auto rcv_str = std::make_unique<std::string>(recv_ptr);
+        corfuclient::Payload packet_contents = corfu_client_deserialize_str_entry(std::move(rcv_str));
 
-        rcv_str = net->read_from_recv_queue();
-        if (!rcv_str) {
-            continue;
-        }
+        spdlog::debug("Parsed Packet Type: {}", packet_contents.packet_type());
+        spdlog::debug("Has token_req? : {}", packet_contents.has_token_req());
 
-        corfuclient::Payload packet_contents = Trace<std::string>::corfu_client_deserialize_str_entry(std::move(rcv_str));
-
-        if (packet_contents.token_req().reqtoken()) {
-            spdlog::info("sequencer received a token request");
+        if (packet_contents.has_token_req() && packet_contents.token_req().reqtoken()) {
+            spdlog::debug("Sequencer received a token request from client {}", packet_contents.clientid());
+            
             uint64_t idx = assign_next_idx();
+            std::unique_ptr<std::string> token_packet = corfu_sequencer_serialize_str_entry(CORFU_GETTOKEN_REPLY_PROTO_TYPE, idx);
+            
+            uint64_t allocated_packet_size = token_packet->length() + 1;
+            std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+            memcpy(packet.get(), token_packet->c_str(), allocated_packet_size);
+            packet[token_packet->length()] = '\0';
 
-            std::unique_ptr<std::string> token_packet = Trace<std::string>::corfu_sequencer_serialize_str_entry(CORFU_GETTOKEN_REPLY_PROTO_TYPE, idx);
-            net->add_to_send_queue(std::move(token_packet), packet_contents.clientid());
+            // TODO: how to get these things?
+            // net->send_packet(std::move(packet), allocated_packet_size, static_cast<int>(SeqPacketType::sendtoken), ETH_CLI_SEQ, switch_mac, inet_addr(switch_ip.c_str()));
+            net->send_client_udp_packet(
+                std::move(packet), 
+                allocated_packet_size, 
+                static_cast<int>(SeqPacketType::sendtoken),
+                ETH_CLI_SEQ, 
+                switch_ip,
+                send_port
+            );
+        } else {
+            spdlog::error("PACKET DROPPED: Did not match token_req condition!");
         }
-        wait_time = 10;
     }
 }
 

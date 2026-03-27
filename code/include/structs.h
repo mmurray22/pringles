@@ -1,3 +1,4 @@
+#pragma once
 /*
  * Contains custom network headers required by certain logging
  * systems. Many use the standard UDP headers, but some require custom

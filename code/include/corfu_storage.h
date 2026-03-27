@@ -1,29 +1,17 @@
 #pragma once
-
-// #include <string>
-// #include <cstdint>
 #include <unordered_map>
-#include "base_storage.h"
 #include <atomic>
-
+#include <memory>
+#include <thread>
+#include "base_storage.h"
 #include "network.h"
 #include "trace.h"
-
-// #include <thread>
-// #include <chrono>
-// #include <memory>
-
-// #include <spdlog/spdlog.h>
 
 
 class CorfuStorage : public BaseStorage {
     public:
         CorfuStorage(uint64_t ssid, std::shared_ptr<Network> net);
         ~CorfuStorage();
-
-        bool sync_store(uint64_t idx, std::string entry) override;
-        bool lazy_store(uint64_t idx, std::string entry) override;
-        std::string get(uint64_t idx) override;
 
         // response functions for when the server receives certain packets over the network
         // used as helpers in the server function
