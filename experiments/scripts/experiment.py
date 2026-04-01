@@ -83,7 +83,7 @@ def generate_switch_config(base_config, i, cntrl_port_num, ring_size, client_bas
     return switch_config
 
 
-def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None):
+def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, dst_mac=None, json_name=None, num_failures=None, network_interface=None, shard_id=None, total_shards=None, shard_multicast=None):
     """Generates the configuration dictionary for a client or server."""
     
     # Base port calculation to ensure uniqueness
@@ -94,13 +94,11 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     exp_params = base_config['experiment_parameters']
     proto_params = base_config['protocol_batching']
     net_params = base_config['network_setup']
-    route_params = base_config['routing']
 
     # Calculate experiment duration, adding a delay for servers (Feature 3)
     exp_duration = exp_params['experiment_duration']
     warm_up = exp_params['warm_up']
     cool_down = exp_params['cool_down']
-
 
     if entity_type == 'server':
         # Servers run longer than the client to ensure no early termination
@@ -109,12 +107,14 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         final_duration = exp_duration + warm_up + cool_down + SWITCH_START_DELAY
     else:
         final_duration = exp_duration + warm_up + cool_down
-
+    
     # Initialize the base YAML structure
+    # Include the network information for EVERY component of the system in every YAML
     cli_macs = [QuotedString(mac) for mac in net_params['cli_macs']]
     cli_ips = [QuotedString(mac) for mac in net_params['cli_ips']]
     stor_macs = [QuotedString(mac) for mac in net_params['stor_macs']]
     stor_ips = [QuotedString(mac) for mac in net_params['stor_ips']]
+
     yaml_config = {
         'log_level': exp_params['log_level'],
         'switch_ip': QuotedString(net_params['switch_ip']),
@@ -141,18 +141,18 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         'experiment_duration': final_duration, 
         'payload_size': exp_params['message_size'],
         'use_switch': exp_params['use_switch'],
-        'use_store': exp_params['use_store']
+        'use_store': exp_params['use_store'],
+        'use_shard': exp_params['use_shard'],
+        'use_streams': exp_params['use_streams'],
+        'ack_threshold': exp_params['ack_threshold'],
+        'use_client_count_acks': exp_params['use_client_count_acks'] 
     }
     
     # Pre-calculate and wrap client destination MACs (used by both client to send, and server to reply)
-    client_macs = [QuotedString(mac) for mac in route_params['client_dest_macs']]
-    server_macs = [QuotedString(mac) for mac in route_params['server_dest_macs']]
 
     # --- Client Specific Fields ---
     if entity_type == 'client':
-        # Routing: Wrap list elements (IPs)
-        client_ips = [QuotedString(ip) for ip in route_params['list_client_dest_ips']]
-        
+        dummy = ""
         yaml_config.update({
             'sequencer_type': proto_params['sequencer_type'],
             'num_client_threads': exp_params['num_client_threads'],
@@ -170,16 +170,13 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             # cool down time
             'cool_down': cool_down,
             'interface': QuotedString(network_interface),
-            'cli_idx': entity_idx
+            'cli_idx': entity_idx,
+            'shard_multicast_addr': QuotedString(dummy)
         })
     
     # --- Storage Server Specific Fields ---
     elif entity_type == 'server':
-        # Routing: Wrap list elements (IPs)
-        server_ips = [QuotedString(ip) for ip in route_params['list_storage_server_dest_ips']]
-
-        # Randomly generated values for simplicity, as requested
-        shard_id = random.randint(0, 999)
+        # TODO dummy shard_switch_id
         shard_switch_id = random.randint(0, 9)
 
         yaml_config.update({
@@ -189,15 +186,43 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'stor_id': entity_id, # Integer
             'use_switch': exp_params['use_switch'],
             'num_storage_threads': exp_params['num_storage_threads'],
-            'interface': QuotedString(network_interface)
+            'interface': QuotedString(network_interface),
+            'shard_multicast_addr': QuotedString(shard_multicast)
         })
 
     elif entity_type == 'switch':
+        dummy = ""
         yaml_config.update({
-            'interface': QuotedString(network_interface)
+            'interface': QuotedString(network_interface),
+            'all_shards': total_shards,
+            'shard_multicast_addr': QuotedString(dummy)
         })
 
     return yaml_config
+
+def kill_process(process_name, ssh_key, ssh_user, ip):
+    """
+    Executes a program on a remote machine asynchronously using SSH, 
+    redirecting stdout/stderr to a log file. Returns the Popen object and the log filename.
+    """
+    # NEW/MODIFIED: redirect all output (&>) to the log file, and run in background (&)
+    command = []
+    remote_command = f'killall {process_name}'
+    full_remote_command = f'/bin/bash -c "{remote_command} ; sleep 1"'
+    command = [
+        'ssh',
+        '-i', ssh_key,
+        '-o', 'StrictHostKeyChecking=no', # Bypass host key check
+        '-o', 'UserKnownHostsFile=/dev/null', # Prevent known_hosts interference
+        f'{ssh_user}@{ip}',
+        remote_command # Use the command that includes logging/backgrounding
+    ]
+    
+    # UPDATED PRINT: Reflects the logging change
+    print(f"KILLING program on {ip} (as root): {' '.join(command)}...")
+
+    subprocess.Popen(command, stdout=subprocess.PIPE)
+
 
 def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index, prefix):
     """
@@ -510,7 +535,7 @@ def process_and_aggregate_results(local_target_dir, ring_size):
             "total_avg_latency": final_avg_latency,
             "num_clients": file_count,
             "batch_size": batch_size,
-            "num_switches_in_ring": ring_size[it]
+            #"num_switches_in_ring": ring_size[it]
         }
         it += 1
 
@@ -941,13 +966,35 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
     switch_processes = []
     switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
     
+    # Setup shards TODO only for a single switch
+    size_of_shard = config['experiment_parameters']['number_of_machines_per_shard']
+    print(f"Size of shards: {size_of_shard}")
+    total_list_of_shards = []
+    ip_to_shard = {}
+    shard_to_multicast_addr = []
+    num_of_shard = 0
+    base_multicast_addr = "239.1.1."
+    for i in range(0, len(server_ips), size_of_shard): # TODO check whether the number of servers divides evenly into shard size
+        shard = []
+        for j in range(i, i+size_of_shard):
+            print(server_ips[j])
+            shard.append(server_ips[j])
+            ip_to_shard[server_ips[j]] = num_of_shard
+        total_list_of_shards.append(shard)
+        num_of_shard += 1
+
+    for i in range(0, num_of_shard): #255 <-- TODO max number of shards
+        shard_to_multicast_addr.append((base_multicast_addr + str(i)));
+    yaml_shard_to_multicast_addr = [QuotedString(addr) for addr in shard_to_multicast_addr]
+    print(yaml_shard_to_multicast_addr)
+
     try:
         # Assumption: All servers respond to all destination MAC defined in the TOML
         server_dst_mac_for_all = config['routing']['server_dest_macs'][0]
 
         # --- 5. Generate Server Configurations and Start Processes ---
         print("\n--- Starting Storage Servers ---")
-        
+   
         for i, ip in enumerate(server_ips):
             server_id = random.randint(100000, 999999) 
             config_filename = f"server_config_{json_output_name}_{i}.yaml" # Unique filename
@@ -957,13 +1004,18 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
                 config, 
                 'server', 
                 ip, 
-                port_offset, 
+                port_offset,
                 entity_id=server_id,
                 entity_idx=i,
                 dst_mac=server_dst_mac_for_all,
-                network_interface=server_net_ifs[i]
+                network_interface=server_net_ifs[i],
+                shard_id=ip_to_shard[ip],
+                shard_multicast=shard_to_multicast_addr[ip_to_shard[ip]]
             )
             
+            server_exec = os.path.basename(path_server) # Use the basename remotely
+            kill_process(server_exec, ssh_key, ssh_user, ip)
+               
             # Write YAML file locally
             with open(config_filename, 'w') as f:
                 yaml.dump(server_config, f, default_flow_style=False)
@@ -984,10 +1036,12 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
             
             # Start remote process
             if not with_tunnel:
+                print("MADE IT HERE ====================================================")
                 print(path_server)
-                server_exec = os.path.basename(path_server) # Use the basename remotely
                 exec_filepath = "~/" + server_exec
                 prefix = "server"
+                execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix)
+                # Second, execute the command
                 process, log_filename = execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
                 print("Done executing the server!")
                 if process:
@@ -1013,7 +1067,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
         time.sleep(SERVER_START_DELAY)
         
         # --- 7. Generate Switch Configuration and Start Process --- # TODO
-        if False: #not with_tunnel:
+        if not config['experiment_parameters']['use_hardware_switch']: #not with_tunnel:
             print("\n--- Starting Switch ---")
             switch_id = random.randint(100000, 999999)
             switch_config_filename = f"switch_config_{json_output_name}.yaml" # Unique filename
@@ -1027,9 +1081,13 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
                 entity_id=switch_id,
                 json_name=json_output_name,
                 num_failures=num_failures,
-                network_interface=switch_net_if
+                network_interface=switch_net_if,
+                total_shards=yaml_shard_to_multicast_addr
             )
             
+            switch_exec = os.path.basename(path_switch) # Use the basename remotely
+            kill_process(switch_exec, ssh_key, ssh_user, ip)
+             
             # Write YAML file locally
             with open(switch_config_filename, 'w') as f:
                 yaml.dump(switch_config, f, default_flow_style=False)
@@ -1072,7 +1130,9 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
                  num_failures=num_failures,
                  network_interface=cli_net_ifs[i]
             )
-
+            client_exec = os.path.basename(path_client) # Use the basename remotely
+            kill_process(client_exec, ssh_key, ssh_user, ip)
+             
             # Write YAML file locally
             with open(config_filename, 'w') as f:
                 yaml.dump(client_config, f, default_flow_style=False)
@@ -1090,7 +1150,6 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
             
             #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name) TODO
             if not with_tunnel:
-                client_exec = os.path.basename(path_client) # Use the basename remotely
                 cli_exec_file = "~/" + client_exec
                 prefix = "client"
                 client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
@@ -1289,13 +1348,14 @@ def main(config_file="config.toml"):
         ring_sizes.append(len(current_config['experiment_parameters']['switches_in_ring']))
     
         # --- 2.5. START SWITCHES --- 
-        current_config = deepcopy(base_config)
-        switches_up = True
-        switches_up = setup_switches(current_config) #TODO 
+        if current_config['experiment_parameters']['use_hardware_switch']:
+            current_config = deepcopy(base_config)
+            switches_up = True
+            switches_up = setup_switches(current_config) #TODO 
 
-        num_switches = len(base_config['experiment_parameters']['switches_in_ring'])
-        if switches_up:
-            print("--- All {num_switches} switches up and running ---")
+            num_switches = len(base_config['experiment_parameters']['switches_in_ring'])
+            if switches_up:
+                print("--- All {num_switches} switches up and running ---")
     
         # 3. Run the full experiment cycle with the merged configuration
         run_experiment_cycle(current_config, exp_index, local_results_dir, with_tunnel)

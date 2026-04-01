@@ -86,9 +86,8 @@ void receiver(std::shared_ptr<Network> net, std::string switch_ip, std::string s
 	    continue;
 	}
         struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-	spdlog::debug("Number of entries: {}", ntohl(ring->num_entries));
-        char* pkt = (char*)std::malloc(ntohl(ring->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1));
-        memcpy(pkt, recv_ptr, ntohl(ring->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1)); 
+        char* pkt = (char*)std::malloc(ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1));
+        memcpy(pkt, recv_ptr, ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1)); 
  	recv_q.push(pkt);
         {
 	    std::unique_lock<std::mutex> lock(recv_q_mutex);
@@ -111,6 +110,7 @@ void custom_udp_server(std::shared_ptr<Network> net,
     (void) thread_id;
     (void) batch_size;
     (void) batch_on;
+    (void) cli_ips;
 
     //std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id);
     spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
@@ -131,7 +131,7 @@ void custom_udp_server(std::shared_ptr<Network> net,
 		std::unique_lock<std::mutex> lock(recv_q_mutex);
 		cv.wait(lock, [] {return end_thread || !recv_q.empty();});
 		if (!recv_q.try_pop(recv_ptr) || !recv_ptr) {
-            	    net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, switch_ip, switch_recv_port); // TODO TEST IF THIS IS THE ISSUE
+            	    net->send_udp_packet(NULL, 0, switch_ip, switch_recv_port); // TODO TEST IF THIS IS THE ISSUE
 	            continue;
 	        }
 	    }
@@ -140,17 +140,18 @@ void custom_udp_server(std::shared_ptr<Network> net,
                 net->send_udp_packet(NULL, 0, 0, ETH_APPEND_REQ, switch_ip, switch_recv_port);
 		continue;
 	    }*/
+	    struct ring_type* append_type = (struct ring_type*)recv_ptr;
 	    struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-	    uint64_t num_entries = ntohl(append_entry->num_entries);
+	    uint64_t num_entries = ntohs(append_type->num_entries);
 	    
 	    // Update the type of the type header
 
 	    uint64_t recv_offset = 0;
-	    spdlog::debug("IN THE RECEIVE THREAD: Num entries {}, Payload size: {}", ntohl(append_entry->num_entries), ntohl(append_entry->payload_size));
+	    spdlog::debug("IN THE RECEIVE THREAD: Num entries {}, Payload size: {}", num_entries, ntohl(append_entry->payload_size));
 	    for (uint64_t i = 0; i < num_entries; i++) {
 	        struct ring_type* type_hdr = (struct ring_type*)(recv_ptr + recv_offset);
 	        type_hdr->type = htons(ETH_APPEND_RESP);
-	        spdlog::debug("Batch append entry payload size: {}, receive port: {}",  ntohl(((struct ring_append_entry*)(recv_ptr + recv_offset + sizeof(struct ring_type)))->payload_size), ntohl(((struct ring_append_entry*)(recv_ptr + recv_offset + sizeof(struct ring_type)))->recv_port));
+	        spdlog::debug("Batch append entry payload size: {}, receive port: {}",  ntohl(((struct ring_append_entry*)(recv_ptr + recv_offset + sizeof(struct ring_type)))->payload_size), ntohs(((struct ring_append_entry*)(recv_ptr + recv_offset + sizeof(struct ring_type)))->recv_port));
 	         // Create reply packet
  	        uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr;
      	        std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
@@ -180,13 +181,15 @@ void custom_udp_server(std::shared_ptr<Network> net,
 	        //spdlog::debug("Eth header type: {}", ((struct ring_type*)recv_ptr)->type);
 	        // Send the packet to the network library to send out
 	        if (use_switch) {
-     	             net->send_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, switch_ip, switch_recv_port);
+     	             net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, switch_recv_port);
 	        } else {
-	            //spdlog::debug("Sending to IP address: {}", cli_ips[batch_append_entry->cli_idx]);
-		    // std::vector<std::string> store_ips = get_stor_ips(config);
-		    // for (uint64_t i = 0; i < ) {
-     	            net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, 0, ETH_APPEND_RESP, cli_ips[ntohl(batch_append_entry->cli_idx)], std::to_string(batch_append_entry->recv_port));
-		    // }
+		    char buffer[INET_ADDRSTRLEN];
+    		    if (inet_ntop(AF_INET, &batch_append_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
+		         spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
+		         memset(buffer, 0, INET_ADDRSTRLEN);
+    		    }
+		    std::string client_ip(buffer);
+     	            net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, client_ip, std::to_string(batch_append_entry->recv_port));
 	        }
 	        
 	        recv_offset += (size_of_type_hdr + size_of_hdr + old_payload_size + 1);

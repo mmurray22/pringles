@@ -46,15 +46,14 @@ For static linking:
 1. Spdlog:
 cd /proj/ove-PG0/murray/spdlog
 rm -rf build && mkdir build && cd build
-cmake ..
-make-j$(nproc)
-make install
+cmake .. -DCMAKE_BUILD_TYPE=Release -DSPDLOG_BUILD_STATIC=ON -DSPDLOG_BUILD_SHARED=OFF -DSPDLOG_BUILD_EXAMPLE=OFF -DSPDLOG_BUILD_TESTS=OFF
+cmake --build . --parallel $(nproc)
 
-2. oneTBB
+2. oneTBB (need to get libtbb.a)
 cd /proj/ove-PG0/murray/oneTBB
 rm -rf build && mkdir build && cd build
-cmake ..
-make-j$(nproc)
+cmake .. -DCMAKE_BUILD_TYPE=Release -DTBB_STATIC=ON -DTBB_TEST=OFF
+cmake --build . --parallel $(nproc)
 
 To compile, follow these steps:
 1. `cd /path/to/pringles`

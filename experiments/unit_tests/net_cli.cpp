@@ -61,110 +61,6 @@ tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>> recv_q;
 //std::unordered_map<uint64_t, std::queue<char*>> recv_q;
 std::condition_variable cv;
 
-void receiver(int recv_socket,
-              char* recv_ptr) {
-
-    spdlog::critical("Network Recv Thread starting with TID = {}", gettid());
-    while (!end_thread) {
-        int numbytes = 0;
-        struct sockaddr_storage src_addr;
-        socklen_t addr_len = sizeof src_addr;
-        if ((numbytes = recvfrom(recv_socket, recv_ptr, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
-            continue;
-        }
-
-        if (!recv_ptr) {
-            continue;
-        }
-        struct ethhdr* eth = (struct ethhdr*)recv_ptr;
-        if (ntohs(eth->h_proto) != ETH_APPEND_RESP) {
-            continue;
-        }
-
-	// Unpack batch
-        size_t size_of_hdr = get_ring_append_size();
-	struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
-	uint64_t recv_offset = sizeof(struct ethhdr) + sizeof(iphdr) + size_of_hdr;
-	//spdlog::debug("Received NEW packet with num entries = {}", append_entry->num_entries);
-	for (uint64_t i = 0; i < append_entry->num_entries; i++) {
-	    struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + recv_offset);
-	    //spdlog::debug("Received packet with num entries = {}, The payload size: {}, thread id: {}", ring->num_entries, ring->payload_size, ring->thread_id);
-	    char* pkt = (char*)std::malloc(sizeof(struct ring_append_entry) + ring->payload_size);
-            memcpy(pkt, (char*)(recv_ptr + recv_offset), sizeof(struct ring_append_entry) + ring->payload_size); 
-        
-    	    tbb::concurrent_hash_map<uint64_t, tbb::concurrent_queue<char*>>::accessor acc;
- 	    if (!recv_q.find(acc, ring->thread_id % NUM_THREADS)) {
-	    	spdlog::debug("UNKNOWN THREAD ID {}, skipping", ring->thread_id);
-	    }
-            tbb::concurrent_queue<char*>& push_q = acc->second;
-	    acc.release();
-	    //spdlog::debug("THREAD ID {}", ring->thread_id);
-
-
-	    push_q.push(pkt);
-	    recv_offset += (size_of_hdr + ring->payload_size);
-	}
-
-	{
-	    std::unique_lock<std::mutex> lock(recv_q_mutex);
-        }
-	//spdlog::debug("NOTFYING THE CONDITION VARIABLE!");
-	cv.notify_all();
-    }
-}
-
-void custom_client_receiver(std::shared_ptr<Network> net, 
-		   uint64_t thread_id,
-		   std::string json_name,
-		   uint64_t batch_size,
-		   bool batch_on,
-		   std::string self_ip) {
-    uint64_t nonce = thread_id;
-    uint64_t highest_idx = 0;
-
-    spdlog::info("Simple Network: Sending/Receiving to remote host");
-    spdlog::critical("Network Client Receiver Thread starting with TID = {}, internal thread id {}", gettid(), thread_id);
-    std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
-
-    auto start_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-    double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(start_duration_since_epoch).count();
-    
-    // Only need to read from the map once to get the queue
-    while (!end_thread) {
-     	// Create packet buffer which will be sent  
-     	bool got_quorum = false;
-        double start_time = stat->getStartLat();
-        while (!got_quorum) {
-	    if (end_thread) {
-                break;
-	    }
-	
-	    char* recv_ptr = net->recv_packet();
-	    if (!recv_ptr) {
-	        continue;
-	    }
-	    
-	    spdlog::debug("Registering the time and operation!");
-	    struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
-            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-	    if (type_hdr->type == ETH_APPEND_RESP && (append_entry->nonce - nonce) % NUM_THREADS == 0) {
-		spdlog::debug("Append RESPONSE RECEIVED from nonce {}!!!", append_entry->nonce);
-	        stat->getDuration(start_time);
-	        stat->addOp();
-	        got_quorum = true;
-	    }
-        }
-    }
-    auto end_duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-    double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(end_duration_since_epoch).count();
-    double dur = end_time_s - start_time_s;
-    spdlog::debug("Made it out of the loop!");
-    spdlog::critical("Highest index seen is: {}", highest_idx);
-    spdlog::critical("For  RECEIVER thread {}, the lat is: {}, tput: {}, total ops: {}", thread_id, stat->getAvgLatency(), stat->getThroughput((uint64_t)dur), stat->getTotalOps());
-    stat->exportResultsToJson();
-    net->done();
-}
-
 void custom_client(std::shared_ptr<Network> net, 
 		   uint64_t thread_id,
 		   std::string json_name,
@@ -186,7 +82,8 @@ void custom_client(std::shared_ptr<Network> net,
     uint64_t highest_idx = 0;
 
     std::unique_ptr<Stats> stat = std::make_unique<Stats>(batch_size, batch_on, json_name, thread_id, self_ip);
-    std::unique_ptr<struct ring_type> ring_type_hdr = create_ring_type(ETH_APPEND_REQ);
+
+
     
     spdlog::info("Simple Network: Sending/Receiving to remote host");
     spdlog::critical("Network Client Thread starting with TID = {}, internal thread id {}", gettid(), thread_id);
@@ -196,20 +93,18 @@ void custom_client(std::shared_ptr<Network> net,
     std::string payload(payload_size, 'x');
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
-    std::unique_ptr<struct ring_append_entry> hdr = create_ring_append_entry(nonce, thread_id);
-    hdr.get()->cid = htonl(thread_id);
-    std::unique_ptr<struct ring_type> type_hdr = create_ring_type(ETH_APPEND_REQ);
+    std::unique_ptr<struct ring_append_entry> hdr = std::make_unique<struct ring_append_entry>();
+    std::unique_ptr<struct ring_type> type_hdr = std::make_unique<struct ring_type>();
     type_hdr.get()->type = htons(ETH_APPEND_REQ);
-    type_hdr.get()->num_entries = htonl(1);
+    type_hdr.get()->num_entries = htons(1);
+    type_hdr.get()->shard_id = 0;
+    type_hdr.get()->cid = htonl(thread_id);
     spdlog::debug("Type header: {}, size of: {} and type hdr: {}", type_hdr.get()->type, size_of_hdr, size_of_type_hdr);
     hdr.get()->payload_size = htonl(payload_size);
-    hdr.get()->num_entries = htonl(1);
     hdr.get()->thread_id = htonl(thread_id);
     hdr.get()->recv_port = htons(client_recv_port);
-    hdr.get()->cli_idx = htons(0);
     hdr.get()->g_idx = 0;
     hdr.get()->batch_size = 0;
-    hdr.get()->shard_id = 0;
     hdr.get()->timestamp = 0;
     hdr.get()->ring_view = htonl(1);
     hdr.get()->status = htonl(1);
@@ -232,11 +127,11 @@ void custom_client(std::shared_ptr<Network> net,
 	bool res = false;
 	if (use_switch) {
 	    spdlog::debug("Sending to the SWITCH at IP {} and port {} at port {} and idx {} and nonce {}", switch_ip, switch_receive_port, client_recv_port, cli_idx, nonce);
-	    res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, switch_ip, switch_receive_port);
+	    res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, switch_ip, switch_receive_port);
 	} else {
 	    for (uint64_t i = 0; i < stor_ips.size(); i++) {
 	        //spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {} at port {} and idx {}", stor_ip, stor_receive_port, client_recv_port, cli_idx);
-	        res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, 0, ETH_APPEND_REQ, stor_ips[i], stor_receive_port);
+	        res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, stor_ips[i], stor_receive_port);
 	    }
 	}
         if (!res) { // NEED TO CHECK BATCH SIZE TODO TODO 

@@ -1,110 +1,209 @@
+###### THIS IS WHERE WE DEFINE EXPERIMENT VARIABLES USED FOR ALL EXPERIMENTS ########
+
+###### Should have all the network information for the components of the system which are run on servers #######
 [network_setup]
-# Storage server information
-stor_recv_port = "30003"
-stor_macs = ["00:25:90:53:e6:00"]
-stor_ips = ["169.229.48.63"]
-stor_net_ifs = ["igb0"] 
-# Client information
+###### Storage server Network Information #####
+# This is the port the storage server(s) will be receiving info on
+# There is one receive port per machine, current assumption is each machine has one storage server
+stor_recv_port = "11111"
+# This is the mac address of every storage server being used
+stor_macs = ["11:11:11:11:11:11"]
+# This is the IP address of every storage server being used
+stor_ips = ["555.555.55.55"]
+# This is the network interface the storage servers use to send/receive
+stor_net_ifs = ["igb0"]
+######## Client Network Info #######
+# This is the mac address of every client machine
 cli_macs = ["00:25:90:53:e6:00"]
+# This is the IP address of every client machine
 cli_ips = ["169.229.48.63"]
+# This is the network interface the client machines use to send/receive
 cli_net_ifs = ["igb0"] 
-# Switch information
+####### Switch Network information ########
+# NOTE : Only one software switch is supported at this time. I will need to update this TODO
+# This is the IP address of the software switch
 switch_ip = "10.229.49.9"
+# This is the receive port of the software switch
 switch_recv_port = "5005"
+# This is the network interface the software switch uses to send/receive
 switch_net_if = "ma1"
-switch_mac = "00:90:fb:70:65:71" # TODO: Deprecated
+# This is the mac address of every switch machine
+switch_mac = "00:90:fb:70:65:71"
+###### Authentication Information for the switch #######
+# NOTE: I don't know if I need this if ssh key forwarding is used? Might deprecate TODO
+# SSH key 
 ssh_key = "/proj/ove-PG0/murray/ssh/tofino" #"/proj/ove-PG0/murray/cloudlab"
+# SSH username
 ssh_user = "micahmurray" #"murray22" # Added for complete SSH command
 
+######## Should contain the necessary information to figure out what programs are being run where (and also the setup script?) #######
 [program_paths]
+# This is the full path to the client binary that will be run on all clients
 path_client = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_cli"
+# Name of the actual client binary 
 client_binary = "net_cli"
+# This is the full path to the storage server binary that will be run on all storage servers
 path_server = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_stor"
+# Name of the actual storage binary 
 server_binary = "net_stor"
+# This is the full path to the software switch binary that will be run on all software switches
 path_switch = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_seq"
+# Boolean indicating whether the install script should be run to install packages on all machines
+# Generally safe to set to "False"
 run_setup_script = "False"
 
-[experiment_parameters]
-log_level = 6
-warm_up = 5 # seconds
-cool_down = 5 # seconds
-experiment_duration = 30 # seconds
-socket_type = "UDP" # "RAW"
-message_size = 100 # 100 # bytes
-num_client_threads = 1
-num_storage_threads = 1
-json_name = "increase_batch"
-experiment_name = "increase_ring_size"
-num_failures = 0 # NEW
-git_hash = "" # TODO
-use_switch = 1
-use_store = 1
-batch_size = 1 # Number of packets
-batch_usec_timeout = 460
-switches_in_ring = [2, 3] # indices of the switches active in the ring, list of unique values, each val 0 <= v <= 3
-with_tunnel = false
-plot_param = 'switches_in_ring'
 
+######## Defines variables necessary for experiments #######
+[experiment_parameters]
+# Indicates how much logging information we want printed to the terminal
+# Most common log levels to use are "1" for debugging mode (prints everything)
+# and "6" (which only prints critical print statements - use for getting actual numbers)
+log_level = 6
+# How long the system should be sending packets before we collect statistics 
+warm_up = 5 # seconds
+# How long the system should be sending packets after we collect statistics 
+cool_down = 5 # seconds
+# How long we should collect statistics for
+experiment_duration = 30 # seconds
+# Indicates whether we send raw or UDP sockets. Should always be UDP as of now
+socket_type = "UDP"
+# How large our payloads will be
+message_size = 100 # bytes
+# How many clients we will have per client machine
+num_client_threads = 1
+# How many storage threads there should be handling appends/reads
+# NOTE: This is a bit ill-defined at the moment, I would leave at 1 for now TODO
+num_storage_threads = 1
+# Name of the json file which will hold final results
+json_name = "increase_batch"
+# Name of the experiment
+experiment_name = "increase_ring_size"
+# This indicates how many acknowledgements the client will need in order to 
+num_failures = 0
+# Supposed to be the git hash of the code that we are using for this experiment
+# Still TODO, need to do this
+git_hash = ""
+# Boolean indicates whether the current experiments use the switch or not (if not then cli <-> storage servers)
+use_switch = 1
+# Boolean indicates whetehr the current experiments use the HARDWARE switch or not TODO actually don't use this yet, is it needed?
+use_hardware_switch = 1
+# Boolean indicates whether the current experiments use the storage server or not (if not then cli <-> switches)
+use_store = 1
+# Number of packets in a batch
+batch_size = 1 # Number of packets
+# How long to wait until sending a batch off
+batch_usec_timeout = 460
+# indices of the switches active in the ring, list of unique values, each val 0 <= v <= MAX_NUM_SWITCHES
+switches_in_ring = [2, 3] 
+#  I'm going to be honest, I don't quite remember what this was for atm. Just keep it false?
+with_tunnel = false
+# This is meant to indicate what x variable we want to plot on the final graphs
+# Right now it only supports plotting by number of switches in the ring or by number of clients 
+plot_param = 'switches_in_ring' # or 'num_clients'
+#  Boolean indicating that the streaming interface is being used
+use_streams = 1
+
+
+# This should really be part of experiment parameters. Also like 3/4 of these are deprecated, I need to update TODO
 [protocol_batching]
+# Indicates whether batching is being used or not
 batch_on = true
+# DEPRECATED, ignore these, I need to remove TODO
 num_packet_types = 1
 sequencer_type = 0 
 storage_server_type = 0 
 
+
+# This could all also probably be put under experiments. These are for testing plot generation/data collection
 [testing]
+# This is to indicate to the script whether it should only generate plots based on existing data (to see if it processes the data correctly)
 only_plot_gen = 0
-local_results_dir = "/proj/ove-PG0/murray/pringles/experiments/results/100byte_onlystor_batch_run-2026-02-20_142428.941"
+# Only testing plot generation, specify a specific experiment whose data you want to do testing with
+local_results_dir = "/proj/ove-PG0/murray/pringles/experiments/results/"
 
-[routing]
-list_client_dest_ips = ["169.229.48.63"]
-list_storage_server_dest_ips = ["169.229.48.63"]
-client_dest_macs = ["00:25:90:53:e6:00"]
-server_dest_macs = ["00:25:90:53:e6:00"] # TODO Change name this is so confusing
 
+######## This is all information necessary for the actual hardware switches #######
 [switches]
+# The name if the jump host if we are sending traffic to the switch via the control plane 
 jump_host = "watson.millennium.berkeley.edu"
+# Jump host username
 jump_user = "micahmurray"
+# Jump host mac address
 jump_mac = "00:25:90:53:e6:00"
+# Jump host IP address
 jump_ip = "169.229.48.63"
+# Path to the tofino model used to simulate the data plane on the software switch. Included, but not used atm 
 tofino_model = "/root/bf-sde-9.4.0/run_tofino_model.sh"
+# Path to the switch SDE which needs to be deployed to setup the dataplane
 switchd = "/root/bf-sde-9.4.0/run_switchd.sh --arch tofino -p sequencing_only"
+# Path to the script which runs the test apparatus and also runs the switch control plane
 ptf_test = "/root/bf-sde-9.4.0/run_p4_tests.sh --arch tofino -p sequencing_only -t /root/pringles/code/p4/sequencing --veth-exists --target hw"
+# Name of the config file which is used by the control plane to setup the switch
 config_name = "switch_config.yaml"
+# What architecture should be used 
 arch = "tofino"
+# What p4 program is being run
 program = "sequencing_only"
+# Absolute path to the control plane which will need to run on the switch CPU
 control_plane = "/root/pringles/code/p4/sequencing/test.py"
+# This is to indicate whether we are sending dataplane traffic through the switch
 use_port_forwarding = true
+# IP addresses of all the hardware switches
 switch_ips = ["10.229.49.3", "10.229.49.5", "10.229.49.7", "10.229.49.9"]
+# MAC addresses of all the hardware switches TODO need to completely fill in
 switch_macs = ["", "", "00:90:fb:70:65:d0", "00:90:fb:70:65:71"]
+# Front panel ports to be initialized and turned on in the control plane on switch 0 (TODO I wasn't using switch 0, so not filled in rn)
 switch_ports0 = []
+# Front panel ports to be initialized and turned on in the control plane on switch 1
 switch_ports1 = [132, 156, 157, 158, 159, 164, 165, 166, 167, 172, 173, 174, 175, 180, 181, 182, 183, 188, 189, 190, 191, 20, 21, 22, 23, 36, 37, 38, 39, 44, 45, 46, 47, 60, 61, 62, 63, 56]
+# Front panel ports to be initialized and turned on in the control plane on switch 2
 switch_ports2 = [128, 144, 145, 146, 147, 152, 153, 154, 155, 168, 169, 170, 171, 176, 177, 178, 179, 184, 185, 186, 187, 16, 17, 18, 19, 24, 25, 26, 27, 32, 33, 34, 35, 48, 49, 50, 51, 56, 57, 58, 59]
+# Front panel ports to be initialized and turned on in the control plane on switch 3
 switch_ports3 = [132, 148, 149, 150, 151, 164, 165, 166, 167, 172, 173, 174, 175, 188, 189, 190, 191, 20, 21, 22, 23, 28, 29, 30, 31, 36, 37, 38, 39, 44, 45, 46, 47, 52, 53, 54, 55, 56]
+# Front panel port which will be used for loopback traffic 
+# TODO need to fill in loopback for switch 0, loopback needs to be on same pipeline as control plane
 loopback_ports = [0, 184, 188, 168]
+# The CPU<->Tofino Data Plane PCIe port to exchange info between control and data plane
 cpu_port = 192
-cntrl_port_switch0 = [0, 0, 0, 0] # TODO DUMMY placeholder
+#### These are the set of ports that the switches should choose from to send control port out of
+### depending on which switches are in the active ring set
+# TODO: Need to fill in for switch 0
+cntrl_port_switch0 = [0, 0, 0, 0]
 cntrl_port_switch1 = [132, 184, 148, 164]
 cntrl_port_switch2 = [128, 144, 188, 176]
 cntrl_port_switch3 = [132, 148, 164, 168]
+# I don't think this is used anymore, but specified in below table entries
 dummy_ip_addr = "10.229.49.9"
+# This is info used by the control plane to initialize the ipv4 routing table entry
+# TODO prob need to update as clients send to more switches
 ipv4_table_entries = ["10.229.49.9", "00:25:90:53:e6:00", "192", "169.229.48.63"] # IP to match on
+# I don't think this is used anymore, but specified in above table entries
 mac_dst_addr = "00:90:fb:70:65:71" # TODO need to add ALL the possible mac addresses here
+# I don't think this is used anymore, but specified in above table entries
 mac_src_addr = "00:25:90:53:e6:00"
+# Numerical ID of the tofino dataplane device on the switch
 dev_number = 0
+# Interface to send to if sending packets from the control plane to the data plane
 cpu_interface = "enp5s0"
+# External interface on the switches which can be sent to by the watson machines
 external_interface = "ma1"
+# Port that the switch CPU is listening to for external traffic 
 listen_port = 5005
 
-[cpu_dataplane]
-udp_sport = 309
-cpuTofinoInterface = "enp5s0"
-clientInterface = "ma1"
-
+###### THIS IS WHERE WE DEFINE EXPERIMENTS AND CHANGE EXPERIMENT VARIABLES ########
 [[experiment]]
+# Vary the number of client threads for this experiment
 num_client_threads = 5
-batch_size = 1 # Number of packets
+# Number of packets in the batch
+batch_size = 1
+# JSON Name of the specific 
 json_name = "ringone"
-switches_in_ring = [3] # indices of the switches active in the ring, list of unique values, each val 0 <= v <= 3
+# indices of the switches active in the ring, list of unique values, each val 0 <= v <= MAX_NUM_SWITCHES
+switches_in_ring = [3] 
+
+
+
+
 #[[experiment]]
 #num_client_threads = 1
 #batch_size = 1 # Number of packets
@@ -116,8 +215,6 @@ switches_in_ring = [3] # indices of the switches active in the ring, list of uni
 #json_name = "ringthree"
 #switches_in_ring = [1,2,3] # indices of the switches active in the ring, list of unique values, each val 0 <= v <= 3
 #
-
-
 #[[experiment]]
 #num_client_threads = 2
 #batch_size = 1 # Number of packets
@@ -141,11 +238,6 @@ switches_in_ring = [3] # indices of the switches active in the ring, list of uni
 #batch_size = 1 # Number of packets
 #json_name = "ten_client"
 #switches_in_ring = [3] # indices of the switches active in the ring, list of unique values, each val 0 <= v <= 3
-
-
-
-
-
 #[[experiment]]
 #num_client_threads = 1
 #batch_size = 1 # Number of packets
@@ -156,9 +248,6 @@ switches_in_ring = [3] # indices of the switches active in the ring, list of uni
 #batch_size = 1 # Number of packets
 #json_name = "one_client"
 #switches_in_ring = [2, 3] # indices of the switches active in the ring, list of unique values, each val 0 <= v <= 3
-
-
-
 ##
 #[[experiment]]
 #num_client_threads = 2
