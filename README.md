@@ -34,26 +34,23 @@ Key components of the codebase:
 
 Switch SDE Changes:
 - In the ptf/testutils.py file: Added function to create the specialized control packet 
-<<<<<<< HEAD
-=======
 - Removed "sudo" from the run_switchd.sh and run_ptf_tests.sh scripts
->>>>>>> ff8a7314a10cbdcf5e945c7367724f3cfa86835b
 
 ## How to Setup and Compile
 See setup.sh for all relevant packages. C++17 at minimum required. If you are using cloudlab for testing, you can use the Cloudlab profile `run-pringles` which already has the appropriate packages.
 
 For static linking:
 1. Spdlog:
-cd /proj/ove-PG0/murray/spdlog
-rm -rf build && mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DSPDLOG_BUILD_STATIC=ON -DSPDLOG_BUILD_SHARED=OFF -DSPDLOG_BUILD_EXAMPLE=OFF -DSPDLOG_BUILD_TESTS=OFF
-cmake --build . --parallel $(nproc)
+`cd /proj/ove-PG0/murray/spdlog`
+`rm -rf build && mkdir build && cd build`
+`cmake .. -DCMAKE_BUILD_TYPE=Release -DSPDLOG_BUILD_STATIC=ON -DSPDLOG_BUILD_SHARED=OFF -DSPDLOG_BUILD_EXAMPLE=OFF -DSPDLOG_BUILD_TESTS=OFF`
+`cmake --build . --parallel $(nproc)`
 
 2. oneTBB (need to get libtbb.a)
-cd /proj/ove-PG0/murray/oneTBB
-rm -rf build && mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DTBB_STATIC=ON -DTBB_TEST=OFF
-cmake --build . --parallel $(nproc)
+`cd /proj/ove-PG0/murray/oneTBB`
+`rm -rf build && mkdir build && cd build`
+`cmake .. -DCMAKE_BUILD_TYPE=Release -DTBB_STATIC=ON -DTBB_TEST=OFF`
+`cmake --build . --parallel $(nproc)`
 
 To compile, follow these steps:
 1. `cd /path/to/pringles`
