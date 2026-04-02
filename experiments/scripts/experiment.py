@@ -1,3 +1,4 @@
+import shlex
 import toml
 import yaml
 import uuid
@@ -600,19 +601,14 @@ def run_remote_command_sync(ip, command, ssh_key, ssh_user):
         '-o', 'StrictHostKeyChecking=no',
         '-o', 'UserKnownHostsFile=/dev/null',
         f'{ssh_user}@{ip}',
-        command
+        f'bash -l -c {shlex.quote(command)}'
     ]
     print(f"Running on {ip} (sync): {command}")
     try:
-        subprocess.run(full_command, check=True, stdin=subprocess.DEVNULL,
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(full_command, check=True, stdin=subprocess.DEVNULL)
         return True
     except subprocess.CalledProcessError as e:
         print(f"ERROR: Command failed on {ip} with exit code {e.returncode}.")
-        if e.stdout:
-            print(f"Stdout: {e.stdout.decode().strip()}")
-        if e.stderr:
-            print(f"Stderr: {e.stderr.decode().strip()}")
         return False
     except Exception as e:
         print(f"ERROR running command on {ip}: {e}")
@@ -671,12 +667,26 @@ def setup_kafka_nodes(config, ssh_key, ssh_user):
         print("ERROR: kafka_download_url not set in [program_paths].")
         return False
 
+    # --- Install Java on all nodes ---
+    all_ips = list(dict.fromkeys(seq_ips + cli_ips))
+    print("\n--- Installing Java on all nodes ---")
+    java_install_cmd = (
+        'if ! command -v java &>/dev/null; then '
+        'sudo apt-get update -qq && sudo apt-get install -y -qq default-jre-headless; '
+        'fi'
+    )
+    for ip in all_ips:
+        print(f"  Ensuring Java on {ip}...")
+        if not run_remote_command_sync(ip, java_install_cmd, ssh_key, ssh_user):
+            print(f"ERROR: Failed to install Java on {ip}")
+            return False
+
     # --- Download Kafka broker distribution on each broker node ---
     print("\n--- Installing Kafka broker on broker nodes ---")
     for ip in seq_ips:
         install_cmd = (
             f'if [ ! -d {kafka_dir} ]; then '
-            f'wget -q {download_url} -O /tmp/kafka.tgz && '
+            f'wget {download_url} -O /tmp/kafka.tgz && '
             f'sudo mkdir -p {kafka_dir} && '
             f'sudo tar -xzf /tmp/kafka.tgz -C {kafka_dir} --strip-components=1 && '
             f'sudo chmod -R 755 {kafka_dir} && '
@@ -739,10 +749,11 @@ def setup_kafka_nodes(config, ssh_key, ssh_user):
         if not transfer_file(local_jar, ip, ssh_user, ssh_key, remote_filename=jar_filename):
             print(f"ERROR: Failed to transfer kafka-log jar to {ip}")
             return False
-        move_cmd = f'mkdir -p {jar_remote_dir} && mv ~/{jar_filename} {kafka_log_jar_remote}'
-        if not run_remote_command_sync(ip, move_cmd, ssh_key, ssh_user):
-            print(f"ERROR: Failed to install kafka-log jar on {ip}")
-            return False
+        if jar_remote_dir and jar_remote_dir != '~':
+            move_cmd = f'mkdir -p {jar_remote_dir} && mv ~/{jar_filename} {kafka_log_jar_remote}'
+            if not run_remote_command_sync(ip, move_cmd, ssh_key, ssh_user):
+                print(f"ERROR: Failed to install kafka-log jar on {ip}")
+                return False
 
     print("--- Kafka setup complete ---")
     return True

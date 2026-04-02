@@ -34,7 +34,7 @@ kafka_log_local_src = "/tmp/kafka-log-build"
 kafka_log_jar_remote = "/proj/ove-PG0/murray/kafka-log-assembly.jar"
 # Full URL to a Kafka .tgz release. Update the version as needed.
 # Find releases at: https://kafka.apache.org/downloads
-kafka_download_url = "https://downloads.apache.org/kafka/3.7.0/kafka_2.13-3.7.0.tgz"
+kafka_download_url = "https://downloads.apache.org/dist/kafka/3.7.0/kafka_2.13-3.7.0.tgz"
 # Set to "True" to clone/build on first run. Safe to leave "True" on repeat runs
 # (clone is skipped if the directory already exists).
 run_comparison_setup = "True"
