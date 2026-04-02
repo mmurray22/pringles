@@ -600,7 +600,7 @@ def run_remote_command_sync(ip, command, ssh_key, ssh_user):
         '-o', 'StrictHostKeyChecking=no',
         '-o', 'UserKnownHostsFile=/dev/null',
         f'{ssh_user}@{ip}',
-        f'"{command}"'
+        command
     ]
     print(f"Running on {ip} (sync): {command}")
     try:
@@ -609,7 +609,10 @@ def run_remote_command_sync(ip, command, ssh_key, ssh_user):
         return True
     except subprocess.CalledProcessError as e:
         print(f"ERROR: Command failed on {ip} with exit code {e.returncode}.")
-        print(f"Stderr: {e.stderr.decode().strip()}")
+        if e.stdout:
+            print(f"Stdout: {e.stdout.decode().strip()}")
+        if e.stderr:
+            print(f"Stderr: {e.stderr.decode().strip()}")
         return False
     except Exception as e:
         print(f"ERROR running command on {ip}: {e}")
@@ -1277,7 +1280,7 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         print("\n--- Formatting Kafka Storage ---")
         for i, ip in enumerate(seq_ips):
             props_filename = f'kafka_server_{json_output_name}_{i}.properties'
-            if not run_remote_command_sync(ip, f'rm -rf {kafka_log_dir_local}', ssh_key, ssh_user):
+            if not run_remote_command_sync(ip, f'rm -rf {kafka_broker_log_dir}', ssh_key, ssh_user):
                 raise Exception(f"Failed to clean Kafka log dir on {ip}")
             format_cmd = f'{kafka_dir}/bin/kafka-storage.sh format -t {cluster_uuid} -c ~/{props_filename}'
             if not run_remote_command_sync(ip, format_cmd, ssh_key, ssh_user):
@@ -1664,10 +1667,6 @@ def run_experiment_cycle_lazylog(config, exp_index, local_results_dir):
     """Runs a single experiment cycle for LazyLog. Not yet implemented."""
     raise NotImplementedError("run_experiment_cycle_lazylog is not yet implemented.")
 
-
-def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
-    """Runs a single experiment cycle for Kafka. Not yet implemented."""
-    raise NotImplementedError("run_experiment_cycle_kafka is not yet implemented.")
 
 
 EXPERIMENT_CYCLE_FNS = {
