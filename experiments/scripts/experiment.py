@@ -1352,20 +1352,14 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         # Consumer uses auto.offset.reset=latest so it must be subscribed before
         # the producer sends. java -jar starts in ~1-2s, so CONSUMER_HEAD_START=5 is enough.
         print(f"\n--- Starting Kafka Consumer (will wait {CONSUMER_HEAD_START}s before producer) ---")
-        consumer_cmd = (
-            f'java -cp /tmp/kafka-config:{jar_cp} main.Consumer'
-            f' > ~/{consumer_log_filename} 2>&1'
-        )
-        run_remote_command_sync(client_ip, f'/bin/bash -c "{consumer_cmd} &"', ssh_key, ssh_user)
+        consumer_cmd = f'nohup java -cp /tmp/kafka-config:{jar_cp} main.Consumer > ~/{consumer_log_filename} 2>&1 &'
+        run_remote_command_sync(client_ip, consumer_cmd, ssh_key, ssh_user)
         time.sleep(CONSUMER_HEAD_START)
 
         # --- 7. Start Producer (async) ---
         print("\n--- Starting Kafka Producer ---")
-        producer_cmd = (
-            f'java -cp /tmp/kafka-config:{jar_cp} main.Producer'
-            f' > ~/{producer_log_filename} 2>&1'
-        )
-        run_remote_command_sync(client_ip, f'/bin/bash -c "{producer_cmd} &"', ssh_key, ssh_user)
+        producer_cmd = f'nohup java -cp /tmp/kafka-config:{jar_cp} main.Producer > ~/{producer_log_filename} 2>&1 &'
+        run_remote_command_sync(client_ip, producer_cmd, ssh_key, ssh_user)
 
         # --- 8. Wait for experiment to complete ---
         total_wait = warm_up + experiment_duration + cool_down + 15  # 15s buffer for JVM teardown/flush
