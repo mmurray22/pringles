@@ -64,26 +64,10 @@ class Network {
 		uint64_t batch_timeout,
                 std::string send_interface,
                 std::string self_ip,
-		uint64_t num_pkt_type,
+                std::string multicast_ip,
+		bool is_in_shard,
 		bool run_threads);
         ~Network();
-
-        /*
-         * Appends buf, a pointer to the payload, to the queue
-         *
-         * Arguments
-         * ---------
-         * buf - A pointer to a protobuf message which will be the payload of the outgoing pkt
-         * packet_type - Packet classifier label which will determine how the packet is 
-         *               stored in the queue
-         */
-        void add_to_send_queue(std::unique_ptr<char[]> buf, uint64_t packet_type, uint64_t packet_size);
-
-        /*
-         * Returns a unique pointer to the received packet at the front of the queue.
-	 * Further handling/queueing/manipulation needs to be done at the client/storage server/etc..
-         */
-        char* read_from_recv_queue();
 
         /*
          * Artificially indicates to Network object that no more requests will be issued
@@ -95,19 +79,13 @@ class Network {
 
 	std::string get_recv_port();
 
-	bool send_client_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::string dst_ip, std::string dst_port);
-	bool send_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::string dst_ip, std::string dst_port);
+	bool send_client_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, std::string dst_ip, std::string dst_port);
+	bool send_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, std::string dst_ip, std::string dst_port, bool use_multicast);
  	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, in_addr_t dst_ip);
  
 
 	int get_recv_socket();
-        int setup_talker_socket(std::string dst_ip, std::string dst_port);
-        /*
-         * Update the packet classifiers
-         * Useful if the classifiers are receiver IPs and some receivers fail/are changed
-         */
-        void add_pkt_type(uint64_t pkt_type);
-        bool remove_pkt_type(uint64_t pkt_type);
+        int setup_talker_socket(std::string dst_ip, std::string dst_port, bool use_multicast);
         
     private:
 
@@ -119,18 +97,17 @@ class Network {
 	std::unique_ptr<struct ethhdr> send_eth_hdr; 
         std::string send_interface;
         std::string self_ip;
+	std::string multicast_ip; // only set for storage servers
 
 	bool run_threads; 
 	std::thread send_thread;
 	std::thread recv_thread;
 
 	std::unordered_map<std::string, int> port_to_fd;
-
 		
 	tbb::concurrent_hash_map<uint64_t, std::string> concurrent_port_to_fd;
 	tbb::concurrent_queue<char*> concurrent_recv_q;
        
-
 
 	char* norm_buf;
 	char* final_send_packet;
@@ -140,8 +117,9 @@ class Network {
         std::string SEND_PORT;
         std::string RECV_PORT;
         int setup_listener_socket(std::string curr_ip);
-
         int setup_raw_talker_socket();
+	int setup_multicast_receiver(std::string self_ip);
+
         void destroy_socket(int s_fd);
         std::shared_ptr<struct addrinfo> get_it(int s_fd);
         std::string get_ip(uint64_t pkt_type, int idx);
@@ -160,9 +138,8 @@ class Network {
 
 	// Boolean which indicates to sending and receiving threads to cease operation
         bool terminate = false;
+        std::mutex lock_terminate;
 
-	// Sender thread function, parameterized by the packet type the sender is responsible for
-        void run_send();
         // Receiver thread 
         void run_recv(int s_fd);
 	// checksum for IP packet header construction
@@ -170,15 +147,17 @@ class Network {
         // Goes through the steps of stopping and cleaning up all the threads
         void stop_threads();
 
-	/*OLD INFO*/
+	uint16_t string_to_u16(const std::string& str);
+	
+
+
+	/*OLD INFO - delete??*/
 
 	std::unordered_map<uint64_t, struct sockaddr_ll> sin_map;
 	std::unordered_map<uint64_t, std::vector<std::unique_ptr<struct ethhdr>>> eth_hdr_map; 
 
 
         // Lock to serialize access to terminate boolean
-        std::mutex lock_terminate;
-
 	bool rcv_q_available = false;
 	std::condition_variable rcv_cond;
 
@@ -186,9 +165,7 @@ class Network {
 	uint64_t num_sends_done = 0;
 	std::mutex lock_num_recv_done;
 	uint64_t num_recv_done = 0;
-	uint64_t MAX_CLEANUP_TIME = 10;
         uint64_t total_num_threads;
-
 
         // Send Thread pool
         std::vector<std::thread> send_threads;
@@ -205,10 +182,6 @@ class Network {
         /* Send Packet queues
          * Assumption: All packets in the queue are of size > 0
          */
-        std::unordered_map<uint64_t, std::queue<std::pair<uint64_t, std::unique_ptr<char[]>>>> send_pkt_qs;
-        std::mutex send_pkt_qs_mutex;
-        
-        
         //std::queue<char*> rcv_pkt;
 	moodycamel::ConcurrentQueue<char*> rcv_pkt;
         std::mutex rcv_queue_mutex;
@@ -218,16 +191,9 @@ class Network {
 
 	std::vector<std::array<uint8_t,6>> mac_addrs;
 
-        uint64_t num_pkt_type = 0;
-
-
 	std::unordered_map<uint64_t, std::shared_ptr<struct addrinfo>> fd_to_it;
-        
-        bool pkts_in_queue();
-        std::string seq_ip;
-        std::string storage_multicast_addr;
         
         bool validate_ip_address(const std::string &ip_addr);
          
         /** Socket handling **/
-        };
+};

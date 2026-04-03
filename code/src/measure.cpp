@@ -68,7 +68,7 @@ bool Stats::endLatTimer(uint64_t nonce) {
         double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
         std::unique_lock<std::mutex> lock(lat_map_lock);
         double dur = end_time_s - lat_map[nonce];
-	//spdlog::debug("For nonce {}, started {}, ended {}, for duration {}", nonce, lat_map[nonce], end_time_s, dur);
+	spdlog::debug("For nonce {}, started {}, ended {}, for duration {}", nonce, lat_map[nonce], end_time_s, dur);
 	latencies.push_back(dur);
 	lat_map.erase(nonce);
 	return true;
@@ -79,7 +79,7 @@ bool Stats::endLatTimer(uint64_t nonce) {
 double Stats::getAvgLatency() {
     final_avg_latency = std::accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
     final_avg_latency *= 1000;
-    //spdlog::critical("Average latency: {}ms", final_avg_latency);
+    spdlog::critical("Average latency: {}ms", final_avg_latency);
     return final_avg_latency;
 }
 
