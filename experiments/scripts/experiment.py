@@ -1255,6 +1255,11 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
     print(f"========================================================")
 
     try:
+        # --- 0. Kill any stale consumer/producer from previous runs ---
+        print("\n--- Killing any stale consumer/producer processes ---")
+        kill_remote_process(client_ip, 'main.Consumer', ssh_key, ssh_user)
+        kill_remote_process(client_ip, 'main.Producer', ssh_key, ssh_user)
+
         # --- 1. Generate and transfer server.properties to each broker ---
         print("\n--- Configuring Kafka Brokers ---")
         for i, ip in enumerate(seq_ips):
@@ -1408,6 +1413,8 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         print("\n--- Stopping Kafka Brokers ---")
         for ip in seq_ips:
             kill_remote_process(ip, 'kafka.Kafka', ssh_key, ssh_user)
+        kill_remote_process(client_ip, 'main.Consumer', ssh_key, ssh_user)
+        kill_remote_process(client_ip, 'main.Producer', ssh_key, ssh_user)
         for ip, log_filename in broker_log_files.items():
             copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
 
