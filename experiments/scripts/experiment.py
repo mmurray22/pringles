@@ -1,3 +1,4 @@
+import shlex
 import toml
 import yaml
 import uuid
@@ -6,10 +7,12 @@ import subprocess
 import time
 import sys
 import os
-import json 
 import paramiko
-from datetime import datetime 
-from copy import deepcopy 
+import json
+import glob
+from datetime import datetime
+from copy import deepcopy
+
 # NEW IMPORT: Matplotlib for plotting the results
 import matplotlib.pyplot as plt
 
@@ -32,9 +35,9 @@ BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
 EXPERIMENT_DELAY = 15  # Time to wait between experiments
-SETUP_SCRIPT_PATH = "/proj/ove-PG0/murray/pringles/setup.sh"
-COMPILATION_DIR = "/proj/ove-PG0/murray/pringles/build" # Directory where 'meson compile' is run
-RESULTS_BASE_DIR = "/proj/ove-PG0/murray/pringles/experiments/results" # Base path for results folder
+SETUP_SCRIPT_PATH = "~/pringles/setup.sh"
+COMPILATION_DIR = "~/pringles/build" # Directory where 'meson compile' is run
+RESULTS_BASE_DIR = "~/pringles/experiments/results" # Base path for results folder
 
 def generate_switch_config(base_config, i, cntrl_port_num, ring_size, client_base_recv_port, serv_recv_port, loopback_port, num_client_threads):
     switch_params = base_config['switches']
@@ -345,21 +348,21 @@ def copy_results_back(remote_ip, remote_user, ssh_key, json_name_prefix, local_t
         print(f"ERROR during results copy: {e}")
         return False
 
-def copy_log_file_back(remote_ip, remote_user, ssh_key, log_filename, local_target_dir):
+def copy_log_file_back(remote_ip, remote_user, ssh_key, log_filename, local_target_dir, remote_dir='~'):
     """
-    NEW FUNCTION: Copies the specified remote log file ([ip].txt) from the remote machine 
+    NEW FUNCTION: Copies the specified remote log file ([ip].txt) from the remote machine
     to the local results folder using SCP.
     """
     # Local path for the log file
     local_log_path = os.path.join(local_target_dir, log_filename)
-    
+
     command = [
         'scp',
         '-i', ssh_key,
         '-o', 'StrictHostKeyChecking=no',
         '-o', 'UserKnownHostsFile=/dev/null',
-        f'{remote_user}@{remote_ip}:~/{log_filename}', # Source (remote home directory)
-        local_log_path                               # Destination (local folder)
+        f'{remote_user}@{remote_ip}:{remote_dir}/{log_filename}',
+        local_log_path
     ]
     
     print(f"--- Copying remote log file {log_filename} from {remote_ip} ---")
@@ -701,6 +704,240 @@ def plot_results(local_target_dir, plot_param):
 
     
 # --- Setup and Compile Functions (Remain unchanged from previous submission) ---
+def run_remote_command_sync(ip, command, ssh_key, ssh_user):
+    """
+    Executes a command on a remote machine synchronously (blocks until complete).
+    Used for setup steps that must finish before proceeding (e.g., topic creation).
+    Returns True on success, False on failure.
+    """
+    full_command = [
+        'ssh',
+        '-i', ssh_key,
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'UserKnownHostsFile=/dev/null',
+        f'{ssh_user}@{ip}',
+        f'bash -l -c {shlex.quote(command)}'
+    ]
+    print(f"Running on {ip} (sync): {command}")
+    try:
+        subprocess.run(full_command, check=True, stdin=subprocess.DEVNULL)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: Command failed on {ip} with exit code {e.returncode}.")
+        return False
+    except Exception as e:
+        print(f"ERROR running command on {ip}: {e}")
+        return False
+
+
+def kill_remote_process(ip, process_name, ssh_key, ssh_user):
+    """
+    Kills all remote processes matching process_name via pkill -f.
+    Used for comparison systems that don't self-terminate after experiment_duration.
+    """
+    print(f"Killing '{process_name}' on {ip}...")
+    return run_remote_command_sync(ip, f'sudo pkill -f "{process_name}" || true', ssh_key, ssh_user)
+
+
+def setup_kafka_nodes(config, ssh_key, ssh_user):
+    """
+    Sets up Kafka on broker and client nodes.
+
+    Broker nodes (seq_ips): the Kafka broker distribution is still downloaded remotely
+    since it is ~100 MB of pre-compiled JVM bytecode with no local build step needed.
+
+    Client nodes (cli_ips): kafka-log is cloned and built locally via `sbt assembly`
+    into a fat jar, then SCPed to the remote. The remote only needs Java, not sbt.
+
+    Requires in [program_paths]:
+      kafka_dir              - where to install the Kafka distribution on broker nodes
+      kafka_download_url     - full URL to a Kafka .tgz release
+      kafka_log_local_src    - local path to clone kafka-log into for building
+      kafka_log_jar_remote   - full remote path where the fat jar will be placed
+                               (e.g. /proj/.../kafka-log-assembly.jar)
+    """
+    seq_ips              = config['network_setup'].get('seq_ips', [])
+    cli_ips              = config['network_setup']['cli_ips']
+    kafka_dir            = config['program_paths'].get('kafka_dir', '/opt/kafka')
+    download_url         = config['program_paths'].get('kafka_download_url', '')
+    kafka_log_local_src  = config['program_paths']['kafka_log_local_src']
+    kafka_log_jar_remote = config['program_paths']['kafka_log_jar_remote']
+
+    if not download_url:
+        print("ERROR: kafka_download_url not set in [program_paths].")
+        return False
+
+    # --- Install Java on all nodes ---
+    all_ips = list(dict.fromkeys(seq_ips + cli_ips))
+    print("\n--- Installing Java on all nodes ---")
+    java_install_cmd = (
+        'if ! command -v java &>/dev/null; then '
+        'sudo apt-get update -qq && sudo apt-get install -y -qq default-jre-headless; '
+        'fi'
+    )
+    for ip in all_ips:
+        print(f"  Ensuring Java on {ip}...")
+        if not run_remote_command_sync(ip, java_install_cmd, ssh_key, ssh_user):
+            print(f"ERROR: Failed to install Java on {ip}")
+            return False
+
+    # --- Download Kafka broker distribution on each broker node ---
+    print("\n--- Installing Kafka broker on broker nodes ---")
+    for ip in seq_ips:
+        install_cmd = (
+            f'if [ ! -d {kafka_dir} ]; then '
+            f'wget {download_url} -O /tmp/kafka.tgz && '
+            f'sudo mkdir -p {kafka_dir} && '
+            f'sudo tar -xzf /tmp/kafka.tgz -C {kafka_dir} --strip-components=1 && '
+            f'sudo chmod -R 755 {kafka_dir} && '
+            f'rm /tmp/kafka.tgz; '
+            f'fi'
+        )
+        print(f"  Installing Kafka on {ip}...")
+        if not run_remote_command_sync(ip, install_cmd, ssh_key, ssh_user):
+            print(f"ERROR: Failed to install Kafka broker on {ip}")
+            return False
+
+    # --- Build fat jar locally ---
+    if not os.path.isdir(kafka_log_local_src):
+        print(f"\nCloning kafka-log into {kafka_log_local_src}...")
+        try:
+            subprocess.run(
+                ['git', 'clone', 'https://github.com/mmurray22/kafka-log', kafka_log_local_src],
+                check=True, stdin=subprocess.DEVNULL
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to clone kafka-log: {e}")
+            return False
+
+    # Inject sbt-assembly plugin (not present in the upstream repo)
+    plugins_sbt_path = os.path.join(kafka_log_local_src, 'project', 'plugins.sbt')
+    with open(plugins_sbt_path, 'w') as f:
+        f.write('addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.2.0")\n')
+
+    # Add merge strategy to build.sbt to suppress deduplicate errors
+    build_sbt_path = os.path.join(kafka_log_local_src, 'build.sbt')
+    with open(build_sbt_path, 'a') as f:
+        f.write('\nassemblyMergeStrategy in assembly := {\n'
+                '  case PathList("META-INF", _*) => MergeStrategy.discard\n'
+                '  case _                        => MergeStrategy.first\n'
+                '}\n')
+
+    print("\nBuilding kafka-log fat jar locally (sbt assembly)...")
+    try:
+        subprocess.run(['sbt', 'assembly'], cwd=kafka_log_local_src,
+                       check=True, stdin=subprocess.DEVNULL)
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: sbt assembly failed: {e}")
+        return False
+
+    jar_matches = glob.glob(
+        os.path.join(kafka_log_local_src, 'target', '**', '*assembly*.jar'), recursive=True
+    )
+    if not jar_matches:
+        print("ERROR: Could not find assembled jar after sbt assembly.")
+        return False
+    local_jar = jar_matches[0]
+    print(f"  Built jar: {local_jar}")
+
+    # --- SCP fat jar to each client node ---
+    print("\n--- Distributing kafka-log jar to client nodes ---")
+    jar_filename   = os.path.basename(kafka_log_jar_remote)
+    jar_remote_dir = os.path.dirname(kafka_log_jar_remote)
+    for ip in cli_ips:
+        print(f"  Sending jar to {ip}:{kafka_log_jar_remote}...")
+        if not transfer_file(local_jar, ip, ssh_user, ssh_key, remote_filename=jar_filename):
+            print(f"ERROR: Failed to transfer kafka-log jar to {ip}")
+            return False
+        if jar_remote_dir and jar_remote_dir != '~':
+            move_cmd = f'mkdir -p {jar_remote_dir} && mv ~/{jar_filename} {kafka_log_jar_remote}'
+            if not run_remote_command_sync(ip, move_cmd, ssh_key, ssh_user):
+                print(f"ERROR: Failed to install kafka-log jar on {ip}")
+                return False
+
+    print("--- Kafka setup complete ---")
+    return True
+
+
+def setup_scalog_nodes(config, ssh_key, ssh_user):
+    """
+    Builds Scalog binaries locally (cross-compiled for Linux amd64) then SCPs each
+    binary to only the nodes that need it. Remote machines need no build tooling.
+
+    Requires in [program_paths]:
+      scalog_local_src - local path to clone the Scalog repo into for building
+      path_discovery   - full remote path for the discovery binary (deployed to seq_ips[0])
+      path_order       - full remote path for the order binary    (deployed to all seq_ips)
+      path_data        - full remote path for the data binary     (deployed to all stor_ips)
+      path_client      - full remote path for the client binary   (deployed to all cli_ips)
+
+    TODO: verify cmd/ subdirectory names match the Scalog repo layout and update
+    the cmd_binaries dict below if they differ.
+    """
+    seq_ips          = config['network_setup'].get('seq_ips', [])
+    stor_ips         = config['network_setup'].get('stor_ips', [])
+    cli_ips          = config['network_setup']['cli_ips']
+    scalog_local_src = config['program_paths']['scalog_local_src']
+    paths            = config['program_paths']
+
+    # Map: local binary name → (cmd subdirectory, remote path, list of target IPs)
+    # TODO: update cmd/ subdirectory names if the Scalog repo layout differs.
+    cmd_binaries = {
+        'discovery': (f'./cmd/discovery', paths['path_discovery'], [seq_ips[0]]),
+        'order':     (f'./cmd/order',     paths['path_order'],     seq_ips),
+        'data':      (f'./cmd/data',      paths['path_data'],      stor_ips),
+        'client':    (f'./cmd/client',    paths['path_client'],    cli_ips),
+    }
+
+    # --- Clone locally if not already present ---
+    if not os.path.isdir(scalog_local_src):
+        print(f"\nCloning Scalog into {scalog_local_src}...")
+        try:
+            subprocess.run(
+                ['git', 'clone', 'https://github.com/chn0318/scalog', scalog_local_src],
+                check=True, stdin=subprocess.DEVNULL
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to clone Scalog: {e}")
+            return False
+
+    # --- Cross-compile each binary for Linux amd64 ---
+    local_build_dir = os.path.join(scalog_local_src, '_build_linux_amd64')
+    os.makedirs(local_build_dir, exist_ok=True)
+    linux_env = {**os.environ, 'GOOS': 'linux', 'GOARCH': 'amd64', 'CGO_ENABLED': '0'}
+
+    print("\nCross-compiling Scalog binaries for Linux amd64...")
+    for binary_name, (cmd_pkg, remote_path, _) in cmd_binaries.items():
+        local_binary = os.path.join(local_build_dir, binary_name)
+        print(f"  Building {binary_name}...")
+        try:
+            subprocess.run(
+                ['go', 'build', '-mod=vendor', '-o', local_binary, cmd_pkg],
+                cwd=scalog_local_src, env=linux_env,
+                check=True, stdin=subprocess.DEVNULL
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to build Scalog {binary_name}: {e}")
+            return False
+
+    # --- SCP each binary to its target nodes ---
+    print("\n--- Distributing Scalog binaries to remote nodes ---")
+    for binary_name, (_, remote_path, target_ips) in cmd_binaries.items():
+        local_binary   = os.path.join(local_build_dir, binary_name)
+        remote_dir     = os.path.dirname(remote_path)
+        for ip in target_ips:
+            print(f"  Sending {binary_name} → {ip}:{remote_path}...")
+            if not transfer_file(local_binary, ip, ssh_user, ssh_key, remote_filename=binary_name):
+                print(f"ERROR: Failed to transfer {binary_name} to {ip}")
+                return False
+            install_cmd = f'mkdir -p {remote_dir} && mv ~/{binary_name} {remote_path} && chmod +x {remote_path}'
+            if not run_remote_command_sync(ip, install_cmd, ssh_key, ssh_user):
+                print(f"ERROR: Failed to install {binary_name} on {ip}")
+                return False
+
+    print("--- Scalog setup complete ---")
+    return True
+
 def run_setup_script(ip, setup_script_path, ssh_key, ssh_user):
     """Runs the specified setup script on a remote machine synchronously (blocking run)."""
     command = [
@@ -935,11 +1172,11 @@ def setup_switches(config):
         jump_client.close()
 
 # To be executed for each experiment
-def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
+def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel=False):
     """Runs a single, full experiment cycle based on the merged configuration."""
     
     # Extract run-specific parameters from the merged config
-    ssh_key = config['network_setup']['ssh_key']
+    ssh_key = os.path.expanduser(config['network_setup']['ssh_key'])
     ssh_user = config['network_setup']['ssh_user']
     client_ips = config['network_setup']['cli_ips'] # TODO SEQ make plural?
     cli_net_ifs = config['network_setup']['cli_net_ifs'] # TODO SEQ make plural?
@@ -1249,6 +1486,595 @@ def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel):
 
         print("Switch processes are assumed to exit on their own after the client terminates.")
         
+def generate_kafka_server_properties(node_id, ip, all_seq_ips, num_partitions, replication_factor, log_dir):
+    """Returns KRaft-mode server.properties content for a single Kafka broker node."""
+    # Each node acts as both broker and controller (combined mode).
+    # controller.quorum.voters lists every node's controller port.
+    controller_quorum_voters = ','.join(
+        f'{i + 1}@{seq_ip}:9093' for i, seq_ip in enumerate(all_seq_ips)
+    )
+    # Internal replication topics must have RF <= num brokers.
+    internal_rf = min(replication_factor, len(all_seq_ips))
+    return f"""\
+# KRaft mode (no ZooKeeper)
+node.id={node_id}
+process.roles=broker,controller
+listeners=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+advertised.listeners=PLAINTEXT://{ip}:9092
+controller.quorum.voters={controller_quorum_voters}
+controller.listener.names=CONTROLLER
+inter.broker.listener.name=PLAINTEXT
+log.dirs={log_dir}
+num.partitions={num_partitions}
+default.replication.factor={replication_factor}
+offsets.topic.replication.factor={internal_rf}
+transaction.state.log.replication.factor={internal_rf}
+transaction.state.log.min.isr=1
+"""
+
+
+def parse_kafka_results(consumer_output_path, consumer_log_path, json_name, exp_index, local_results_dir):
+    """
+    Converts kafka-log consumer output into the standard result schema and writes
+    <json_name>_<exp_index>_kafka.json into local_results_dir.
+
+    Throughput comes from the consumer's JSON output file (Overall_Throughput_MPS).
+    Average latency is computed from per-message lines in the consumer stdout log:
+      "Kafka message processing latency: 42ms"
+    Note: this latency is one-way (broker timestamp → consumer receipt), not full
+    round-trip from producer send. It is the closest proxy available without
+    modifying the kafka-log source.
+    """
+    throughput = 0.0
+    avg_latency = 0.0
+
+    try:
+        with open(consumer_output_path, 'r') as f:
+            data = json.load(f)
+        throughput = float(data.get('Overall_Throughput_MPS', 0.0))
+    except Exception as e:
+        print(f"WARNING: Could not parse Kafka consumer output JSON at {consumer_output_path}: {e}")
+
+    latencies = []
+    try:
+        with open(consumer_log_path, 'r') as f:
+            for line in f:
+                if 'Kafka message processing latency:' in line:
+                    parts = line.strip().split()
+                    if parts:
+                        try:
+                            latencies.append(float(parts[-1].replace('ms', '')))
+                        except ValueError:
+                            pass
+        if latencies:
+            avg_latency = sum(latencies) / len(latencies)
+    except Exception as e:
+        print(f"WARNING: Could not parse Kafka consumer log at {consumer_log_path}: {e}")
+
+    result = {'throughput': throughput, 'avg_latency': avg_latency, 'batch_size': 1}
+    output_path = os.path.join(local_results_dir, f'{json_name}_{exp_index}_kafka.json')
+    try:
+        with open(output_path, 'w') as f:
+            json.dump(result, f, indent=4)
+        print(f"Kafka results written to: {output_path}")
+    except IOError as e:
+        print(f"ERROR: Could not write Kafka results to {output_path}: {e}")
+    return output_path
+
+
+def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
+    """
+    Runs a single experiment cycle for the Kafka comparison system.
+
+    Expects in TOML:
+      [network_setup]          seq_ips, cli_ips, ssh_key, ssh_user
+      [program_paths]          kafka_dir, kafka_log_jar_remote
+      [comparison_parameters]  num_partitions, replication_factor
+      [experiment_parameters]  json_name, experiment_duration, warm_up, cool_down, message_size
+
+    NOTE: Multi-partition scaling requires running multiple Producer instances (one per
+    partition), which is not yet implemented. Keep num_partitions=1 for now.
+    """
+    CONSUMER_HEAD_START = 5  # seconds; fat jar JVM startup is fast (~1-2s)
+
+    ssh_key   = os.path.expanduser(config['network_setup']['ssh_key'])
+    ssh_user  = config['network_setup']['ssh_user']
+    client_ips = config['network_setup']['cli_ips']
+    seq_ips    = config['network_setup'].get('seq_ips', [])
+
+    if not seq_ips:
+        raise Exception("No seq_ips defined for Kafka brokers in [network_setup].")
+
+    cmp  = config.get('comparison_parameters', {})
+    num_partitions     = cmp.get('num_partitions', 1)
+    replication_factor = cmp.get('replication_factor', 2)
+
+    if replication_factor > len(seq_ips):
+        raise Exception(
+            f"replication_factor ({replication_factor}) > number of brokers ({len(seq_ips)}). "
+            f"Reduce replication_factor or add more seq_ips."
+        )
+
+    exp     = config['experiment_parameters']
+    json_output_name   = exp['json_name']
+    experiment_duration = exp['experiment_duration']
+    warm_up             = exp['warm_up']
+    cool_down           = exp['cool_down']
+    message_size        = exp['message_size']
+
+    kafka_dir            = config['program_paths'].get('kafka_dir', '/opt/kafka')
+    kafka_log_jar_remote = config['program_paths']['kafka_log_jar_remote']
+    kafka_broker_log_dir = '/tmp/kafka-logs'
+
+    broker_ips_str = ','.join(f'{ip}:9092' for ip in seq_ips)
+    topic_name     = 'pringles-bench'
+    cluster_uuid   = str(uuid.uuid4())
+    message_payload = 'x' * message_size
+
+    consumer_log_filename    = f'kafka_consumer_{json_output_name}_{exp_index}.log'
+    producer_log_filename    = f'kafka_producer_{json_output_name}_{exp_index}.log'
+    consumer_output_filename = f'kafka_output_{json_output_name}_{exp_index}.json'
+    consumer_output_remote   = f'/tmp/{consumer_output_filename}'
+
+    broker_log_files = {}
+    client_ip = client_ips[0]
+
+    print(f"\n========================================================")
+    print(f"   RUNNING KAFKA EXPERIMENT {exp_index + 1}: {json_output_name}")
+    print(f"   Brokers: {seq_ips}  |  Partitions: {num_partitions}  |  RF: {replication_factor}")
+    print(f"========================================================")
+
+    try:
+        # --- 0. Kill any stale consumer/producer from previous runs ---
+        print("\n--- Killing any stale consumer/producer processes ---")
+        kill_remote_process(client_ip, 'main.Consumer', ssh_key, ssh_user)
+        kill_remote_process(client_ip, 'main.Producer', ssh_key, ssh_user)
+
+        # --- 1. Generate and transfer server.properties to each broker ---
+        print("\n--- Configuring Kafka Brokers ---")
+        for i, ip in enumerate(seq_ips):
+            props = generate_kafka_server_properties(
+                node_id=i + 1,
+                ip=ip,
+                all_seq_ips=seq_ips,
+                num_partitions=num_partitions,
+                replication_factor=replication_factor,
+                log_dir=kafka_broker_log_dir,
+            )
+            props_filename = f'kafka_server_{json_output_name}_{i}.properties'
+            with open(props_filename, 'w') as f:
+                f.write(props)
+            if not transfer_file(props_filename, ip, ssh_user, ssh_key):
+                raise Exception(f"Failed to transfer server.properties to {ip}")
+
+        # --- 2. Format storage on each broker (sync) ---
+        print("\n--- Formatting Kafka Storage ---")
+        for i, ip in enumerate(seq_ips):
+            props_filename = f'kafka_server_{json_output_name}_{i}.properties'
+            if not run_remote_command_sync(ip, f'sudo rm -rf {kafka_broker_log_dir}', ssh_key, ssh_user):
+                raise Exception(f"Failed to clean Kafka log dir on {ip}")
+            format_cmd = f'{kafka_dir}/bin/kafka-storage.sh format -t {cluster_uuid} -c ~/{props_filename}'
+            if not run_remote_command_sync(ip, format_cmd, ssh_key, ssh_user):
+                raise Exception(f"Failed to format Kafka storage on {ip}")
+
+        # --- 3. Start brokers (async) ---
+        print("\n--- Starting Kafka Brokers ---")
+        for i, ip in enumerate(seq_ips):
+            props_filename = f'kafka_server_{json_output_name}_{i}.properties'
+            process, log_filename = execute_remote_command(
+                ip, f'{kafka_dir}/bin/kafka-server-start.sh', props_filename,
+                ssh_key, ssh_user, exp_index
+            )
+            if not process:
+                raise Exception(f"Failed to start Kafka broker on {ip}")
+            broker_log_files[ip] = log_filename
+
+        print(f"\nWaiting {SERVER_START_DELAY}s for brokers to initialize...")
+        time.sleep(SERVER_START_DELAY)
+
+        # --- 4. Create topic (sync) ---
+        print(f"\n--- Creating topic '{topic_name}' ---")
+        create_topic_cmd = (
+            f'{kafka_dir}/bin/kafka-topics.sh --create'
+            f' --bootstrap-server {seq_ips[0]}:9092'
+            f' --topic {topic_name}'
+            f' --partitions {num_partitions}'
+            f' --replication-factor {replication_factor}'
+        )
+        if not run_remote_command_sync(seq_ips[0], create_topic_cmd, ssh_key, ssh_user):
+            raise Exception("Failed to create Kafka topic.")
+
+        # --- 5. Generate config.json and copy to kafka-log resources ---
+        client_config = {
+            'topic1': topic_name,
+            'topic2': topic_name,  # same topic so producer and consumer share it
+            'rsm_id': 1,
+            'node_id': 0,          # with rsm_size=1, node_id=0 ensures all messages are sent
+            'broker_ips': broker_ips_str,
+            'rsm_size': 1,         # TODO: >1 requires multiple producer instances
+            'benchmark_duration': experiment_duration,
+            'warmup_duration': warm_up,
+            'cooldown_duration': cool_down,
+            'message': message_payload,
+            'read_from_pipe': False,
+            'input_path': '/tmp/kafka-input',
+            'output_path': consumer_output_remote,
+            'write_dr': False,
+            'write_ccf': False,
+        }
+        config_json_filename = f'kafka_client_config_{json_output_name}_{exp_index}.json'
+        with open(config_json_filename, 'w') as f:
+            json.dump(client_config, f, indent=4)
+        if not transfer_file(config_json_filename, client_ip, ssh_user, ssh_key):
+            raise Exception(f"Failed to transfer client config.json to {client_ip}")
+
+        # Place config where the fat jar's classpath will find it (classpath override).
+        # /tmp/kafka-config/ is prepended to the classpath, shadowing the bundled config.json.
+        setup_config_cmd = (
+            f'mkdir -p /tmp/kafka-config && cp ~/{config_json_filename} /tmp/kafka-config/config.json'
+        )
+        if not run_remote_command_sync(client_ip, setup_config_cmd, ssh_key, ssh_user):
+            raise Exception("Failed to place config.json in /tmp/kafka-config/.")
+
+        jar_cp = kafka_log_jar_remote.replace('~/', '$HOME/', 1)
+
+        print("\n--- Config sent to client ---")
+        run_remote_command_sync(client_ip, 'cat /tmp/kafka-config/config.json', ssh_key, ssh_user)
+        print("\n--- Bundled config.json from jar ---")
+        run_remote_command_sync(client_ip, f'unzip -p {jar_cp} config.json 2>/dev/null || echo "(no bundled config.json found in jar)"', ssh_key, ssh_user)
+
+        # --- 6. Start Consumer (async, head start before producer) ---
+        # Consumer uses auto.offset.reset=latest so it must be subscribed before
+        # the producer sends. java -jar starts in ~1-2s, so CONSUMER_HEAD_START=5 is enough.
+        print(f"\n--- Starting Kafka Consumer (will wait {CONSUMER_HEAD_START}s before producer) ---")
+        consumer_cmd = f'nohup java -cp /tmp/kafka-config:{jar_cp} main.Consumer > ~/{consumer_log_filename} 2>&1 &'
+        run_remote_command_sync(client_ip, consumer_cmd, ssh_key, ssh_user)
+        time.sleep(3)
+        print("\n--- Consumer liveness check (3s after launch) ---")
+        run_remote_command_sync(client_ip, 'pgrep -a -f "main.Consumer" || echo "NOT RUNNING"', ssh_key, ssh_user)
+        print("--- Consumer log so far ---")
+        run_remote_command_sync(client_ip, f'cat ~/{consumer_log_filename}', ssh_key, ssh_user)
+        time.sleep(CONSUMER_HEAD_START - 3)
+
+        # --- 7. Start Producer (async) ---
+        print("\n--- Starting Kafka Producer ---")
+        producer_cmd = f'nohup java -cp /tmp/kafka-config:{jar_cp} main.Producer > ~/{producer_log_filename} 2>&1 &'
+        run_remote_command_sync(client_ip, producer_cmd, ssh_key, ssh_user)
+
+        # --- 8. Wait for experiment to complete ---
+        total_wait = warm_up + experiment_duration + cool_down + 15  # 15s buffer for JVM teardown/flush
+        print(f"\nWaiting {total_wait}s for experiment to complete...")
+        time.sleep(total_wait)
+
+        # --- 9. Stop client processes so shutdown hooks flush the output JSON ---
+        print("\n--- Stopping consumer/producer (triggers JSON flush) ---")
+        kill_remote_process(client_ip, 'main.Consumer', ssh_key, ssh_user)
+        kill_remote_process(client_ip, 'main.Producer', ssh_key, ssh_user)
+        print("Waiting 5s for JVM shutdown hooks to complete...")
+        time.sleep(5)
+
+        # --- 10. Retrieve results ---
+        print("\n--- Retrieving Kafka Results ---")
+        consumer_output_local = os.path.join(local_results_dir, consumer_output_filename)
+        consumer_log_local    = os.path.join(local_results_dir, consumer_log_filename)
+
+        json_ok = copy_log_file_back(client_ip, ssh_user, ssh_key, consumer_output_filename, local_results_dir, remote_dir='/tmp')
+        copy_log_file_back(client_ip, ssh_user, ssh_key, consumer_log_filename,    local_results_dir)
+        copy_log_file_back(client_ip, ssh_user, ssh_key, producer_log_filename,    local_results_dir)
+
+        json_empty = json_ok and os.path.getsize(consumer_output_local) == 0
+        if not json_ok or json_empty:
+            if os.path.exists(consumer_log_local):
+                print("\n--- Consumer log ---")
+                with open(consumer_log_local) as f:
+                    print(f.read())
+                print("--- End consumer log ---")
+            producer_log_local = os.path.join(local_results_dir, producer_log_filename)
+            if os.path.exists(producer_log_local):
+                print("\n--- Producer log ---")
+                with open(producer_log_local) as f:
+                    print(f.read())
+                print("--- End producer log ---")
+
+        # --- 10. Parse and normalize results ---
+        parse_kafka_results(
+            consumer_output_local, consumer_log_local,
+            json_output_name, exp_index, local_results_dir
+        )
+
+    except Exception as e:
+        print(f"\nFATAL ERROR during Kafka experiment cycle {exp_index + 1}: {e}")
+
+    finally:
+        # --- 11. Stop all brokers ---
+        print("\n--- Stopping Kafka Brokers ---")
+        for ip in seq_ips:
+            kill_remote_process(ip, 'kafka.Kafka', ssh_key, ssh_user)
+        for ip, log_filename in broker_log_files.items():
+            copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
+
+
+def generate_scalog_config(discovery_ip, order_ips, data_ips, replication_factor,
+                            ssh_key, ssh_user,
+                            discovery_port=21000, order_base_port=21100, data_base_port=21200):
+    """
+    Generates .scalog.yaml content for the Scalog cluster.
+
+    TODO: Verify every field name against chn0318/scalog .scalog.yaml and the Go config
+    structs before running. The structure below is inferred from the Scalog architecture
+    and common Go YAML config conventions.
+    """
+    order_addrs = [f'{ip}:{order_base_port + i}' for i, ip in enumerate(order_ips)]
+    data_addrs  = [f'{ip}:{data_base_port  + i}' for i, ip in enumerate(data_ips)]
+
+    cfg = {
+        # TODO: confirm top-level key names (discovery / order / data vs flat keys)
+        'discovery': {
+            'server-addr': f'{discovery_ip}:{discovery_port}',
+        },
+        'order': {
+            'server-addresses': order_addrs,
+        },
+        'data': {
+            'server-addresses': data_addrs,
+        },
+        'replication-factor': replication_factor,
+        # SSH credentials used by scalogctl to reach cluster nodes (if needed).
+        # TODO: confirm whether scalogctl embeds ssh config or manages nodes differently.
+        'ssh': {
+            'key':  ssh_key,
+            'user': ssh_user,
+        },
+        # Server-side batching intervals left at defaults intentionally.
+        # Do NOT add order-batching-interval or data-batching-interval here.
+    }
+    return yaml.dump(cfg, default_flow_style=False)
+
+
+def parse_scalog_results(client_log_path, json_name, exp_index, local_results_dir):
+    """
+    Converts Scalog client benchmark output into the standard result schema and writes
+    <json_name>_<exp_index>_scalog.json into local_results_dir.
+
+    TODO: Confirm the actual output format of the Scalog benchmark client binary and
+    update the parsing logic below accordingly. The current implementation looks for
+    common patterns; update once confirmed from the source.
+    """
+    throughput  = 0.0
+    avg_latency = 0.0
+
+    try:
+        with open(client_log_path, 'r') as f:
+            for line in f:
+                line_lower = line.lower()
+                # TODO: replace these with actual output patterns from the Scalog client
+                if 'throughput' in line_lower:
+                    # Expected pattern: "Throughput: 100000.0 ops/sec" or similar
+                    parts = line.strip().split()
+                    for part in parts:
+                        try:
+                            throughput = float(part.replace(',', ''))
+                            break
+                        except ValueError:
+                            continue
+                elif 'latency' in line_lower and 'avg' in line_lower:
+                    # Expected pattern: "Avg latency: 1.5 ms" or similar
+                    parts = line.strip().split()
+                    for part in parts:
+                        try:
+                            avg_latency = float(part.replace('ms', '').replace(',', ''))
+                            break
+                        except ValueError:
+                            continue
+    except Exception as e:
+        print(f"WARNING: Could not parse Scalog client log at {client_log_path}: {e}")
+
+    result = {'throughput': throughput, 'avg_latency': avg_latency, 'batch_size': 1}
+    output_path = os.path.join(local_results_dir, f'{json_name}_{exp_index}_scalog.json')
+    try:
+        with open(output_path, 'w') as f:
+            json.dump(result, f, indent=4)
+        print(f"Scalog results written to: {output_path}")
+    except IOError as e:
+        print(f"ERROR: Could not write Scalog results to {output_path}: {e}")
+    return output_path
+
+
+def run_experiment_cycle_scalog(config, exp_index, local_results_dir):
+    """
+    Runs a single experiment cycle for the Scalog comparison system.
+
+    Expects in TOML:
+      [network_setup]         seq_ips (order nodes), stor_ips (data nodes), cli_ips, ssh_key, ssh_user
+      [program_paths]         path_discovery, path_order, path_data, path_client
+                              (paths to compiled Scalog binaries on the remote machines)
+      [comparison_parameters] num_shards, num_sequencer_nodes, replication_factor
+      [experiment_parameters] json_name, experiment_duration, warm_up, cool_down, message_size
+
+    Component startup order: discovery → order nodes → data nodes → client.
+    Each component is started independently via SSH using execute_remote_command.
+    The discovery node is run on seq_ips[0]; it can share the machine with an order node.
+
+    TODO: Verify .scalog.yaml field names (see generate_scalog_config).
+    TODO: Verify client binary CLI flags for duration, message size, and thread count.
+    TODO: Verify parse_scalog_results output patterns against actual client output.
+    """
+    ssh_key   = os.path.expanduser(config['network_setup']['ssh_key'])
+    ssh_user  = config['network_setup']['ssh_user']
+    client_ips = config['network_setup']['cli_ips']
+    seq_ips    = config['network_setup'].get('seq_ips', [])   # order layer nodes
+    stor_ips   = config['network_setup']['stor_ips']           # data layer nodes
+
+    if not seq_ips:
+        raise Exception("No seq_ips defined for Scalog order nodes in [network_setup].")
+    if not stor_ips:
+        raise Exception("No stor_ips defined for Scalog data nodes in [network_setup].")
+
+    cmp  = config.get('comparison_parameters', {})
+    num_sequencer_nodes = cmp.get('num_sequencer_nodes', len(seq_ips))
+    num_shards          = cmp.get('num_shards',          len(stor_ips))
+    replication_factor  = cmp.get('replication_factor',  2)
+
+    if num_sequencer_nodes > len(seq_ips):
+        raise Exception(f"num_sequencer_nodes ({num_sequencer_nodes}) > len(seq_ips) ({len(seq_ips)}).")
+    if num_shards > len(stor_ips):
+        raise Exception(f"num_shards ({num_shards}) > len(stor_ips) ({len(stor_ips)}).")
+
+    exp              = config['experiment_parameters']
+    json_output_name = exp['json_name']
+    duration         = exp['experiment_duration']
+    warm_up          = exp['warm_up']
+    cool_down        = exp['cool_down']
+    message_size     = exp['message_size']
+
+    paths = config['program_paths']
+    path_discovery = paths['path_discovery']
+    path_order     = paths['path_order']
+    path_data      = paths['path_data']
+    path_client    = paths['path_client']
+
+    # Discovery runs on seq_ips[0], which may also host an order node.
+    discovery_ip  = seq_ips[0]
+    active_order  = seq_ips[:num_sequencer_nodes]
+    active_data   = stor_ips[:num_shards]
+    client_ip     = client_ips[0]
+
+    scalog_yaml_filename = f'scalog_{json_output_name}_{exp_index}.yaml'
+    client_log_filename  = f'scalog_client_{json_output_name}_{exp_index}.log'
+
+    component_log_files  = {}   # ip -> log filename, for cleanup retrieval
+
+    print(f"\n========================================================")
+    print(f"   RUNNING SCALOG EXPERIMENT {exp_index + 1}: {json_output_name}")
+    print(f"   Order nodes: {active_order}")
+    print(f"   Data  nodes: {active_data}")
+    print(f"   RF: {replication_factor}")
+    print(f"========================================================")
+
+    try:
+        # --- 1. Generate and distribute .scalog.yaml ---
+        print("\n--- Generating Scalog config ---")
+        scalog_yaml = generate_scalog_config(
+            discovery_ip=discovery_ip,
+            order_ips=active_order,
+            data_ips=active_data,
+            replication_factor=replication_factor,
+            ssh_key=ssh_key,
+            ssh_user=ssh_user,
+        )
+        with open(scalog_yaml_filename, 'w') as f:
+            f.write(scalog_yaml)
+
+        all_scalog_nodes = list(dict.fromkeys(active_order + active_data + [client_ip]))
+        for ip in all_scalog_nodes:
+            if not transfer_file(scalog_yaml_filename, ip, ssh_user, ssh_key):
+                raise Exception(f"Failed to transfer scalog config to {ip}")
+
+        # --- 2. Start discovery node ---
+        print(f"\n--- Starting Scalog discovery node on {discovery_ip} ---")
+        process, log_filename = execute_remote_command(
+            discovery_ip, path_discovery, scalog_yaml_filename, ssh_key, ssh_user, exp_index
+        )
+        if not process:
+            raise Exception(f"Failed to start discovery node on {discovery_ip}")
+        component_log_files[f'discovery_{discovery_ip}'] = (discovery_ip, log_filename)
+
+        time.sleep(2)  # discovery must be up before order nodes connect
+
+        # --- 3. Start order layer nodes ---
+        print("\n--- Starting Scalog order nodes ---")
+        for ip in active_order:
+            process, log_filename = execute_remote_command(
+                ip, path_order, scalog_yaml_filename, ssh_key, ssh_user, exp_index
+            )
+            if not process:
+                raise Exception(f"Failed to start order node on {ip}")
+            component_log_files[f'order_{ip}'] = (ip, log_filename)
+
+        time.sleep(2)  # order nodes register with discovery before data nodes connect
+
+        # --- 4. Start data layer nodes ---
+        print("\n--- Starting Scalog data nodes ---")
+        for ip in active_data:
+            process, log_filename = execute_remote_command(
+                ip, path_data, scalog_yaml_filename, ssh_key, ssh_user, exp_index
+            )
+            if not process:
+                raise Exception(f"Failed to start data node on {ip}")
+            component_log_files[f'data_{ip}'] = (ip, log_filename)
+
+        print(f"\nWaiting {SERVER_START_DELAY}s for cluster to stabilize...")
+        time.sleep(SERVER_START_DELAY)
+
+        # --- 5. Run client benchmark ---
+        # TODO: Verify the client binary accepts these flags; update if it uses a config-only
+        # approach (in which case add duration/message_size/threads to scalog_yaml instead).
+        print(f"\n--- Starting Scalog client benchmark on {client_ip} ---")
+        total_bench = warm_up + duration + cool_down
+        client_extra_args = (
+            f'--duration {total_bench}'
+            f' --message-size {message_size}'
+            f' --warmup {warm_up}'
+        )
+        # execute_remote_command runs: sudo <path_client> ~/<config>
+        # We append extra flags by embedding them in the path string.
+        # TODO: adjust if the client takes flags differently.
+        client_invocation = f'{path_client} ~/{scalog_yaml_filename} {client_extra_args}'
+        client_cmd = (
+            f'sudo {client_invocation} > ~/{client_log_filename} 2>&1'
+        )
+        client_ssh_cmd = [
+            'ssh', '-i', ssh_key,
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', 'UserKnownHostsFile=/dev/null',
+            f'{ssh_user}@{client_ip}',
+            f'/bin/bash -c "{client_cmd} &"',
+        ]
+        client_process = subprocess.Popen(
+            client_ssh_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+
+        total_wait = total_bench + 15  # 15s buffer for startup/teardown
+        print(f"Waiting {total_wait}s for client benchmark to complete...")
+        time.sleep(total_wait)
+
+        # --- 6. Retrieve results ---
+        print("\n--- Retrieving Scalog results ---")
+        client_log_local = os.path.join(local_results_dir, client_log_filename)
+        copy_log_file_back(client_ip, ssh_user, ssh_key, client_log_filename, local_results_dir)
+
+        parse_scalog_results(client_log_local, json_output_name, exp_index, local_results_dir)
+
+    except Exception as e:
+        print(f"\nFATAL ERROR during Scalog experiment cycle {exp_index + 1}: {e}")
+
+    finally:
+        # --- 7. Stop all cluster components and retrieve logs ---
+        print("\n--- Stopping Scalog cluster ---")
+        for component, (ip, log_filename) in component_log_files.items():
+            copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
+
+        for ip in active_data:
+            kill_remote_process(ip, path_data, ssh_key, ssh_user)
+        for ip in active_order:
+            kill_remote_process(ip, path_order, ssh_key, ssh_user)
+        kill_remote_process(discovery_ip, path_discovery, ssh_key, ssh_user)
+
+
+def run_experiment_cycle_lazylog(config, exp_index, local_results_dir):
+    """Runs a single experiment cycle for LazyLog. Not yet implemented."""
+    raise NotImplementedError("run_experiment_cycle_lazylog is not yet implemented.")
+
+
+
+EXPERIMENT_CYCLE_FNS = {
+    'pringles': run_experiment_cycle,
+    'scalog':   run_experiment_cycle_scalog,
+    'lazylog':  run_experiment_cycle_lazylog,
+    'kafka':    run_experiment_cycle_kafka,
+}
+
+
 def main(config_file="config.toml"):
     """Main function to parse config, generate YAMLs, and execute experiments in a loop."""
     
@@ -1274,11 +2100,16 @@ def main(config_file="config.toml"):
     base_config = full_config.copy() 
 
     # --- Initial Setup ---
+    system_name = base_config.get('system', {}).get('name', 'pringles')
+    cycle_fn = EXPERIMENT_CYCLE_FNS.get(system_name)
+    if cycle_fn is None:
+        print(f"FATAL: Unknown system '{system_name}'. Valid options: {list(EXPERIMENT_CYCLE_FNS.keys())}")
+        return
+    print(f"\n--- System: {system_name} ---")
+
     client_ips = base_config['network_setup']['cli_ips']
     stor_ips = base_config['network_setup']['stor_ips']
-    switch_ip = base_config['network_setup']['switch_ip']
-    all_ips = client_ips + stor_ips + [switch_ip]
-    ssh_key = base_config['network_setup']['ssh_key']
+    ssh_key = os.path.expanduser(base_config['network_setup']['ssh_key'])
     ssh_user = base_config['network_setup']['ssh_user']
     with_tunnel = base_config['experiment_parameters']['with_tunnel']
 
@@ -1292,6 +2123,13 @@ def main(config_file="config.toml"):
         process_and_aggregate_results(base_config['testing']['local_results_dir'], ring_sizes)
         plot_results(base_config['testing']['local_results_dir'], base_config['experiment_parameters']['plot_param'])
         return
+
+    if system_name == 'pringles':
+        switch_ip = base_config['network_setup']['switch_ip']
+        all_ips = client_ips + stor_ips + [switch_ip]
+    else:
+        seq_ips = base_config['network_setup'].get('seq_ips', [])
+        all_ips = client_ips + stor_ips + seq_ips
     
     # --- 2. Create Unique Local Results Folder (All results will be copied here) ---
     now = datetime.now()
@@ -1321,13 +2159,31 @@ def main(config_file="config.toml"):
     else:
         print("\n--- Setup Script Execution Skipped ---")
         
-    # --- 4. COMPILE BINARIES ON ALL MACHINES ---
-    print("\n--- Compiling Binaries on All Machines ---") # TODO BRING BACK
-    #for ip in all_ips:
-    #    if not run_compile_command(ip, ssh_key, ssh_user):
-    #        print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
-    #        return
-    #print("--- Compilation Complete ---")
+    # --- 4. COMPILE BINARIES ON ALL MACHINES (Pringles only) ---
+    if system_name == 'pringles':
+        print("\n--- Compiling Binaries on All Machines ---")
+        for ip in all_ips:
+            if not run_compile_command(ip, ssh_key, ssh_user):
+                print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
+                return
+        print("--- Compilation Complete ---")
+    else:
+        print(f"\n--- Skipping Pringles meson compile (system: {system_name}) ---")
+
+    # --- 5. SETUP COMPARISON SYSTEM BINARIES (conditional) ---
+    run_comparison_setup = base_config['program_paths'].get('run_comparison_setup', 'False').lower() == 'true'
+    if run_comparison_setup:
+        setup_fns = {'kafka': setup_kafka_nodes, 'scalog': setup_scalog_nodes}
+        setup_fn = setup_fns.get(system_name)
+        if setup_fn:
+            print(f"\n--- Setting up {system_name} binaries on remote nodes ---")
+            if not setup_fn(base_config, ssh_key, ssh_user):
+                print(f"FATAL: {system_name} setup failed. Aborting experiment.")
+                return
+        else:
+            print(f"\n--- No comparison setup defined for system '{system_name}', skipping ---")
+    else:
+        print(f"\n--- Comparison system setup skipped (run_comparison_setup = False) ---")
 
         # --- Start Experiment Loop ---
     print(f"\n--- Starting {len(experiments_to_run)} Experiment Runs ---")
@@ -1358,8 +2214,7 @@ def main(config_file="config.toml"):
                 print("--- All {num_switches} switches up and running ---")
     
         # 3. Run the full experiment cycle with the merged configuration
-        run_experiment_cycle(current_config, exp_index, local_results_dir, with_tunnel)
-
+        cycle_fn(current_config, exp_index, local_results_dir)
         time.sleep(EXPERIMENT_DELAY)
     
     # --- Final Step A: Aggregate ALL results from the shared directory ---\
@@ -1414,4 +2269,10 @@ if __name__ == '__main__':
     except ImportError:
         print("ERROR: 'matplotlib' library not found. Install with 'pip install matplotlib'.")
         sys.exit(1)
-    main()
+
+    import argparse
+    parser = argparse.ArgumentParser(description="Run Pringles or comparison system experiments.")
+    parser.add_argument("config", nargs="?", default="config.toml",
+                        help="Path to the TOML config file (default: config.toml)")
+    args = parser.parse_args()
+    main(args.config)
