@@ -1,3 +1,9 @@
 [submodule "experiments/comparison-systems/scalog"]
 	path = experiments/comparison-systems/scalog
 	url = https://github.com/chn0318/scalog.git
+[submodule "spdlog"]
+	path = spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "oneTBB"]
+	path = oneTBB
+	url = https://github.com/uxlfoundation/oneTBB.git

@@ -34,18 +34,36 @@ Key components of the codebase:
 
 Switch SDE Changes:
 - In the ptf/testutils.py file: Added function to create the specialized control packet 
-<<<<<<< HEAD
-=======
 - Removed "sudo" from the run_switchd.sh and run_ptf_tests.sh scripts
->>>>>>> ff8a7314a10cbdcf5e945c7367724f3cfa86835b
 
 ## How to Setup and Compile
 See setup.sh for all relevant packages. C++17 at minimum required. If you are using cloudlab for testing, you can use the Cloudlab profile `run-pringles` which already has the appropriate packages.
 
+For static linking:
+1. Spdlog:
+`cd /proj/ove-PG0/murray/spdlog`
+`rm -rf build && mkdir build && cd build`
+`cmake .. -DCMAKE_BUILD_TYPE=Release -DSPDLOG_BUILD_STATIC=ON -DSPDLOG_BUILD_SHARED=OFF -DSPDLOG_BUILD_EXAMPLE=OFF -DSPDLOG_BUILD_TESTS=OFF`
+`cmake --build . --parallel $(nproc)`
+
+2. oneTBB (need to get libtbb.a)
+`cd /proj/ove-PG0/murray/oneTBB`
+`rm -rf build && mkdir build && cd build`
+`cmake .. -DCMAKE_BUILD_TYPE=Release -DTBB_STATIC=ON -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF`
+`cmake --build . --parallel $(nproc)`
+
 To compile, follow these steps:
 1. `cd /path/to/pringles`
-2.  `meson setup build && cd build`
+2.  `meson setup build --default-library=static && cd build`
 3. `meson compile`
+
+## Notes on compiling
+This warning came up:
+
+/usr/bin/ld: code/src/liblogging.a(network.cpp.o): in function `Network::setup_listener_socket(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)':
+/proj/ove-PG0/murray/pringles/build/../code/src/network.cpp:356: warning: Using 'getaddrinfo' in statically linked applications requires at runtime the shared libraries from the glibc version used for linking
+/usr/bin/ld: /proj/ove-PG0/murray/oneTBB/build/gnu_11.4_cxx11_64_relwithdebinfo/libtbb.a(dynamic_link.cpp.o): in function `tbb::detail::r1::dynamic_link(char const*, tbb::detail::r1::dynamic_link_descriptor const*, unsigned long, void**, int)':
+build/src/tbb/src/tbb/dynamic_link.cpp:533: warning: Using 'dlopen' in statically linked applications requires at runtime the shared libraries from the glibc version used for linking
 
 ## How to Run
 
