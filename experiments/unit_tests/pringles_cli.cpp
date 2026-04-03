@@ -19,16 +19,111 @@
 #include "trace.h"
 #include "pringles_client.h"
 
-void run_client(std::string input_file, uint64_t i) {
-    LogClient pringles_cli = LogClient(input_file, i);
-    spdlog::debug("Pringles client created and started!");
+// Performance test of append
+void run_append_client(std::string input_file, uint64_t i, uint64_t num_threads) {
+    LogClient pringles_cli = LogClient(input_file, i, num_threads);
+    pringles_cli.subscribe(1);
+    pringles_cli.launch_append_execute();
+    spdlog::critical("Pringles client created and started!");
     pringles_cli.wait_to_warmup();
-    spdlog::debug("Pringles warmup is done!");
-    pringles_cli.wait_to_finish();
-    spdlog::debug("Pringles experiment data collection is done!");
+    spdlog::critical("Pringles warmup is done!");
+    pringles_cli.wait_to_finish(true);
+    spdlog::critical("Pringles experiment data collection is done!");
     pringles_cli.wait_to_cooldown();
-    spdlog::debug("Pringles client cooldown is done!");
+    spdlog::critical("Pringles client cooldown is done!");
 }
+
+
+/*********** SHARDS ******************/
+// Simplest Correctness Test of subscribe
+void run_sub_client(std::string input_file, uint64_t i, uint64_t num_threads) {
+    LogClient pringles_cli = LogClient(input_file, i, num_threads);
+    pringles_cli.subscribe(0);
+}
+
+
+// Simplest Correctness Test of append, read, getTail
+void run_basic_client(std::string input_file, uint64_t i, uint64_t num_threads, uint64_t payload_size) {
+    LogClient pringles_cli = LogClient(input_file, i, num_threads);
+    uint64_t idx = 0;
+    std::string entry = "";
+
+    std::string payload_x(payload_size, 'X');
+    idx = pringles_cli.append(payload_x);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 1);
+    entry = pringles_cli.read(idx);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_x);
+
+    std::string payload_y(payload_size, 'Y');
+    idx = pringles_cli.append(payload_y);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 2);
+    entry = pringles_cli.read(idx);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_y);
+
+    std::string payload_z(payload_size, 'Z');
+    idx = pringles_cli.append(payload_z);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 3);
+    entry = pringles_cli.read(idx);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_z);
+
+    uint64_t tail = pringles_cli.getTail();
+    spdlog::critical("TAIL idx: {}", tail);
+    assert(idx == tail);
+    pringles_cli.wait_to_cooldown();
+}
+
+/*********** STREAMS ******************/
+// Simplest Correctness Test of subscribe
+void run_stream_sub_client(std::string input_file, uint64_t i, uint64_t num_threads) {
+    LogClient pringles_cli = LogClient(input_file, i, num_threads);
+    pringles_cli.subscribe_stream(1);
+}
+
+
+// Simplest Correctness Test of append, read, getTail
+// Number of streams: 1, 2
+void run_basic_stream_client(std::string input_file, uint64_t i, uint64_t num_threads, uint64_t payload_size) {
+    LogClient pringles_cli = LogClient(input_file, i, num_threads);
+    uint64_t idx = 0;
+    std::string entry = "";
+
+    std::string payload_x(payload_size, 'X');
+    idx = pringles_cli.append_stream(payload_x, 1);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 1);
+    entry = pringles_cli.read_stream(idx, 1);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_x);
+
+    std::string payload_y(payload_size, 'Y');
+    idx = pringles_cli.append_stream(payload_y, 2);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 2);
+    entry = pringles_cli.read_stream(idx, 2); 
+    // Should I know the idx/stream pairing? or is this idx supposed to be idx = 0
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_y);
+
+    std::string payload_z(payload_size, 'Z');
+    idx = pringles_cli.append_stream(payload_z, 1);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 3);
+    entry = pringles_cli.read_stream(idx, 1);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_z);
+
+    uint64_t tail = pringles_cli.getTail();
+    spdlog::critical("TAIL idx: {}", tail);
+    assert(idx == tail);
+    pringles_cli.wait_to_cooldown();
+}
+
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -38,10 +133,29 @@ int main(int argc, char* argv[]) {
     YAML::Node config = YAML::LoadFile(input_file);
     set_spdlog_level(get_log_level(config));
 
+    // Basic functionality experiment
+    //std::thread basics(&run_basic_client, input_file, 0, 1, get_payload_size(config));	
+    //basics.join();
+
+    // Basic test subscribe
+//    std::thread basicsub(&run_sub_client, input_file, 0, 2);	
+//    std::thread basics(&run_basic_client, input_file, 1, 2, get_payload_size(config));	
+//    basicsub.join();
+//    basics.join();
+//
+
+    // Basic test subscribe streams
+    //std::thread basicsub(&run_stream_sub_client, input_file, 0, 2);	
+    //std::thread basics(&run_basic_stream_client, input_file, 1, 2, get_payload_size(config));	
+    //basicsub.join();
+    //basics.join();
+
+
+    // Basic scaling experiments
     std::vector<std::thread> cli_threads = {};
     uint64_t num_work_threads = get_num_client_threads(config);
-    for (uint64_t i = 0; i < num_work_threads /*TODO YAML*/; i++) {
-        cli_threads.emplace_back(std::thread(&run_client, input_file, i));	
+    for (uint64_t i = 0; i < num_work_threads; i++) {
+        cli_threads.emplace_back(std::thread(&run_append_client, input_file, i, num_work_threads));	
     }
     for (uint64_t i = 0; i < cli_threads.size(); i++) {
         cli_threads[i].join();
