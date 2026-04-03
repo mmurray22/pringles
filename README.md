@@ -49,7 +49,7 @@ For static linking:
 2. oneTBB (need to get libtbb.a)
 `cd /proj/ove-PG0/murray/oneTBB`
 `rm -rf build && mkdir build && cd build`
-`cmake .. -DCMAKE_BUILD_TYPE=Release -DTBB_STATIC=ON -DTBB_TEST=OFF`
+`cmake .. -DCMAKE_BUILD_TYPE=Release -DTBB_STATIC=ON -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF`
 `cmake --build . --parallel $(nproc)`
 
 To compile, follow these steps:

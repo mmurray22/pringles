@@ -17,15 +17,15 @@ protobuf = dependency('protobuf', static: true)
 # Meson will now download and compile these as static libraries automatically
 #spdlog = dependency('spdlog', fallback: ['spdlog', 'spdlog_dep'], static: true)
 spdlog = declare_dependency(
-    link_args: ['/proj/ove-PG0/murray/spdlog/build/libspdlog.a'],
-    include_directories: include_directories('/proj/ove-PG0/murray/spdlog/include')
+    link_args: ['../spdlog/build/libspdlog.a'],
+    include_directories: include_directories('../spdlog/include')
 )
 fmt_dep = dependency('fmt', fallback: ['fmt', 'fmt_dep'], static: true)
 #spdlog = dependency('spdlog', fallback: ['spdlog', 'spdlog_dep'], static: true)
 #tbb_dep = dependency('tbb', required: true, static: true) 
 tbb_dep = declare_dependency(
-    link_args: ['/proj/ove-PG0/murray/oneTBB/build/gnu_11.4_cxx11_64_release/libtbb.a'],
-    include_directories: include_directories('/proj/ove-PG0/murray/oneTBB/include')
+    link_args: ['../oneTBB/build/gnu_11.4_cxx11_64_release/libtbb.a'],
+    include_directories: include_directories('../oneTBB/include')
 )
 add_project_link_arguments(['-lprotobuf'], language: ['cpp'])
 add_project_link_arguments(['-static'], language: ['cpp'])
