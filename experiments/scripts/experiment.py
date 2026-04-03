@@ -1376,7 +1376,14 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         print(f"\nWaiting {total_wait}s for experiment to complete...")
         time.sleep(total_wait)
 
-        # --- 9. Retrieve results ---
+        # --- 9. Stop client processes so shutdown hooks flush the output JSON ---
+        print("\n--- Stopping consumer/producer (triggers JSON flush) ---")
+        kill_remote_process(client_ip, 'main.Consumer', ssh_key, ssh_user)
+        kill_remote_process(client_ip, 'main.Producer', ssh_key, ssh_user)
+        print("Waiting 5s for JVM shutdown hooks to complete...")
+        time.sleep(5)
+
+        # --- 10. Retrieve results ---
         print("\n--- Retrieving Kafka Results ---")
         consumer_output_local = os.path.join(local_results_dir, consumer_output_filename)
         consumer_log_local    = os.path.join(local_results_dir, consumer_log_filename)
@@ -1413,8 +1420,6 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         print("\n--- Stopping Kafka Brokers ---")
         for ip in seq_ips:
             kill_remote_process(ip, 'kafka.Kafka', ssh_key, ssh_user)
-        kill_remote_process(client_ip, 'main.Consumer', ssh_key, ssh_user)
-        kill_remote_process(client_ip, 'main.Producer', ssh_key, ssh_user)
         for ip, log_filename in broker_log_files.items():
             copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
 
