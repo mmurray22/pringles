@@ -1354,7 +1354,12 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         print(f"\n--- Starting Kafka Consumer (will wait {CONSUMER_HEAD_START}s before producer) ---")
         consumer_cmd = f'nohup java -cp /tmp/kafka-config:{jar_cp} main.Consumer > ~/{consumer_log_filename} 2>&1 &'
         run_remote_command_sync(client_ip, consumer_cmd, ssh_key, ssh_user)
-        time.sleep(CONSUMER_HEAD_START)
+        time.sleep(3)
+        print("\n--- Consumer liveness check (3s after launch) ---")
+        run_remote_command_sync(client_ip, 'pgrep -a -f "main.Consumer" || echo "NOT RUNNING"', ssh_key, ssh_user)
+        print("--- Consumer log so far ---")
+        run_remote_command_sync(client_ip, f'cat ~/{consumer_log_filename}', ssh_key, ssh_user)
+        time.sleep(CONSUMER_HEAD_START - 3)
 
         # --- 7. Start Producer (async) ---
         print("\n--- Starting Kafka Producer ---")
