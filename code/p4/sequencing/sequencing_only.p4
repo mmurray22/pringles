@@ -9,9 +9,6 @@
 #include <tna.p4>
 #endif
 
-
-
-
 #include "common/headers.p4"
 #include "common/util.p4"
 
@@ -27,23 +24,15 @@ const bit<16> TYPE_READ_RESP = 0x0871;
 const bit<16> TYPE_TAIL = 0x0840;
 const bit<16> TYPE_SUB = 0x0850;
 const bit<16> TYPE_SUB_RESP = 0x0851;
-const bit<32> MAX_INFLIGHT_ACKS = 64;  //400000;
-const bit<32> MAX_GSN_MAP_SIZE = 65536;
+const bit<16> TYPE_VIEW = 0x0830;
+const bit<32> MAX_INFLIGHT_ACKS = 65536;
+const bit<32> MAX_GSN_MAP_SIZE = 65535; //65536; //131072; //65536;
 
-
-# TODO TODO : CHANGE ALL THESE TO DEFAULT ACTION MAUs???
-const bit<32> ACK_THRESHOLD = 2;
-const bit<32> NUM_SHARDS = 1;
-#define STORAGE_SHARD_SIZE 2
-#define NUM_SWITCHES 1
-
-
-#define RACK_STORAGE_SERVERS 1
-#define QUORUM_SIZE 2 // f+1
 
 /*************************************************************************
 *********************** H E A D E R S  ***********************************
 *************************************************************************/
+
 
 typedef bit<9>  egressSpec_t;
 typedef bit<48> macAddr_t;
@@ -52,6 +41,7 @@ typedef bit<48> time_t;
 typedef bit<8> pkt_type_t;
 const pkt_type_t PKT_TYPE_MIRROR = 2;
 const pkt_type_t PKT_TYPE_NORMAL = 1;
+
 #if __TARGET_TOFINO__ == 1
 typedef bit<3> mirror_type_t;
 #else
@@ -106,6 +96,8 @@ header control_pkt_t {
 
    // ID of last sending switch
    bit<16> pkt_id;
+
+   bit<48> start_ts;
 }
 
 // Ring type header - holds the type of the packet
@@ -138,7 +130,7 @@ header append_entry_t {
     bit<32> g_idx; // TODO: NEEDS TO BECOME 64 BIT NUMBER
     
     // Metadata: The number of times the control packet had been seen when entry is first received
-    bit<32> cntrl_pkt_it; // TODO: OVERFLOW?
+    bit<16> cntrl_pkt_it; // TODO: OVERFLOW?
 
     bit<32> client_ip;
     bit<16> recv_port;
@@ -207,6 +199,16 @@ header subscribe_req_t {
     bit<16> subscribe_port;
 }
 
+
+/***** View Change Headers ******/
+header start_view_change_t {
+    bit<16> current_ring_view;
+    bit<16> old_ring_view;
+    bit<16> switch_id;
+    bit<16> sender_switch_id;
+    bit<32> highest_seen_seq_no;
+}
+
 /******* Custom Test Headers ********/
 // Check control packet variables
 header control_pkt_checker_t {
@@ -217,7 +219,8 @@ header control_pkt_checker_t {
 struct digest_append_t {
     bit<48> start_ts;
     bit<48> end_ts;
-    bit<32> nonce;
+    bit<16> nonce;
+    bit<32> seq_no;
 }
 
 struct metadata {
@@ -228,7 +231,19 @@ struct metadata {
     bit<1> is_cntrl;
     bit<1> send_acks;
     bit<1> route_to_client;
-    bit<1> check_gsn;
+
+    // For switch ID
+    bit<16> switch_id;
+    bit<16> ring_view;
+   
+    // For shards
+    bit<32> num_shards;
+    bit<32> shard_size;
+ 
+    // For acks
+    bit<32> ack_threshold;
+
+    // For mirroring
     bit<1> do_ing_mirroring; // Enable ingress mirroring
     bit<1> do_egr_mirroring; // Enable egress mirroring
     MirrorId_t ing_mir_ses; // Ingress mirror session ID
@@ -239,7 +254,9 @@ struct metadata {
     bit<8> get_pkt_gen;
     bit<48> start_ts;
     bit<48> end_ts;
-    bit<32> nonce;
+    bit<32> duration;
+    bit<16> nonce;
+    bit<32> seq_no;
 }
 
 struct headers {
@@ -248,6 +265,7 @@ struct headers {
     control_pkt_t           cntrl;
     ipv4_t                  ipv4;
     udp_h		    udp; // 64 bits
+    start_view_change_t     start_view; // 64 bits
     ring_type_t             ring_type;
     append_entry_t          append;
     read_entry_t            read;
@@ -272,6 +290,7 @@ parser MyParser(packet_in packet,
 	transition select(standard_metadata.ingress_port) {
             68      : parse_pktgen_timer; // Adjust port # for your Pipe
             169      : parse_pktgen_timer; // Recirculated generated packet!
+            196      : parse_pktgen_timer; // Recirculated generated packet!
             default : parse_ethernet;      // Normal clients
     	}
     }
@@ -305,6 +324,7 @@ parser MyParser(packet_in packet,
             TYPE_READ_RESP: parse_read;
             TYPE_TAIL: parse_tail;
             TYPE_SUB: parse_sub;
+	    TYPE_VIEW: parse_view;
 	    default: accept;
         }
     }
@@ -339,6 +359,12 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.sub);
         transition accept;
     }
+
+    state parse_view {
+        packet.extract(hdr.start_view);
+        transition accept;
+    }
+
 }
 
 /*************************************************************************
@@ -378,6 +404,7 @@ control MyIngress(inout headers hdr,
 	    pkt_local_seq_no = cur_local_seq_no;
         }
     };
+    
     RegisterAction<bit<32>, bit<1>, bit<32>>(local_seq_no) read_local_seq_no = {
         void apply(inout bit<32> cur_local_seq_no, out bit<32> final_local_seq_no) {
             final_local_seq_no = cur_local_seq_no;
@@ -406,18 +433,23 @@ control MyIngress(inout headers hdr,
     };
 
     // Largest global sequence number known to the switch Updated every time control packet is received.
-    Register<bit<32>, bit<32>>(MAX_GSN_MAP_SIZE, 0) map_from_gsn; // TODO: How to increment/track this sequence number value?
-    RegisterAction<bit<32>, bit<32>, bit<32>>(map_from_gsn) get_gsn = {
+    Register<bit<32>, bit<16>>(MAX_GSN_MAP_SIZE, 0) map_from_gsn; // TODO: How to increment/track this sequence number value?
+    RegisterAction<bit<32>, bit<16>, bit<32>>(map_from_gsn) get_gsn = {
         void apply(inout bit<32> gsn_at_idx, out bit<32> gsn) { // inout = register, out = output 
 	    gsn = gsn_at_idx;
         }
     };
-    RegisterAction<bit<32>, bit<32>, bit<32>>(map_from_gsn) add_gsn = {
+    RegisterAction<bit<32>, bit<16>, bit<32>>(map_from_gsn) add_gsn = {
         void apply(inout bit<32> gsn_slot) { // inout = register, out = output 
 	    gsn_slot = hdr.cntrl.global_seq_no;
         }
     };
-    RegisterAction<bit<32>, bit<32>, bit<32>>(map_from_gsn) compare_gsn = {
+    RegisterAction<bit<32>, bit<16>, bit<32>>(map_from_gsn) zero_gsn = {
+        void apply(inout bit<32> gsn_slot) { // inout = register, out = output 
+	    gsn_slot = 0;
+        }
+    };
+    RegisterAction<bit<32>, bit<16>, bit<32>>(map_from_gsn) compare_gsn = {
         void apply(inout bit<32> gsn_slot, out bit<32> higher) { // inout = register, out = output 
 	    if (hdr.append.g_idx > gsn_slot) {
 	        higher = 0;
@@ -433,7 +465,13 @@ control MyIngress(inout headers hdr,
         void apply(inout bit<32> curr_ack_cnt, out bit<32> ack_count) {
 	    bit<32> val = curr_ack_cnt;
 	    curr_ack_cnt = val + 1;
-	    ack_count = curr_ack_cnt;
+	    ack_count = 1;
+	    /*if (curr_ack_cnt == meta.ack_threshold) {
+		curr_ack_cnt = 0;
+		ack_count = 1;
+	    } else {
+		ack_count = 0;
+	    }*/
         }
     };
 
@@ -447,21 +485,51 @@ control MyIngress(inout headers hdr,
 
     /////// Control Packet Iteration //////
     // Number of total times the switch has seen the control packet TODO potential to overflow?
-    Register<bit<32>, bit<1>>(1, 0) cntrl_pkt_it; 
-    RegisterAction<bit<32>, bit<1>, bit<32>>(cntrl_pkt_it) update_cntrl_pkt_it = {
-        void apply(inout bit<32> cur_cntrl_pkt_it, out bit<32> output_cntrl_pkt_it) {
+    Register<bit<16>, bit<1>>(1, 0) cntrl_pkt_it; 
+    RegisterAction<bit<16>, bit<1>, bit<16>>(cntrl_pkt_it) update_cntrl_pkt_it = {
+        void apply(inout bit<16> cur_cntrl_pkt_it, out bit<16> output_cntrl_pkt_it) {
 	    output_cntrl_pkt_it = cur_cntrl_pkt_it;
-            cur_cntrl_pkt_it = cur_cntrl_pkt_it + 1;
+	    if (cur_cntrl_pkt_it == (bit<16>)MAX_GSN_MAP_SIZE) {
+                cur_cntrl_pkt_it = 0;
+	    } else {
+                cur_cntrl_pkt_it = cur_cntrl_pkt_it + 1;
+	    }
 	}
     };
-    RegisterAction<bit<32>, bit<1>, bit<32>>(cntrl_pkt_it) get_cntrl_pkt_it = {
-        void apply(inout bit<32> cur_cntrl_pkt_it, out bit<32> output_cntrl_pkt_it) {
+    RegisterAction<bit<16>, bit<1>, bit<16>>(cntrl_pkt_it) get_cntrl_pkt_it = {
+        void apply(inout bit<16> cur_cntrl_pkt_it, out bit<16> output_cntrl_pkt_it) {
 	    output_cntrl_pkt_it = cur_cntrl_pkt_it;
 	}
     };
-    RegisterAction<bit<32>, bit<1>, bit<32>>(cntrl_pkt_it) latest_complete_cntrl_pkt_it = {
-        void apply(inout bit<32> cur_cntrl_pkt_it, out bit<32> output_cntrl_pkt_it) {
+    RegisterAction<bit<16>, bit<1>, bit<16>>(cntrl_pkt_it) latest_complete_cntrl_pkt_it = {
+        void apply(inout bit<16> cur_cntrl_pkt_it, out bit<16> output_cntrl_pkt_it) {
 	    output_cntrl_pkt_it = cur_cntrl_pkt_it - 1;
+	}
+    };
+
+    //////// Performance Statistics (Packet Gen) /////////
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter; 
+    Register<bit<32>, bit<1>>(1, 0) latency; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(latency) update_lat_cntr = {
+        void apply(inout bit<32> new_lat_cntr) {
+	    new_lat_cntr = new_lat_cntr + meta.duration;
+	}
+    };
+
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) recirc_packet_counter; 
+    Register<bit<32>, bit<1>>(1, 0) recirc_time; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(recirc_time) update_recirc_cntr = {
+        void apply(inout bit<32> new_lat_cntr) {
+	    new_lat_cntr = meta.duration;
+	}
+    };
+
+
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) cntrl_packet_counter; 
+    Register<bit<32>, bit<1>>(1, 0) ring_trip_time; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(ring_trip_time) update_ring_trip_cntr = {
+        void apply(inout bit<32> new_lat_cntr) {
+	    new_lat_cntr = new_lat_cntr + meta.duration;
 	}
     };
 
@@ -478,6 +546,59 @@ control MyIngress(inout headers hdr,
      */    
 
     /**** ROUTING *****/
+    
+    action switch_id(bit<16> id) {
+	meta.switch_id = id;	
+    }
+   
+    @pragma ternary 1 
+    table get_switch_id {
+	actions = {
+	    switch_id;
+	}
+	size = 64;
+	default_action = switch_id(1);
+    }
+
+    action shard_size(bit<32> size) {
+	meta.shard_size = size;	
+    }
+   
+    @pragma ternary 1 
+    table get_shard_size {
+	actions = {
+	    shard_size;
+	}
+	size = 64;
+	default_action = shard_size(1);
+    }
+
+    action num_shards(bit<32> shards) {
+	meta.num_shards = 0; //shards - 1;	
+    }
+   
+    @pragma ternary 1 
+    table get_num_shards {
+	actions = {
+	    num_shards;
+	}
+	size = 64;
+	default_action = num_shards(1);
+    }
+
+    action ack_threshold(bit<32> threshold) {
+	meta.ack_threshold = threshold;	
+    }
+   
+    @pragma ternary 1 
+    table get_ack_threshold {
+	actions = {
+	    ack_threshold;
+	}
+	size = 64;
+	default_action = ack_threshold(1);
+    }
+
     action drop() {
         ig_dprsr_md.drop_ctl = 1;
     }
@@ -507,6 +628,7 @@ control MyIngress(inout headers hdr,
         ig_tm_md.ucast_egress_port = port;
     }
 
+    @pragma ternary 1 
     table circulate_table {
         key = {
 	    meta.circulate: exact;
@@ -515,7 +637,7 @@ control MyIngress(inout headers hdr,
             circulate_port;
 	    drop;
         }
-        size = 1024;
+        size = 64;
         default_action = drop();
     }
 
@@ -545,7 +667,7 @@ control MyIngress(inout headers hdr,
 
     table check_switch_routing {
         key = {
-            hdr.ring_type.switch_to_process: exact;
+            hdr.ring_type.switch_to_process: exact; // This is being set at the endpoints
         }
         actions = {
 	    route_next_switch;
@@ -590,6 +712,19 @@ control MyIngress(inout headers hdr,
         size = 1024;
         default_action = NoAction();
     }
+
+    action ring_view(bit<16> view) {
+        meta.ring_view = view;
+    }
+
+    table get_ring_view {
+        actions = {
+	    ring_view;
+        }
+        size = 64;
+        default_action = ring_view(1);
+    }
+
 
     /**** TAIL *****/
     action forward_tail(egressSpec_t port) {
@@ -670,35 +805,73 @@ control MyIngress(inout headers hdr,
 	meta.read_process = 1;
 	meta.append_process = 1;
         meta.pkt_type = PKT_TYPE_NORMAL;
+	meta.ack_threshold = 1; //get_ack_threshold.apply();
+	meta.num_shards = 1; //get_num_shards.apply();
+	meta.shard_size = 1; //get_shard_size.apply();
 
-	check_switch_routing.apply();
+	/*if (hdr.ring_type.isValid() && !hdr.timer.isValid()) {
+	    check_switch_routing.apply();
+	}*/
 
-	// Do NOT separate out this else/if chain	
+	bit<32> local_seq_no_reg = 0;
 	if (hdr.cntrl.isValid()) {
-	    check_cntrl_view.apply();
+		local_seq_no_reg = read_local_seq_no.execute(0);
+	} else if (hdr.append.isValid() && hdr.append.g_idx == 0) {
+		local_seq_no_reg = write_local_seq_no.execute(0); 
+	}
+	if (hdr.cntrl.isValid()) {
             // Step 0: Check if the control packet's view is outdated TODO
-            bit<32> local_seq_no_reg = read_local_seq_no.execute(0);
-            bit<32> cntrl_pkt_it_reg = update_cntrl_pkt_it.execute(0);
-	    add_gsn.execute(cntrl_pkt_it_reg);
-            hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + local_seq_no_reg;
+	    //check_cntrl_view.apply();
+	    if (local_seq_no_reg != 0) {
+                bit<16> cntrl_pkt_it_reg = update_cntrl_pkt_it.execute(0);
+	        add_gsn.execute(cntrl_pkt_it_reg);
+                hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + local_seq_no_reg;
+	        cntrl_packet_counter.count(0);
+	    } else {
+                bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
+	        add_gsn.execute(cntrl_pkt_it_reg);
+	    }
+
+	    meta.start_ts = hdr.cntrl.start_ts;
+	    meta.end_ts = standard_metadata.ingress_mac_tstamp;
+	    meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
+
+	    update_ring_trip_cntr.execute(0);
+	    hdr.cntrl.start_ts = standard_metadata.ingress_mac_tstamp;
+
 	    meta.is_cntrl = 1;
         } else if (hdr.ring_type.type == TYPE_APPEND && meta.append_process == 1) {
 	    bit<32> assign_sn = 0;
-            bit<32> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
+            bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
 	    if (hdr.append.g_idx == 0) {
 		hdr.append.cntrl_pkt_it = cntrl_pkt_it_reg;
 		hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
-		assign_sn = write_local_seq_no.execute(0); // Get batchOffset
+		assign_sn = local_seq_no_reg; //write_local_seq_no.execute(0); // Get batchOffset
+	        hdr.append.g_idx = assign_sn;	    
+		zero_gsn.execute(cntrl_pkt_it_reg); // Get Global sequence number
+
 	    } else {
 		assign_sn = get_gsn.execute(hdr.append.cntrl_pkt_it); // Get Global sequence number
+	    	hdr.append.g_idx = hdr.append.g_idx + assign_sn;	    
 	    }
-	    hdr.append.g_idx = hdr.append.g_idx + assign_sn;	    
 
 	    // Routing determination
-	    if (hdr.append.cntrl_pkt_it == cntrl_pkt_it_reg) { // TODO: MAKE SURE THIS IS CORRECT
+	    if (hdr.append.cntrl_pkt_it == cntrl_pkt_it_reg) {
 		meta.circulate = 1;
+	    } else if (hdr.timer.isValid()) {
+		meta.start_ts = hdr.append.start_ts;
+	        meta.end_ts = standard_metadata.ingress_mac_tstamp;
+	        meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
+
+		meta.circulate = 1;
+		hdr.ring_type.type = TYPE_APPEND_RESP;
+
+	        recirc_packet_counter.count(0);
+	        update_recirc_cntr.execute(0);
+
+
+
 	    } else {
-		meta.get_pkt_gen = 1;
 		meta.route_to_shard = 1;
 		if (hdr.append.stream_id == 0) {
 		    hdr.ring_type.shard_id = hdr.append.g_idx;
@@ -709,14 +882,27 @@ control MyIngress(inout headers hdr,
         } else if ((hdr.ring_type.type == TYPE_APPEND_RESP && hdr.append.isValid()) || (hdr.ring_type.type == TYPE_READ && meta.read_process == 1)) {
             bit<32> ready_for_ack = 1;
 	    if (hdr.ring_type.type == TYPE_APPEND_RESP) {
-                bit<32> cntrl_pkt_it_reg = latest_complete_cntrl_pkt_it.execute(0);
+                bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
 		ready_for_ack = compare_gsn.execute(cntrl_pkt_it_reg);
+	        //tot_packet_counter.count(0);
 	    }
 	    if (ready_for_ack == 1) {
+
+	        tot_packet_counter.count(0);
 		bit<32> slot = get_ack_idx.execute(0);
-		bit<32> ack_cnt = check_ack.execute(slot);
-		if (ack_cnt == ACK_THRESHOLD) {
-		    if (hdr.append.isValid()) {
+		bit<32> ack_ready = check_ack.execute(slot);
+		if (ack_ready == 1) {
+		    if (hdr.timer.isValid()) {
+
+	                meta.start_ts = hdr.append.start_ts;
+
+	                meta.end_ts = standard_metadata.ingress_mac_tstamp;
+			meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
+
+
+	        	update_lat_cntr.execute(0);
+		        meta.route_to_client = 1;
+		    } else if (hdr.append.isValid() && !hdr.timer.isValid()) {
 		        meta.send_acks = 1;
 		        meta.route_to_client = 1;
 		        write_replicated_seq_no.execute(0);
@@ -729,7 +915,7 @@ control MyIngress(inout headers hdr,
 		}
 	    } else {
 		meta.circulate = 1; // TODO: READ???
- 	    }
+	    }
 	} else if (hdr.ring_type.type == TYPE_READ_RESP) {
 	    meta.route_to_client = 1; // NOTE: Currently not waiting for read quorum!
 	} else if (hdr.tail.isValid()) {
@@ -739,16 +925,25 @@ control MyIngress(inout headers hdr,
 		hdr.tail.tail_seq_no = tail_seq;
 	    }
 	    process_tail.apply();
+	} else if (hdr.start_view.isValid()) {
+            bit<16> cntrl_pkt_it_reg = latest_complete_cntrl_pkt_it.execute(0);
+	    hdr.start_view.highest_seen_seq_no = get_gsn.execute(cntrl_pkt_it_reg); 
+	    get_switch_id.apply();
+	    hdr.start_view.switch_id = meta.switch_id;
+	    get_ring_view.apply();
+	    hdr.start_view.old_ring_view = meta.ring_view;
 	}
 
 
 	/********* ROUTING LOGIC ***********/
-	if (hdr.timer.isValid() && meta.get_pkt_gen == 1) { // All generated packet are appends
-	    meta.end_ts = standard_metadata.ingress_mac_tstamp;
+	/*if (hdr.timer.isValid() && meta.get_pkt_gen == 1) { // All generated packet are appends
 	    meta.start_ts = hdr.append.start_ts;
-	    meta.nonce = hdr.append.g_idx;
+	    meta.end_ts = standard_metadata.ingress_mac_tstamp;
+	    meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
+	    meta.nonce = hdr.append.cntrl_pkt_it; //g_idx;
+	    meta.seq_no = hdr.append.g_idx;
 	    ig_dprsr_md.digest_type = 1;
-	}
+	}*/
 
 	if (meta.route_to_client == 1) {
             ipv4_lpm.apply();
@@ -759,7 +954,7 @@ control MyIngress(inout headers hdr,
 	} else if (meta.circulate == 1) {
             circulate_table.apply();
 	} else if (meta.route_to_shard == 1) {
-	    hdr.ring_type.shard_id = (hdr.ring_type.shard_id & (NUM_SHARDS - 1)) + 1;
+	    //meta.ack_threshold = hdr.ring_type.shard_id & meta.num_shards;
 	    get_shard_port.apply();
 	} else if (hdr.sub.isValid()) {  /// Subscribe header
 	    if (hdr.sub.subscribe == 0) {
@@ -785,7 +980,7 @@ control MyIngressDeparser(
 
     apply {
 	if (ig_dprsr_md.digest_type == 1) {
-	    digest_append.pack({ig_md.start_ts, ig_md.end_ts, ig_md.nonce});
+	    digest_append.pack({ig_md.start_ts, ig_md.end_ts, ig_md.nonce, ig_md.seq_no});
 	}
 	if (ig_dprsr_md.mirror_type == MIRROR_TYPE_I2E) {
 	    mirror.emit<mirror_h>(ig_md.ing_mir_ses, {ig_md.pkt_type});
@@ -907,30 +1102,6 @@ control MyEgress(inout headers hdr,
 	}
     }
 }
-
-/*************************************************************************
-*************   C H E C K S U M    C O M P U T A T I O N   ***************
-*************************************************************************/
-
-/*control MyComputeChecksum(inout headers hdr, inout metadata meta) {
-     apply {
-        update_checksum(
-            hdr.ipv4.isValid(),
-            { hdr.ipv4.version,
-              hdr.ipv4.ihl,
-              hdr.ipv4.diffserv,
-              hdr.ipv4.totalLen,
-              hdr.ipv4.identification,
-              hdr.ipv4.flags,
-              hdr.ipv4.fragOffset,
-              hdr.ipv4.ttl,
-              hdr.ipv4.protocol,
-              hdr.ipv4.srcAddr,
-              hdr.ipv4.dstAddr },
-            hdr.ipv4.hdrChecksum,
-            HashAlgorithm.csum16);
-    }
-}*/
 
 /*************************************************************************
 ***********************  D E P A R S E R  *******************************
