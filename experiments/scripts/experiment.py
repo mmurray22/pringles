@@ -274,21 +274,21 @@ def copy_results_back(remote_ip, remote_user, ssh_key, json_name_prefix, local_t
         print(f"ERROR during results copy: {e}")
         return False
 
-def copy_log_file_back(remote_ip, remote_user, ssh_key, log_filename, local_target_dir):
+def copy_log_file_back(remote_ip, remote_user, ssh_key, log_filename, local_target_dir, remote_dir='~'):
     """
-    NEW FUNCTION: Copies the specified remote log file ([ip].txt) from the remote machine 
+    NEW FUNCTION: Copies the specified remote log file ([ip].txt) from the remote machine
     to the local results folder using SCP.
     """
     # Local path for the log file
     local_log_path = os.path.join(local_target_dir, log_filename)
-    
+
     command = [
         'scp',
         '-i', ssh_key,
         '-o', 'StrictHostKeyChecking=no',
         '-o', 'UserKnownHostsFile=/dev/null',
-        f'{remote_user}@{remote_ip}:~/{log_filename}', # Source (remote home directory)
-        local_log_path                               # Destination (local folder)
+        f'{remote_user}@{remote_ip}:{remote_dir}/{log_filename}',
+        local_log_path
     ]
     
     print(f"--- Copying remote log file {log_filename} from {remote_ip} ---")
@@ -620,23 +620,8 @@ def kill_remote_process(ip, process_name, ssh_key, ssh_user):
     Kills all remote processes matching process_name via pkill -f.
     Used for comparison systems that don't self-terminate after experiment_duration.
     """
-    command = f'pkill -f "{process_name}" || true'
-    full_command = [
-        'ssh',
-        '-i', ssh_key,
-        '-o', 'StrictHostKeyChecking=no',
-        '-o', 'UserKnownHostsFile=/dev/null',
-        f'{ssh_user}@{ip}',
-        command
-    ]
     print(f"Killing '{process_name}' on {ip}...")
-    try:
-        subprocess.run(full_command, check=True, stdin=subprocess.DEVNULL,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
-    except Exception as e:
-        print(f"WARNING: Could not kill '{process_name}' on {ip}: {e}")
-        return False
+    return run_remote_command_sync(ip, f'sudo pkill -f "{process_name}" || true', ssh_key, ssh_user)
 
 
 def setup_kafka_nodes(config, ssh_key, ssh_user):
@@ -890,7 +875,7 @@ def run_experiment_cycle(config, exp_index, local_results_dir):
     """Runs a single, full experiment cycle based on the merged configuration."""
     
     # Extract run-specific parameters from the merged config
-    ssh_key = config['network_setup']['ssh_key']
+    ssh_key = os.path.expanduser(config['network_setup']['ssh_key'])
     ssh_user = config['network_setup']['ssh_user']
     client_ips = config['network_setup']['cli_ips'] # TODO SEQ make plural?
     cli_net_ifs = config['network_setup']['cli_net_ifs'] # TODO SEQ make plural?
@@ -1222,7 +1207,7 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
     """
     CONSUMER_HEAD_START = 5  # seconds; fat jar JVM startup is fast (~1-2s)
 
-    ssh_key   = config['network_setup']['ssh_key']
+    ssh_key   = os.path.expanduser(config['network_setup']['ssh_key'])
     ssh_user  = config['network_setup']['ssh_user']
     client_ips = config['network_setup']['cli_ips']
     seq_ips    = config['network_setup'].get('seq_ips', [])
@@ -1259,7 +1244,7 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
     consumer_log_filename    = f'kafka_consumer_{json_output_name}_{exp_index}.log'
     producer_log_filename    = f'kafka_producer_{json_output_name}_{exp_index}.log'
     consumer_output_filename = f'kafka_output_{json_output_name}_{exp_index}.json'
-    consumer_output_remote   = f'~/{consumer_output_filename}'
+    consumer_output_remote   = f'/tmp/{consumer_output_filename}'
 
     broker_log_files = {}
     client_ip = client_ips[0]
@@ -1291,7 +1276,7 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         print("\n--- Formatting Kafka Storage ---")
         for i, ip in enumerate(seq_ips):
             props_filename = f'kafka_server_{json_output_name}_{i}.properties'
-            if not run_remote_command_sync(ip, f'rm -rf {kafka_broker_log_dir}', ssh_key, ssh_user):
+            if not run_remote_command_sync(ip, f'sudo rm -rf {kafka_broker_log_dir}', ssh_key, ssh_user):
                 raise Exception(f"Failed to clean Kafka log dir on {ip}")
             format_cmd = f'{kafka_dir}/bin/kafka-storage.sh format -t {cluster_uuid} -c ~/{props_filename}'
             if not run_remote_command_sync(ip, format_cmd, ssh_key, ssh_user):
@@ -1356,12 +1341,19 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         if not run_remote_command_sync(client_ip, setup_config_cmd, ssh_key, ssh_user):
             raise Exception("Failed to place config.json in /tmp/kafka-config/.")
 
+        jar_cp = kafka_log_jar_remote.replace('~/', '$HOME/', 1)
+
+        print("\n--- Config sent to client ---")
+        run_remote_command_sync(client_ip, 'cat /tmp/kafka-config/config.json', ssh_key, ssh_user)
+        print("\n--- Bundled config.json from jar ---")
+        run_remote_command_sync(client_ip, f'unzip -p {jar_cp} config.json 2>/dev/null || echo "(no bundled config.json found in jar)"', ssh_key, ssh_user)
+
         # --- 6. Start Consumer (async, head start before producer) ---
         # Consumer uses auto.offset.reset=latest so it must be subscribed before
         # the producer sends. java -jar starts in ~1-2s, so CONSUMER_HEAD_START=5 is enough.
         print(f"\n--- Starting Kafka Consumer (will wait {CONSUMER_HEAD_START}s before producer) ---")
         consumer_cmd = (
-            f'java -cp /tmp/kafka-config:{kafka_log_jar_remote} main.Consumer'
+            f'java -cp /tmp/kafka-config:{jar_cp} main.Consumer'
             f' > ~/{consumer_log_filename} 2>&1'
         )
         run_remote_command_sync(client_ip, f'/bin/bash -c "{consumer_cmd} &"', ssh_key, ssh_user)
@@ -1370,13 +1362,13 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         # --- 7. Start Producer (async) ---
         print("\n--- Starting Kafka Producer ---")
         producer_cmd = (
-            f'java -cp /tmp/kafka-config:{kafka_log_jar_remote} main.Producer'
+            f'java -cp /tmp/kafka-config:{jar_cp} main.Producer'
             f' > ~/{producer_log_filename} 2>&1'
         )
         run_remote_command_sync(client_ip, f'/bin/bash -c "{producer_cmd} &"', ssh_key, ssh_user)
 
         # --- 8. Wait for experiment to complete ---
-        total_wait = warm_up + experiment_duration + cool_down + 5  # 5s buffer for JVM teardown
+        total_wait = warm_up + experiment_duration + cool_down + 15  # 15s buffer for JVM teardown/flush
         print(f"\nWaiting {total_wait}s for experiment to complete...")
         time.sleep(total_wait)
 
@@ -1385,9 +1377,23 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         consumer_output_local = os.path.join(local_results_dir, consumer_output_filename)
         consumer_log_local    = os.path.join(local_results_dir, consumer_log_filename)
 
-        copy_log_file_back(client_ip, ssh_user, ssh_key, consumer_output_filename, local_results_dir)
+        json_ok = copy_log_file_back(client_ip, ssh_user, ssh_key, consumer_output_filename, local_results_dir, remote_dir='/tmp')
         copy_log_file_back(client_ip, ssh_user, ssh_key, consumer_log_filename,    local_results_dir)
         copy_log_file_back(client_ip, ssh_user, ssh_key, producer_log_filename,    local_results_dir)
+
+        json_empty = json_ok and os.path.getsize(consumer_output_local) == 0
+        if not json_ok or json_empty:
+            if os.path.exists(consumer_log_local):
+                print("\n--- Consumer log ---")
+                with open(consumer_log_local) as f:
+                    print(f.read())
+                print("--- End consumer log ---")
+            producer_log_local = os.path.join(local_results_dir, producer_log_filename)
+            if os.path.exists(producer_log_local):
+                print("\n--- Producer log ---")
+                with open(producer_log_local) as f:
+                    print(f.read())
+                print("--- End producer log ---")
 
         # --- 10. Parse and normalize results ---
         parse_kafka_results(
@@ -1512,7 +1518,7 @@ def run_experiment_cycle_scalog(config, exp_index, local_results_dir):
     TODO: Verify client binary CLI flags for duration, message size, and thread count.
     TODO: Verify parse_scalog_results output patterns against actual client output.
     """
-    ssh_key   = config['network_setup']['ssh_key']
+    ssh_key   = os.path.expanduser(config['network_setup']['ssh_key'])
     ssh_user  = config['network_setup']['ssh_user']
     client_ips = config['network_setup']['cli_ips']
     seq_ips    = config['network_setup'].get('seq_ips', [])   # order layer nodes
@@ -1722,7 +1728,7 @@ def main(config_file="config.toml"):
 
     client_ips = base_config['network_setup']['cli_ips']
     stor_ips = base_config['network_setup']['stor_ips']
-    ssh_key = base_config['network_setup']['ssh_key']
+    ssh_key = os.path.expanduser(base_config['network_setup']['ssh_key'])
     ssh_user = base_config['network_setup']['ssh_user']
 
     if system_name == 'pringles':
