@@ -10,7 +10,7 @@ def expand(x):
         yield x
 
 def handle_pkt(pkt):
-    if Cntrl in pkt:
+    if Append in pkt:
         pkt.show2()
      #   for l in expand(pkt):
      #       if l.name=='SeqNo':

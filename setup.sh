@@ -3,7 +3,7 @@
 # All the packages which need to be installed on clean debian machine
 sudo apt update
 sudo apt -y upgrade
-sudo apt -y install ninja-build python3 python3-setuptools dpkg-dev protobuf-compiler libyaml-cpp-dev meson libspdlog-dev pkg-config
+sudo apt -y install ninja-build python3 python3-setuptools dpkg-dev protobuf-compiler libyaml-cpp-dev meson libspdlog-dev pkg-config cmake
 sudo apt -y install python3-pip
 #sudo apt -y install protobuf-compiler # Needs to be at least v3.x.x
 
@@ -35,3 +35,33 @@ Signed-By: /etc/apt/keyrings/docker.asc
 EOF
 sudo apt update
 sudo apt -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Setup packages necessary for Kafka to run
+# Update system packages
+sudo apt update && sudo apt upgrade -y
+
+# 1. Install Java (OpenJDK 11 is standard for most Scala/Kafka dev)
+echo "Installing OpenJDK 11..."
+sudo apt install -y openjdk-11-jdk
+
+# 2. Install SBT (Scala Build Tool)
+# Following official Scala/SBT installation steps for Debian-based systems
+echo "Installing SBT..."
+sudo apt install -y curl
+curl -fL "https://github.com/sbt/sbt/releases/download/v1.9.7/sbt-1.9.7.tgz" | tar xz -C /tmp
+sudo mv /tmp/sbt /opt/sbt
+sudo ln -s /opt/sbt/bin/sbt /usr/local/bin/sbt
+
+# 3. Install Git
+echo "Installing Git..."
+sudo apt install -y git
+
+# 4. Clone the repository
+echo "Cloning the repository..."
+#git clone https://github.com/mmurray22/kafka-log.git
+#cd kafka-log
+
+# 5. Compile the project
+# This will download all project-specific Scala dependencies (Kafka clients, etc.)
+#echo "Compiling the project and fetching dependencies..."
+#sbt compile

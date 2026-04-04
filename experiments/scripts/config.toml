@@ -1,44 +1,40 @@
 [network_setup]
-# OLD DELETE
-client_ip = "10.10.1.2"
-sequencer_ip = "10.10.1.3"
-server_ips = ["10.10.1.4"]
 # Storage server information
-stor_ips = ["10.10.1.4"]
+stor_ips = ["10.0.0.6", "10.0.0.7", "10.0.0.8"]
 stor_recv_port = "30003"
-stor_macs = ["40:a6:b7:c3:47:c0"]
-stor_net_ifs = ["enp23s0f0np0"] 
+stor_macs = ["42:01:0a:00:00:06", "42:01:0a:00:00:07", "42:01:0a:00:00:08"]
+stor_net_ifs = ["ens4", "ens4", "ens4"] 
 # Client information
-cli_ips = ["10.10.1.2"] #, "10.10.1.5"]
-cli_net_ifs = ["enp23s0f0np0"] #, "enp23s0f0np0"]
-cli_macs = ["40:a6:b7:c3:51:58"] #, "40:a6:b7:c3:51:58"] # TODO: Deprecated
+cli_ips = ["10.0.0.4"]
+cli_net_ifs = ["ens4"]
+cli_macs = ["42:01:0a:00:00:04"] #, "40:a6:b7:c3:51:58"] # TODO: Deprecated
 # Switch information
-switch_ip = "10.10.1.3"
+switch_ip = "10.0.0.5"
 switch_recv_port = "30002"
-switch_net_if = "enp23s0f0np0"
-switch_mac = "40:a6:b7:c2:b8:f8" # TODO: Deprecated
-ssh_key = "/proj/ove-PG0/murray/cloudlab"
-ssh_user = "murray22" # Added for complete SSH command
+switch_net_if = "ens4"
+switch_mac = "42:01:0a:00:00:05" # TODO: Deprecated
+ssh_key = "/home/mathwiz23pi/.ssh/gcloud"
+ssh_user = "mathwiz23pi" # Added for complete SSH command
 
 [program_paths]
-path_client = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_cli"
-path_server = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_stor"
-path_switch = "/proj/ove-PG0/murray/pringles/build/experiments/unit_tests/net_seq"
+path_client = "/home/mathwiz23pi/pringles/build/experiments/unit_tests/cli"
+path_server = "/home/mathwiz23pi/pringles/build/experiments/unit_tests/stor"
+path_switch = "/home/mathwiz23pi/pringles/build/experiments/unit_tests/switch"
 run_setup_script = "False"
 
 [experiment_parameters]
-log_level = 6
+log_level = 1
 warm_up = 5 # seconds
 cool_down = 5 # seconds
 experiment_duration = 30 # seconds
 socket_type = "UDP" # "RAW"
-message_size = 100 # 100 # bytes
+message_size = 4000 # 100 # bytes
 num_client_threads = 1
 num_storage_threads = 1
-json_name = "increase_batch"
-experiment_name = "100byte_onlystor_batch"
+json_name = "gcp_client"
+experiment_name = "4KB_shard_exp"
 num_failures = 0 # NEW
-git_hash = "" # TODO
+git_hash = "1b0aec5ee4e12df008d835842cafe794b9e77615" # TODO
 use_switch = 1
 use_store = 1
 batch_size = 1 # Number of packets
@@ -51,10 +47,11 @@ sequencer_type = 0
 storage_server_type = 0 
 
 [routing]
-list_client_dest_ips = ["10.10.1.1"]
-list_storage_server_dest_ips = ["10.10.1.3"]
-client_dest_macs = ["90:e2:ba:38:38:88"]
-server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
+list_client_dest_ips = ["10.0.0.4"]
+switch_ip = "10.0.0.5"
+list_storage_server_dest_ips = ["10.0.0.6", "10.0.0.7", "10.0.0.8"]
+client_dest_macs = ["42:01:0a:00:00:04"]
+server_dest_macs = ["42:01:0a:00:00:06", "42:01:0a:00:00:07", "42:01:0a:00:00:08"]
 
 #[[experiment]]
 #num_client_threads = 1
@@ -81,9 +78,9 @@ server_dest_macs = ["90:e2:ba:05:d7:40"] # TODO Change name this is so confusing
 #$json_name = "eight_client"
 
 [[experiment]]
-num_client_threads = 10
+num_client_threads = 1
 batch_size = 2 # Number of packets
-json_name = "ten_client"
+json_name = "gcp_one_client"
 
 #[[experiment]]
 #num_client_threads = 15
@@ -98,54 +95,22 @@ json_name = "ten_client"
 #[[experiment]]
 #num_client_threads = 18
 #json_name = "eighteen_client"
-
-[[experiment]]
-num_client_threads = 20
-num_storage_threads = 1
-batch_size = 2 # Number of packets
-json_name = "twozero_client"
 #
 #[[experiment]]
 #num_client_threads = 25
 #num_storage_threads = 1
 #batch_size = 5 # Number of packets
 #json_name = "twofive_client"
-
-[[experiment]]
-num_client_threads = 30
-num_storage_threads = 1
-batch_size = 6 # Number of packets
-json_name = "thirty_client"
-#
 #[[experiment]]
 #num_client_threads = 35
 #num_storage_threads = 1
 #batch_size = 7 # Number of packets
 #json_name = "threefive_client"
 ##
-[[experiment]]
-num_client_threads = 40
-num_storage_threads = 1
-batch_size = 7 # Number of packets
-json_name = "forty_client"
-##
-[[experiment]]
-num_client_threads = 50
-num_storage_threads = 1
-batch_size = 7 # Numbeyyr of packets
-json_name = "fifty_client"
-#
-#[[experiment]]
 #num_client_threads = 60
 #num_storage_threads = 1
 #batch_size = 5 # Numbeyyr of packets
 #json_name = "sixty_client"
-#
-[[experiment]]
-num_client_threads = 70
-num_storage_threads = 1
-batch_size = 8 # Numbeyyr of packets
-json_name = "seventy_client"
 #
 #[[experiment]]
 #num_client_threads = 80

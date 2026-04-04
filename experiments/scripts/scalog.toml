@@ -1,0 +1,65 @@
+# Scalog comparison experiment config.
+#
+# Cluster layout:
+#   seq_ips  = Scalog order layer nodes (discovery also runs on seq_ips[0])
+#   stor_ips = Scalog data layer nodes (storage shards)
+#   cli_ips  = Scalog benchmark client
+#
+# Build Scalog on each node before running (scalogctl is not pre-installed):
+#   git clone https://github.com/chn0318/scalog && cd scalog
+#   go build -mod=vendor .
+#
+# TODO: Confirm the path structure for compiled component binaries. The paths below
+# assume the standard Go cmd/ layout (cmd/discovery, cmd/order, cmd/data, cmd/client).
+# Adjust path_* fields if the repo uses a different layout.
+
+[system]
+name = "scalog"
+
+[network_setup]
+seq_ips     = ["10.10.1.3"]           # Scalog order layer node(s)
+stor_ips    = ["10.10.1.4"]           # Scalog data layer node(s)
+cli_ips     = ["10.10.1.2"]           # Scalog benchmark client
+cli_net_ifs = ["enp23s0f0np0"]
+ssh_key  = "/proj/ove-PG0/murray/cloudlab"
+ssh_user = "murray22"
+
+[program_paths]
+# Local path where Scalog will be cloned and cross-compiled.
+# Binaries are then SCP'd to the appropriate remote nodes.
+scalog_local_src = "/tmp/scalog-build"
+# Remote paths where each binary will be placed (directory must exist or will be created).
+path_discovery = "/proj/ove-PG0/murray/scalog-bin/discovery"
+path_order     = "/proj/ove-PG0/murray/scalog-bin/order"
+path_data      = "/proj/ove-PG0/murray/scalog-bin/data"
+path_client    = "/proj/ove-PG0/murray/scalog-bin/client"
+# Set to "True" to clone/build on first run. Safe to leave "True" on repeat runs
+# (clone is skipped if the directory already exists).
+run_comparison_setup = "True"
+run_setup_script = "False"
+
+[comparison_parameters]
+num_sequencer_nodes = 1   # number of order layer nodes; must equal len(seq_ips)
+num_shards          = 1   # number of data layer nodes; must equal len(stor_ips)
+replication_factor  = 2   # Scalog replication factor set in .scalog.yaml
+
+[experiment_parameters]
+experiment_name     = "scalog_baseline"
+json_name           = "scalog"
+experiment_duration = 30    # seconds (excluding warm_up and cool_down)
+warm_up             = 5     # seconds
+cool_down           = 5     # seconds
+message_size        = 100   # bytes
+num_client_threads  = 1
+log_level           = 6
+num_failures        = 0
+
+# --- Experiment sweep: 100-byte messages ---
+[[experiment]]
+message_size = 100
+json_name    = "scalog_100b"
+
+# --- Experiment sweep: 4 KB messages ---
+[[experiment]]
+message_size = 4096
+json_name    = "scalog_4kb"

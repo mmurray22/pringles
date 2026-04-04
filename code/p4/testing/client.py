@@ -69,8 +69,8 @@ def main():
     while True:
         try:
             pkt =  Ether(src=get_if_hwaddr(iface), dst='ff:ff:ff:ff:ff:ff')
-            pkt = pkt / SeqNoReq() / IP(dst=addr)
-            #pkt.show2()
+            pkt = pkt / Append() / IP(dst=addr)
+            pkt.show2()
             sendp(pkt, iface='eth0')
             #time.sleep(10)
         except KeyboardInterrupt:
