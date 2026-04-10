@@ -10,12 +10,16 @@
 #include <optional>
 #include <chrono>
 #include <atomic>
+#include <string>
+#include <cstdint>
+#include <memory>
+#include <queue>
 
-#include "base_client.h"
+#include "network.h"
 #include "measure.h"
 
 /* Client class */
-class LogClient : public BaseClient {
+class LogClient {
     public:
 	LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_port_offset);
 	~LogClient();

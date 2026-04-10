@@ -17,31 +17,28 @@
 name = "scalog"
 
 [network_setup]
-seq_ips     = ["10.10.1.3"]           # Scalog order layer node(s)
-stor_ips    = ["10.10.1.4"]           # Scalog data layer node(s)
-cli_ips     = ["10.10.1.2"]           # Scalog benchmark client
-cli_net_ifs = ["enp23s0f0np0"]
-ssh_key  = "/proj/ove-PG0/murray/cloudlab"
-ssh_user = "murray22"
+discovery_ip = "10.0.0.3"
+seq_ips     = ["10.0.0.4", "10.0.0.5", "10.0.0.6"]           # Scalog order layer node(s)
+stor_ips    = ["10.0.0.7", "10.0.0.8", "10.0.0.9"]           # Scalog data layer node(s)
+cli_ips     = ["10.0.0.3"]           # Scalog benchmark client
+cli_net_ifs = ["ens4"]
+order_port = 26733
+raft_port = 27238
+data_port = 23282
+disc_port = 23472
+ssh_key  = "/home/mathwiz23pi/.ssh/gcloud"
+ssh_user = "mathwiz23pi"
 
 [program_paths]
 # Local path where Scalog will be cloned and cross-compiled.
 # Binaries are then SCP'd to the appropriate remote nodes.
-scalog_local_src = "/tmp/scalog-build"
+scalog_bin = "/home/mathwiz23pi/pringles/scalog/scalog"
 # Remote paths where each binary will be placed (directory must exist or will be created).
-path_discovery = "/proj/ove-PG0/murray/scalog-bin/discovery"
-path_order     = "/proj/ove-PG0/murray/scalog-bin/order"
-path_data      = "/proj/ove-PG0/murray/scalog-bin/data"
-path_client    = "/proj/ove-PG0/murray/scalog-bin/client"
+config_path = "/home/mathwiz23pi/pringles/experiments/scripts/.scalog.yaml"
 # Set to "True" to clone/build on first run. Safe to leave "True" on repeat runs
 # (clone is skipped if the directory already exists).
 run_comparison_setup = "True"
 run_setup_script = "False"
-
-[comparison_parameters]
-num_sequencer_nodes = 1   # number of order layer nodes; must equal len(seq_ips)
-num_shards          = 1   # number of data layer nodes; must equal len(stor_ips)
-replication_factor  = 2   # Scalog replication factor set in .scalog.yaml
 
 [experiment_parameters]
 experiment_name     = "scalog_baseline"
@@ -49,17 +46,25 @@ json_name           = "scalog"
 experiment_duration = 30    # seconds (excluding warm_up and cool_down)
 warm_up             = 5     # seconds
 cool_down           = 5     # seconds
-message_size        = 100   # bytes
+message_size        = 4000  # bytes
 num_client_threads  = 1
 log_level           = 6
 num_failures        = 0
-
-# --- Experiment sweep: 100-byte messages ---
-[[experiment]]
-message_size = 100
-json_name    = "scalog_100b"
+data_replication_factor  = 1   # Scalog replication factor set in .scalog.yaml TODO make 2
+order_replication_factor  = 3  # Scalog replication factor set in .scalog.yaml TODO make 2
+num_sequencer_nodes = 3   # number of order layer nodes; must equal len(seq_ips)
+num_shards          = 1   # number of data layer nodes; must equal len(stor_ips)
+batching_interval   = "1ms"
 
 # --- Experiment sweep: 4 KB messages ---
 [[experiment]]
-message_size = 4096
-json_name    = "scalog_4kb"
+num_client_threads  = 1
+
+#[[experiment]]
+#num_client_threads  = 5
+#
+#[[experiment]]
+#num_client_threads  = 10
+#
+#[[experiment]]
+#num_client_threads  = 15

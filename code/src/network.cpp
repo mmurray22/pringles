@@ -430,9 +430,9 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
         return false;
     }
     
-    //spdlog::debug("Sending a UDP packet!");
+    spdlog::debug("Sending a UDP packet!");
     int s_fd;
-    //spdlog::debug("SINGLE CLIENT Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
+    spdlog::debug("SINGLE CLIENT Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
     std::string combined_addr = dst_ip + ":" + dst_port;
     if (port_to_fd.count(combined_addr) > 0) {
         s_fd = port_to_fd[combined_addr];
@@ -453,7 +453,7 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
         if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
             spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
         } else {
-             //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+             spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
 	     sent_all = true;
         }
     }
@@ -517,7 +517,7 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
         if (num_bytes < 0 || ((uint64_t)num_bytes != running_pkt_size)) {
             spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
         } else {
-            //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+            spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
 	    sent_all = true;
         }
     }

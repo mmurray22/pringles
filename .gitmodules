@@ -7,3 +7,6 @@
 [submodule "oneTBB"]
 	path = oneTBB
 	url = https://github.com/uxlfoundation/oneTBB.git
+[submodule "scalog"]
+	path = scalog
+	url = https://github.com/chn0318/scalog.git

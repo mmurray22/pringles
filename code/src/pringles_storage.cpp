@@ -51,7 +51,8 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
 				   get_interface(config),
 				   get_self_ip(config),
 				   get_multicast_addr(config),
-				   use_shards,
+				   //use_shards,
+				   false,
 				   false); 
 
     // Initialize storage server identity variables
@@ -226,8 +227,6 @@ void LogStorage::append_server() {
 	     double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
 	     double dur = end_time_s - start_time_s;
 	     lats.push_back(dur);
-
-
      	     append_cntr += 1;
              recv_offset += reply_pkt_size;
          }

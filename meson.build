@@ -41,6 +41,13 @@ subdir('code/include')
 subdir('code/src')
 subdir('experiments/unit_tests')
 
+stats_lib = static_library('stats_measure', 
+  'code/src/measure.cpp',
+  'code/src/stats_wrapper.cpp',
+  include_directories : inc,
+  dependencies: [dependency('spdlog')]
+)
+
 pkg_mod = import('pkgconfig')
 pkg_mod.generate(libraries : pringleslib,
                  version : '1.0',

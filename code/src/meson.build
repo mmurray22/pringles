@@ -1,5 +1,5 @@
 #pringles_sources = ['base_client.cpp', 'base_sequencer.cpp', 'pringles_client.cpp', 'RingStorage.cpp', 'simple_client.cpp', 'utils.cpp']
-pringles_sources = ['network.cpp', 'utils.cpp', 'trace.cpp', 'measure.cpp', 'pringles_client.cpp', 'pringles_storage.cpp', 'pringles_software_switch.cpp']
+pringles_sources = ['network.cpp', 'utils.cpp', 'trace.cpp', 'measure.cpp', 'pringles_client.cpp', 'pringles_storage.cpp', 'pringles_software_switch.cpp', 'stats_wrapper.cpp']
 pringleslib = static_library('logging', 
   pringles_sources, 
   generated, 
