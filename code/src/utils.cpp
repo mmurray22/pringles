@@ -368,8 +368,8 @@ std::string get_multicast_addr(YAML::Node config) {
     return config["shard_multicast_addr"].as<std::string>();
 }
 
-std::vector<std::string> get_all_shards(YAML::Node config) {
-    return config["all_shards"].as<std::vector<std::string>>();
+std::vector<std::vector<std::string>> get_all_shards(YAML::Node config) {
+    return config["all_shards"].as<std::vector<std::vector<std::string>>>();
 }
 
 uint64_t get_ack_threshold(YAML::Node config) {

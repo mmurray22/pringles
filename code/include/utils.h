@@ -33,7 +33,7 @@ uint64_t get_sequencer_type(YAML::Node config); // covered
 uint64_t get_storage_type(YAML::Node config);  // covered
 
 uint64_t get_shard_id(YAML::Node config); 
-std::vector<std::string> get_all_shards(YAML::Node config);
+std::vector<std::vector<std::string>> get_all_shards(YAML::Node config);
 uint64_t get_shard_switch_id(YAML::Node config);
 
 uint64_t get_experiment_duration(YAML::Node config);

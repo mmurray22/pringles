@@ -55,16 +55,25 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
 				   false,
 				   false); 
 
+    this->max_duration = get_experiment_duration(config);
     // Initialize storage server identity variables
     this->switch_id = switch_id;
     this->use_store = get_use_stor(config);
     
     // Sharding information
-    std::vector<std::string> yaml_vec = get_all_shards(config);
+    std::vector<std::vector<std::string>> yaml_shards = get_all_shards(config);
+    for (uint64_t i = 0; i < yaml_shards.size(); i++) {
+	tbb::concurrent_vector<std::string> shard;
+        for (uint64_t j = 0; j < yaml_shards[i].size(); j++) {
+	    shard.push_back(yaml_shards[i][j]);
+	}
+	this->all_shards.push_back(shard);
+    } 
+    /*std::vector<std::string> yaml_vec = get_all_shards(config);
     for (std::string entry : yaml_vec) {
         spdlog::critical("Shard multicast: {}", entry);
         this->all_shards.push_back(entry);
-    }
+    }*/
 
     // Streaming information
     this->use_streams = get_use_streams(config);
@@ -114,13 +123,14 @@ LogSoftwareSwitch::~LogSoftwareSwitch() {
 }
 
 void LogSoftwareSwitch::receiver() {
-    spdlog::critical("network recv thread starting with tid = {}", gettid());
-    pin_current_thread_linux(0);
+    spdlog::critical("UNIVERSAL RECEIVER thread starting with tid = {}", gettid());
+    //pin_current_thread_linux(0);
     while (!end_thread) {
         char* recv_ptr = net->recv_packet();
 	if (!recv_ptr) {
 	    continue;
 	}
+	spdlog::debug("Received something!!!");
 	struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
 	if (ntohs(type_hdr->type) == ETH_APPEND_RESP) {
 	    spdlog::debug("Appending response being processed!");
@@ -190,8 +200,7 @@ void LogSoftwareSwitch::receiver() {
 }
 
 void LogSoftwareSwitch::append_request() {
-    spdlog::critical("Switch: APPEND REQUEST Thread starting with TID = {}", gettid());
-    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
+    spdlog::critical("APPEND REQUEST Thread starting with TID = {}", gettid());
     pin_current_thread_linux(1);
     uint64_t pkt_req_cntr = 0;
     size_t size_of_hdr = get_ring_append_size();
@@ -268,15 +277,18 @@ void LogSoftwareSwitch::append_request() {
 
 		if (use_shards) {
 		    std::string multicast_addr;
+		    tbb::concurrent_vector<std::string> shard;
 		    uint64_t key_id = 0;
 		    if (use_streams) {
 			key_id = ntohl(append_entry->stream_id);
 			spdlog::debug("Stream, yes shard Key ID for which shard to send to: {}", key_id);
 		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
 		        if (stream_id_to_shard_id.find(acc, key_id)) {
-		            multicast_addr = all_shards[acc->second];
+		            //multicast_addr = all_shards[acc->second];
+		            shard = all_shards[acc->second];
 		        } else {
-                            multicast_addr = all_shards[next_available_shard];
+                            //multicast_addr = all_shards[next_available_shard];
+                            shard = all_shards[next_available_shard];
 		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
 		            bool insert_succ = stream_id_to_shard_id.insert(put_acc, key_id);
 			    if (insert_succ) {
@@ -291,9 +303,11 @@ void LogSoftwareSwitch::append_request() {
 			spdlog::debug("No stream, yes shard Key ID for which shard to send to: {}", key_id);
 			tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
 		        if (seq_idx_to_shard_id.find(acc, key_id)) {
-		            multicast_addr = all_shards[acc->second];
+		            //multicast_addr = all_shards[acc->second];
+		            shard = all_shards[acc->second];
 		        } else {
-                            multicast_addr = all_shards[next_available_shard];
+                            //multicast_addr = all_shards[next_available_shard];
+                            shard = all_shards[next_available_shard];
 		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
 		            bool insert_succ = seq_idx_to_shard_id.insert(put_acc, key_id);
 			    if (insert_succ) {
@@ -306,7 +320,12 @@ void LogSoftwareSwitch::append_request() {
 		    }
 		    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
             	    memcpy(reply_packet.get(), recv_ptr, pkt_size);
-		    net->send_udp_packet(std::move(reply_packet), pkt_size, multicast_addr, stor_receive_port, true);
+		    for (std::string ip : shard) {
+			 spdlog::debug("Sending to IP: {}", ip);
+			 std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+            	    	 memcpy(reply_packet.get(), recv_ptr, pkt_size);
+		         net->send_udp_packet(std::move(reply_packet), pkt_size, ip, stor_receive_port, false);
+		    }
 		} else {
     	             for (uint64_t i = 0; i < stor_ips.size(); i++) {
 		         spdlog::debug("Req payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}",  ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
@@ -350,9 +369,7 @@ void LogSoftwareSwitch::append_request() {
 }
 
 void LogSoftwareSwitch::append_response() {
-    spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
-    spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
-    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
+    spdlog::critical("APPEND RESPONSE Network Sequencer Thread starting with TID = {}", gettid());
     pin_current_thread_linux(2);
     uint64_t pkt_resp_cntr = 0;
 
@@ -462,9 +479,7 @@ void LogSoftwareSwitch::send_subscriber_pkts(tbb::concurrent_vector<std::vector<
 }
 
 void LogSoftwareSwitch::read_request() { // TODO: Should check use_store ahead of time
-    spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
-    spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
-    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
+    spdlog::critical("READ REQUEST Network Sequencer Thread starting with TID = {}", gettid());
     uint64_t pkt_req_cntr = 0;
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
@@ -500,15 +515,13 @@ void LogSoftwareSwitch::read_request() { // TODO: Should check use_store ahead o
 	    // If the batch isn't full and the timeout not expired exceed
     	    // Create the packet to send to the storage server with the running packet size and the additional header
             spdlog::debug("Final request packet payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohl(read_entry->payload_size), ntohl(read_entry->nonce), ntohs(read_entry->recv_port), pkt_size);
-            std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-
-    	    // Copy batch header into the reply packet, and the batch content 
-            memcpy(reply_packet.get(), recv_ptr, pkt_size);
-    	
-
+            
 	    if (ntohl(read_entry->g_idx) > max_idx) {
 	        spdlog::critical("Index is too high! Read rejected.");
 		std::string client_ip = get_quad_ip(read_entry->client_ip);
+		std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+    	        // Copy batch header into the reply packet, and the batch content 
+                memcpy(reply_packet.get(), recv_ptr, pkt_size);
 	        net->send_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(read_entry->recv_port), false); // TODO: Error indicator to header?
 		continue;
 	    }
@@ -516,6 +529,9 @@ void LogSoftwareSwitch::read_request() { // TODO: Should check use_store ahead o
             tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor acc;
 	    if (!ack_map.find(acc, ntohl(read_entry->g_idx)) || (acc->second < ack_threshold)) {
 	        spdlog::critical("Index is too high! Read rejected.");
+		std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+    	        // Copy batch header into the reply packet, and the batch content 
+                memcpy(reply_packet.get(), recv_ptr, pkt_size);
 	        net->send_udp_packet(std::move(reply_packet), pkt_size, switch_ip, switch_recv_port, false); // Recirculate
 		continue;
 	    }
@@ -524,31 +540,45 @@ void LogSoftwareSwitch::read_request() { // TODO: Should check use_store ahead o
     	    if (use_store) {
 		if (use_shards) {
                     std::string multicast_addr = "";
+		    tbb::concurrent_vector<std::string> shard;
 		    uint64_t key_id = 0;
 		    if (use_streams) {
 		        key_id = ntohl(read_entry->stream_id);
 		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
 		        if (stream_id_to_shard_id.find(acc, key_id)) {
-		            multicast_addr = all_shards[acc->second];
+		            //multicast_addr = all_shards[acc->second];
+		            shard = all_shards[acc->second];
 		        }
 		    } else {
 		        key_id = ntohl(read_entry->g_idx) % all_shards.size();  
 		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
 		        if (seq_idx_to_shard_id.find(acc, key_id)) {
-		            multicast_addr = all_shards[acc->second];
+		            //multicast_addr = all_shards[acc->second];
+		            shard = all_shards[acc->second];
 		        }
 		    }
 		    spdlog::debug("The multicast addr to send to is: {}", multicast_addr);
-		    if (multicast_addr.size() == 0) {
+		    if (shard.size() == 0) {
 		        spdlog::critical("Sequence number or Stream is not stored yet. Read rejected.");
 		        std::string client_ip = get_quad_ip(read_entry->client_ip);
+	   	 	std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+    	   	 	// Copy batch header into the reply packet, and the batch content 
+           	 	memcpy(reply_packet.get(), recv_ptr, pkt_size);
 	                net->send_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(read_entry->recv_port), false); // TODO: Error indicator to header?
 		        continue;
 		    }
-		    res = net->send_udp_packet(std::move(reply_packet), pkt_size, multicast_addr, stor_receive_port, true);
+		    for (std::string ip : shard) {
+			std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+    	   	 	// Copy batch header into the reply packet, and the batch content 
+           	 	memcpy(reply_packet.get(), recv_ptr, pkt_size);
+		        res = net->send_udp_packet(std::move(reply_packet), pkt_size, ip, stor_receive_port, false);
+		    }
 	        }  else {
 		    // Send every read request to every storage server
     	            for (uint64_t i = 0; i < stor_ips.size(); i++) {
+			std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+    	   	 	// Copy batch header into the reply packet, and the batch content 
+           	 	memcpy(reply_packet.get(), recv_ptr, pkt_size);
 	                res = net->send_udp_packet(std::move(reply_packet), pkt_size, stor_ips[i], stor_receive_port, false);
     	            }
 		}
@@ -567,9 +597,7 @@ void LogSoftwareSwitch::read_request() { // TODO: Should check use_store ahead o
 }
 
 void LogSoftwareSwitch::read_response() {
-    spdlog::critical("Network Sequencer Thread starting with TID = {}", gettid());
-    spdlog::info("Simple Net Sequencer, about to start with {}!", !end_thread);
-    spdlog::info("Simple Net Sequencer, stor_ip {}!", stor_ips[0]);
+    spdlog::critical("READ RESPONSE Network Sequencer Thread starting with TID = {}", gettid());
     uint64_t pkt_resp_cntr = 0;
 
 
@@ -763,9 +791,9 @@ void LogSoftwareSwitch::change_view(uint64_t new_view_num) {
 }
 
 void LogSoftwareSwitch::wait_to_finish() {
-    while (true) {
-        std::chrono::seconds sleep_duration(15);
-    }
+    std::chrono::seconds sleep_duration(max_duration);
+    std::this_thread::sleep_for(sleep_duration);
+    end_thread = true;
 }
 
 std::string LogSoftwareSwitch::get_quad_ip(uint32_t ip_addr) {

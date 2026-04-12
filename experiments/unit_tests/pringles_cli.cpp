@@ -22,7 +22,7 @@
 // Performance test of append
 void run_append_client(std::string input_file, uint64_t i, uint64_t num_threads) {
     LogClient pringles_cli = LogClient(input_file, i, num_threads);
-    pringles_cli.subscribe(1);
+    //pringles_cli.subscribe(1);
     pringles_cli.launch_append_execute();
     spdlog::critical("Pringles client created and started!");
     pringles_cli.wait_to_warmup();

@@ -17,6 +17,7 @@ class Stats {
 
 	    double getStartLat();
             void getDuration(double start_time);
+	    void addDuration(double dur);
 
 
 	    //Throughput
@@ -24,6 +25,7 @@ class Stats {
 	    uint64_t getTotalOps();
 	    double getThroughput(uint64_t elapsed);
 	    double getAvgLatency();
+	    void putSubLatency(double sub_lat);
 	    void exportResultsToJson();
 
 	private:
@@ -43,4 +45,5 @@ class Stats {
 	    std::string json_name; // Filename for the stats json
 	    double final_throughput; // ops/sec - total throughput for this thread
 	    double final_avg_latency; // milliseconds - total avg latency
+	    double subscribe_latency; // milliseconds - total avg latency
 };

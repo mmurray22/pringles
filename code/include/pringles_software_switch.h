@@ -35,7 +35,7 @@ class LogSoftwareSwitch {
 	// Shards
 	bool use_shards;
 	uint64_t next_available_shard = 0;
-        tbb::concurrent_vector<std::string> all_shards;
+        tbb::concurrent_vector<tbb::concurrent_vector<std::string>> all_shards;
         tbb::concurrent_hash_map<uint64_t, uint64_t> stream_id_to_shard_id;
         tbb::concurrent_hash_map<uint64_t, uint64_t> seq_idx_to_shard_id;
 
@@ -45,6 +45,7 @@ class LogSoftwareSwitch {
 
 
 	uint64_t view_num;
+	uint64_t max_duration;
 	bool end_thread = false;
 
 	std::thread recv_thread;

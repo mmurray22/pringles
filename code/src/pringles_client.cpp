@@ -284,7 +284,7 @@ uint64_t LogClient::append(std::string entry) {
     spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {} with num entries {}", allocated_packet_size, payload.length(), size_of_hdr, ntohs(append_type_hdr.get()->num_entries));
     bool res = false;
     if (use_switch) {
-        spdlog::debug("Sending to the SWITCH at IP {} and port {} at port {} and nonce {}", switch_ip, switch_receive_port, client_recv_port, append_nonce);
+        spdlog::debug("Sending to the SWITCH at IP {} and port {}, recv at port {} and nonce {}", switch_ip, switch_receive_port, client_recv_port, append_nonce);
         res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, switch_ip, switch_receive_port);
     } else {
         for (uint64_t i = 0; i < stor_ips.size(); i++) {
@@ -540,8 +540,9 @@ void LogClient::wait_for_subscribe(uint64_t idx) {
 	if (one_time < 1) {
     	    duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
 	    double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
-    	    double dur = end_time_s - start_time_s;
+    	    double dur = (end_time_s - start_time_s)*1000;
     	    spdlog::critical("Duration to first message: {}", dur);
+	    append_stat->putSubLatency(dur);
 	    one_time+=1;
 	}
      }
