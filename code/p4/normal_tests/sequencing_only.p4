@@ -9,8 +9,8 @@
 #include <tna.p4>
 #endif
 
-#include "common/headers.p4"
-#include "common/util.p4"
+#include "../common/headers.p4"
+#include "../common/util.p4"
 
 
 const bit<16> TYPE_IPV4  = 0x0800;

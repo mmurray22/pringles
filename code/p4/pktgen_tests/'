@@ -9,8 +9,8 @@
 #include <tna.p4>
 #endif
 
-#include "common/headers.p4"
-#include "common/util.p4"
+#include "../common/headers.p4"
+#include "../common/util.p4"
 
 
 const bit<16> TYPE_IPV4  = 0x0800;
@@ -232,6 +232,9 @@ struct metadata {
     bit<1> send_acks;
     bit<1> route_to_client;
 
+    // For keepign tabs on the GSN table size
+    bit<32> batch_size;
+
     // For switch ID
     bit<16> switch_id;
     bit<16> ring_view;
@@ -255,6 +258,7 @@ struct metadata {
     bit<48> start_ts;
     bit<48> end_ts;
     bit<32> duration;
+    bit<32> overflow;
     bit<16> nonce;
     bit<32> seq_no;
 }
@@ -458,6 +462,31 @@ control MyIngress(inout headers hdr,
 	    }
         }
     };
+   
+    Register<bit<16>, bit<1>>(1, 0) active_batches;
+    RegisterAction<bit<16>, bit<1>, bit<16>>(active_batches) add_batch = {
+        void apply(inout bit<16> num_batches) { // inout = register, out = output 
+	    num_batches = num_batches + 1;
+        }
+    };
+    RegisterAction<bit<16>, bit<1>, bit<16>>(active_batches) sub_batch = {
+        void apply(inout bit<16> num_batches) { // inout = register, out = output 
+	    num_batches = num_batches - 1;
+        }
+    };
+
+    Register<bit<32>, bit<16>>(MAX_GSN_MAP_SIZE, 0) map_from_batch_sz; // TODO: How to increment/track this sequence number value?
+    RegisterAction<bit<32>, bit<16>, bit<32>>(map_from_batch_sz) update_batch_sz = {
+        void apply(inout bit<32> sz_at_idx, out bit<32> batch_sz) { // inout = register, out = output 
+	    sz_at_idx = sz_at_idx - 1;
+	    batch_sz = sz_at_idx;
+        }
+    };
+    RegisterAction<bit<32>, bit<16>, bit<32>>(map_from_batch_sz) set_batch_sz = {
+        void apply(inout bit<32> batch_slot) { // inout = register, out = output 
+	    batch_slot = meta.batch_size;
+        }
+    };
 
     /////// Acknowledgement Seq //////
     Register<bit<32>, bit<32>>(MAX_INFLIGHT_ACKS, 0) ack_array;
@@ -509,10 +538,23 @@ control MyIngress(inout headers hdr,
 
     //////// Performance Statistics (Packet Gen) /////////
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter; 
-    Register<bit<32>, bit<1>>(1, 0) latency; 
-    RegisterAction<bit<32>, bit<1>, bit<32>>(latency) update_lat_cntr = {
+    Register<bit<32>, bit<1>>(1, 0) latency_lower; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(latency_lower) update_low_lat_cntr = {
+        void apply(inout bit<32> new_lat_cntr, out bit<32> overflow) {
+	    bit<33> lower_lat = (bit<33>)(new_lat_cntr + meta.duration);
+	    if (lower_lat[32:32] == 1) {
+		new_lat_cntr = lower_lat[31:0];
+		overflow = 1;
+	    } else {
+		new_lat_cntr = new_lat_cntr + meta.duration;
+		overflow = 0;
+	    }
+	}
+    };
+    Register<bit<32>, bit<1>>(1, 0) latency_higher; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(latency_higher) update_high_lat_cntr = {
         void apply(inout bit<32> new_lat_cntr) {
-	    new_lat_cntr = new_lat_cntr + meta.duration;
+	    new_lat_cntr = new_lat_cntr + meta.overflow;
 	}
     };
 
@@ -826,18 +868,21 @@ control MyIngress(inout headers hdr,
                 bit<16> cntrl_pkt_it_reg = update_cntrl_pkt_it.execute(0);
 	        add_gsn.execute(cntrl_pkt_it_reg);
                 hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + local_seq_no_reg;
+
+		meta.start_ts = hdr.cntrl.start_ts;
+	    	meta.end_ts = standard_metadata.ingress_mac_tstamp;
+	    	meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
+	    	update_ring_trip_cntr.execute(0);
+	    	hdr.cntrl.start_ts = standard_metadata.ingress_mac_tstamp;
 	        cntrl_packet_counter.count(0);
+
+		meta.batch_size = local_seq_no_reg;
+		add_batch.execute(0);
+		set_batch_sz.execute(cntrl_pkt_it_reg);
 	    } else {
                 bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
 	        add_gsn.execute(cntrl_pkt_it_reg);
 	    }
-
-	    meta.start_ts = hdr.cntrl.start_ts;
-	    meta.end_ts = standard_metadata.ingress_mac_tstamp;
-	    meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
-
-	    update_ring_trip_cntr.execute(0);
-	    hdr.cntrl.start_ts = standard_metadata.ingress_mac_tstamp;
 
 	    meta.is_cntrl = 1;
         } else if (hdr.ring_type.type == TYPE_APPEND && meta.append_process == 1) {
@@ -849,7 +894,6 @@ control MyIngress(inout headers hdr,
 		assign_sn = local_seq_no_reg; //write_local_seq_no.execute(0); // Get batchOffset
 	        hdr.append.g_idx = assign_sn;	    
 		zero_gsn.execute(cntrl_pkt_it_reg); // Get Global sequence number
-
 	    } else {
 		assign_sn = get_gsn.execute(hdr.append.cntrl_pkt_it); // Get Global sequence number
 	    	hdr.append.g_idx = hdr.append.g_idx + assign_sn;	    
@@ -859,6 +903,10 @@ control MyIngress(inout headers hdr,
 	    if (hdr.append.cntrl_pkt_it == cntrl_pkt_it_reg) {
 		meta.circulate = 1;
 	    } else if (hdr.timer.isValid()) {
+		bit<32> cnt = update_batch_sz.execute(hdr.append.cntrl_pkt_it);
+		if (cnt == 0) {
+		    sub_batch.execute(0);
+		}
 		meta.start_ts = hdr.append.start_ts;
 	        meta.end_ts = standard_metadata.ingress_mac_tstamp;
 	        meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
@@ -868,9 +916,6 @@ control MyIngress(inout headers hdr,
 
 	        recirc_packet_counter.count(0);
 	        update_recirc_cntr.execute(0);
-
-
-
 	    } else {
 		meta.route_to_shard = 1;
 		if (hdr.append.stream_id == 0) {
@@ -887,22 +932,24 @@ control MyIngress(inout headers hdr,
 	        //tot_packet_counter.count(0);
 	    }
 	    if (ready_for_ack == 1) {
-
-
 		bit<32> slot = get_ack_idx.execute(0);
 		bit<32> ack_ready = check_ack.execute(slot);
 		if (ack_ready == 1) {
 		    if (hdr.timer.isValid()) {
 
 	                meta.start_ts = hdr.append.start_ts;
-
 	                meta.end_ts = standard_metadata.ingress_mac_tstamp;
 			meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
-
-
 	        	tot_packet_counter.count(0);
-	        	update_lat_cntr.execute(0);
-		        meta.route_to_client = 1;
+	        	bit<32> overflow = update_low_lat_cntr.execute(0);
+			meta.overflow = overflow;
+			if (overflow != 0) {
+			    update_high_lat_cntr.execute(0);
+			}
+
+
+		        //meta.route_to_client = 1;
+			drop();
 		    } else if (hdr.append.isValid() && !hdr.timer.isValid()) {
 		        meta.send_acks = 1;
 		        meta.route_to_client = 1;

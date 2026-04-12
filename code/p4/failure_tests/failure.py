@@ -764,6 +764,13 @@ class SequencingTest(BfRuntimeTest):
                     elif ether_pkt.haslayer(Cntrl):
                         print("RECEIVED a packet with TYPE_CNTRL")
                         ether_pkt.show()
+                    elif ether_pkt[RingType].type == TYPE_TRIGGER_VIEW_CHANGE:
+                        # triggers sending a view change - received from the data plane
+                    elif ether_pkt[RingType].type == TYPE_VIEW_CHANGE:
+                        # coordinate view change
+                        view_change_responses.append(ether_pkt)
+                        if (len(view_change_responses) > quorum):
+                            run_view_change(view_change_responses)
 	        #elif pkttimer.haslayer(RingType):
 		#    if pkttimer[RingType].type == TYPE_APPEND_RESP:
                 #    	print("RECEIVED a packet with TYPE_APPEND_RESP")
