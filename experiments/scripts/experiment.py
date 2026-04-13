@@ -1383,6 +1383,9 @@ def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
         print("Waiting 5s for JVM shutdown hooks to complete...")
         time.sleep(5)
 
+        print("\n--- Remote output JSON content (before SCP) ---")
+        run_remote_command_sync(client_ip, f'ls -la /tmp/{consumer_output_filename} && cat /tmp/{consumer_output_filename} || echo "(file missing)"', ssh_key, ssh_user)
+
         # --- 10. Retrieve results ---
         print("\n--- Retrieving Kafka Results ---")
         consumer_output_local = os.path.join(local_results_dir, consumer_output_filename)
