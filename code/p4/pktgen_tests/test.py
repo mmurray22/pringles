@@ -40,7 +40,7 @@ import bfrt_grpc.bfruntime_pb2 as bfruntime_pb2
 from ptf.thriftutils import *
 
 
-p4_program_name = "sequencing_only"
+p4_program_name = "pktgen"
 
 #loopback_port=68
 cpu_pcie_port=192 # dunno what the ptf test script is doing
@@ -452,12 +452,12 @@ class SequencingTest(BfRuntimeTest):
 
     
     ###################### PORT SETUP ##############################
-    def setup_switch_ports(self, target, switch_ports, loopback_port, control_port, port_speed, port_fec, size_of_ring, pktgen_loopback_port):
+    def setup_switch_ports(self, target, switch_ports, loopback_ports, control_port, port_speed, port_fec, size_of_ring):
         print(switch_ports)
 	for i in switch_ports:
 		self.port_setup(target, i, False, port_speed, port_fec)
-	self.port_setup(target, loopback_port, True, port_speed, port_fec)
-	#self.port_setup(target, pktgen_loopback_port, True, port_speed, port_fec)
+        for recirc_port in loopback_ports:
+	    self.port_setup(target, recirc_port, True, port_speed, port_fec)
 	if size_of_ring == 1:
 	    self.port_setup(target, control_port, True, port_speed, port_fec)
 	else:
@@ -499,15 +499,22 @@ class SequencingTest(BfRuntimeTest):
                     [table_ipv4.make_key([gc.KeyTuple('hdr.ipv4.dstAddr', client_ip_and_port[0], prefix_len=32)])],
                     [table_ipv4.make_data(action_name="MyIngress.ipv4_forward", data_field_list_in=[gc.DataTuple(name="dstAddr", val=client_ip_and_port[1]), gc.DataTuple(name="port", val=int(client_ip_and_port[2]))])])
 
-    def setup_circulate_table(self, target, bfrt_info, loopback_port):
+    def setup_circulate_table(self, target, bfrt_info, recirc_ports):
         # Circulate_table: If meta.circulate is set to 1, send packet to the loopback port
-        meta_circulate = 1
         table_circulate = bfrt_info.table_get("MyIngress.circulate_table")
-        table_circulate.info.key_field_annotation_add("meta.circulate", "bit<32>")
-        table_circulate.entry_add(
+        table_circulate.info.key_field_annotation_add("meta.port_idx", "bit<8>")
+        for i in range(0, len(recirc_ports)):
+            print("Recirc port idx: {} and port {}".format(i, recirc_ports[i]))
+            table_circulate.entry_add(
+                    target, 
+                    [table_circulate.make_key([gc.KeyTuple('meta.port_idx', i)])],
+                    [table_circulate.make_data(action_name="MyIngress.circulate_port", data_field_list_in=[gc.DataTuple(name="port", val=recirc_ports[i])])])
+    
+    def setup_recirc_port_table(self, target, bfrt_info, tot_num_recirc_ports):
+        table_recirc = bfrt_info.table_get("MyIngress.num_recirc_port_table")
+        table_recirc.default_entry_set(
                 target, 
-                [table_circulate.make_key([gc.KeyTuple('meta.circulate', meta_circulate)])],
-                [table_circulate.make_data(action_name="MyIngress.circulate_port", data_field_list_in=[gc.DataTuple(name="port", val=loopback_port)])])
+                table_recirc.make_data(action_name="MyIngress.get_num_recirc", data_field_list_in=[gc.DataTuple(name="num_recirc_ports", val=tot_num_recirc_ports)]))
 
     def setup_ack_const(self, target, bfrt_info, ack_threshold):
         table_ack = bfrt_info.table_get("MyIngress.get_ack_threshold")
@@ -624,7 +631,7 @@ class SequencingTest(BfRuntimeTest):
                 target, 
                 [table_sub.make_key([gc.KeyTuple('hdr.sub.subscribe', 0)])],
                 [table_sub.make_data(action_name="MyIngress.send_subscription_to_self", data_field_list_in=[gc.DataTuple(name="port", val=cpu_port)])])
-
+    
     # Acknowledgement tables (primarily handle subscription responses - for both streams & non-streams)
     def setup_subscriber_acks_table(self, target, bfrt_info):
         # Subscriber acks
@@ -721,7 +728,7 @@ class SequencingTest(BfRuntimeTest):
 
        
     ###################### CONTROL PLANE RUNTIME ##############################3
-    def receive_pkt_from_tofino(self, bfrt_info, target, interface): # TODO
+    def receive_pkt_from_tofino(self, bfrt_info, target, interface, duration):
         os.system("taskset -p -c 0 {}".format(os.getpid()))
         # This creates a raw socket exactly like tcpdump
         recv_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
@@ -733,8 +740,7 @@ class SequencingTest(BfRuntimeTest):
         print("[*] Tofino Receive Socket Open and Listening...")
         # Block until 1 packet is received
         start_time = time.time()
-        duration = 20 # PARAMETERIZE TODO
-        while True: #(time.time() - start_time) < duration:
+        while (time.time() - start_time) < duration:
             try:
                 raw_data, addr = recv_sock.recvfrom(65535)
                 pkttype = addr[2]
@@ -772,6 +778,29 @@ class SequencingTest(BfRuntimeTest):
 	        print("Halted: Waiting for packet to send tofino request")
 		continue
     
+    def batch_check(self, bfrt_info, target, interface, duration):
+        #os.system("taskset -p -c 0 {}".format(os.getpid()))
+        # This creates a raw socket exactly like tcpdump
+        recv_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
+        recv_sock.bind((interface, 0))
+        print("[*] Packet Gen Socket Open and Listening...")
+        # Block until 1 packet is received
+
+        start_time = time.time()
+        while (time.time() - start_time) < duration:
+	    time.sleep(1)
+            # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
+            active_batch_tbl = bfrt_info.table_get("pipe.MyIngress.active_batches")
+	    batch_val= active_batch_tbl.entry_get(
+	        target,
+	        [active_batch_tbl.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
+	        {"from_hw": True}
+	    )
+	    data, _ = next(batch_val)
+	    data_dict = data.to_dict()
+	    #print(data_dict)
+            print("Total Active Batches: {}".format(data_dict['MyIngress.active_batches.f1'][1]))
+
     def process_pktgen(self, bfrt_info, target, interface, dstAddr, srcAddr, ipAddr, in_cntrl):
         # TODO
         #os.system("taskset -p -c 0 {}".format(os.getpid()))
@@ -922,7 +951,7 @@ class SequencingTest(BfRuntimeTest):
     def make_port(self, pipe, local_port):
         return (pipe << 7) | local_port
 
-    def setup_timer_pkt_gen(self, bfrt_info, target, pkt_gen_app_id, dstAddr, srcAddr, ip_addr, payload_size, in_cntrl, cpu_interface):
+    def setup_timer_pkt_gen(self, bfrt_info, target, pkt_gen_app_id, dstAddr, srcAddr, ip_addr, payload_size, in_cntrl, cpu_interface, duration):
         logger.info("=============== Testing Packet Generator trigger by Timer ===============")
         pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         pktgen_pkt_buffer_table = bfrt_info.table_get("$PKTGEN_PKT_BUFFER")
@@ -939,7 +968,7 @@ class SequencingTest(BfRuntimeTest):
         pgen_pipe_id = 1
         src_port = self.pgen_port(pgen_pipe_id)
         # B x P to emulate 100G of client traffic
-        p_count = 20 # packets per batch
+        p_count = 200 #132 #99 # packets per batch
         b_count = 1 # batch number
         buff_offset = 144  # generated packets' payload will be taken from the offset in buffer
         out_port = 192 #swports[0]
@@ -958,6 +987,7 @@ class SequencingTest(BfRuntimeTest):
             Raw(load=payload)
         raw_p = bytes(p)
         pktlen = len(raw_p) #92 bytes: ethernet + ip + udp + ring_type + append
+        print("Length of the packet being sent is: {}".format(pktlen))
         try:
             logger.info("configure forwarding table")
 
@@ -971,7 +1001,7 @@ class SequencingTest(BfRuntimeTest):
 
             # Configure the packet generation timer application
             logger.info("configure pktgen application")
-            data = pktgen_app_cfg_table.make_data([gc.DataTuple('timer_nanosec', 10000), #3333), #1000
+            data = pktgen_app_cfg_table.make_data([gc.DataTuple('timer_nanosec', 100000), #10000), #3333), #1000
                                                    gc.DataTuple('app_enable', bool_val=False),
                                                    gc.DataTuple('pkt_len', pktlen),
                                                    gc.DataTuple('pkt_buffer_offset', buff_offset),
@@ -987,7 +1017,6 @@ class SequencingTest(BfRuntimeTest):
                                                    gc.DataTuple('pkt_counter', 0),
                                                    gc.DataTuple('trigger_counter', 0)],
                                                   '$PKTGEN_TRIGGER_TIMER_PERIODIC') # ONE_SHOT
-
             pktgen_app_cfg_table.entry_add(
                 target,
                 [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
@@ -998,14 +1027,6 @@ class SequencingTest(BfRuntimeTest):
                 [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
                                                    gc.KeyTuple('pkt_buffer_size', pktlen)])],
                 [pktgen_pkt_buffer_table.make_data([gc.DataTuple('buffer', raw_p)])])
-            #resp = pktgen_pkt_buffer_table.entry_get(
-            #    target,
-            #    [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
-            #                                       gc.KeyTuple('pkt_buffer_size', (pktlen - 6))])],
-            #    {"from_hw": False})
-            #data_dict = next(resp)[0] .to_dict()
-            #print()
-            #data_dict
             logger.info("enable pktgen")
             pktgen_app_cfg_table.entry_mod(
                 target,
@@ -1016,7 +1037,6 @@ class SequencingTest(BfRuntimeTest):
             
             # Use the per-app counters to wait for all packets to be generated.
             start_time = time.time()
-            duration = 5 # PARAMETERIZE TODO
             while (time.time() - start_time) < duration:
                 # verify pktgen related counters
                 resp = pktgen_app_cfg_table.entry_get(
@@ -1066,17 +1086,30 @@ class SequencingTest(BfRuntimeTest):
 	    
 	    # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
 	    pkts = data_dict['$COUNTER_SPEC_PKTS']
-            print(data_dict)
-	    print("Total Packets: {}".format(pkts))
-            lat_table = bfrt_info.table_get("pipe.MyIngress.latency")
-	    lat_resp = lat_table.entry_get(
+	    print("======================Total Append Packets: {}".format(pkts))
+	    print("======================Append Throughput: {}".format(pkts/float(duration)))
+            low_lat_table = bfrt_info.table_get("pipe.MyIngress.latency_lower")
+	    low_lat_resp = low_lat_table.entry_get(
 	        target,
-	        [lat_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
+	        [low_lat_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
 	        {"from_hw": True}
 	    )
-	    data, _ = next(lat_resp)
-	    data_dict = data.to_dict()
-	    print(data_dict)
+	    low_data, _ = next(low_lat_resp)
+	    low_data_dict = low_data.to_dict()
+            high_lat_table = bfrt_info.table_get("pipe.MyIngress.latency_higher")
+	    high_lat_resp = high_lat_table.entry_get(
+	        target,
+	        [high_lat_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
+	        {"from_hw": True}
+	    )
+	    high_data, _ = next(high_lat_resp)
+	    high_data_dict = high_data.to_dict()
+            low_lat = low_data_dict['MyIngress.latency_lower.f1'][1]
+            high_lat = high_data_dict['MyIngress.latency_higher.f1'][1]
+            total_latency_ns = (high_lat << 32) + low_lat
+            print("High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
+            print("Aggregate Latency: {}ns".format(total_latency_ns))
+            print("======================Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
             
             ##### CNTRL PACKET
             cntrl_table = bfrt_info.table_get("pipe.MyIngress.cntrl_packet_counter")
@@ -1097,6 +1130,7 @@ class SequencingTest(BfRuntimeTest):
 	    # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
 	    pkts = data_dict['$COUNTER_SPEC_PKTS']
 	    print("Total Control Packets: {}".format(pkts))
+
             cntrl_lat_table = bfrt_info.table_get("pipe.MyIngress.ring_trip_time")
 	    cntrl_lat_resp = cntrl_lat_table.entry_get(
 	        target,
@@ -1105,7 +1139,7 @@ class SequencingTest(BfRuntimeTest):
 	    )
 	    lat_data, _ = next(cntrl_lat_resp)
 	    data_dict = lat_data.to_dict()
-	    print(data_dict)
+            print("Control Packet Aggregate latency: {}".format(data_dict['MyIngress.ring_trip_time.f1'][1]))
              
             ##### RECIRC PACKET
             recirc_table = bfrt_info.table_get("pipe.MyIngress.recirc_packet_counter")
@@ -1134,7 +1168,7 @@ class SequencingTest(BfRuntimeTest):
 	    )
 	    data, _ = next(recirc_lat_resp)
 	    data_dict = data.to_dict()
-	    print(data_dict)
+            print("Recirculation aggregate latency: {}".format(data_dict['MyIngress.recirc_time.f1'][1]))
         
             # Verify generated packets
             # verify_multiple_packets(self, out_port, pkt_lst, pkt_len, tmo=5)
@@ -1354,7 +1388,7 @@ class SequencingTest(BfRuntimeTest):
 	ipAddr = data['dummy_ip_addr']
 	port_speed = data['port_speed']
 	port_fec = data['port_fec']
-	loopback_port = data['loopback_port']
+	loopback_ports = data['loopback_ports']
         pktgen_loopback_port = 169
 	cpu_interface = data['cpu_interface']
 	external_interface = data['external_interface']
@@ -1386,7 +1420,13 @@ class SequencingTest(BfRuntimeTest):
         cntrl_timeout = data['cntrl_timeout']
         ack_threshold = data['ack_threshold'] # NEW
         payload_size = data['payload_size'] # NEW
+        tot_num_recirc_ports = 5
         shard_to_port_gp = {} 
+        duration = 10
+        warmup = 5
+        cooldown = 5
+        buffer_time = 10
+        total_time = duration + warmup + cooldown + buffer_time
         for entry in data['all_shards']: # Entry = [Shard ID, ...ports]
             shard_to_port_gp[entry[0]] = entry[1:]
         
@@ -1394,17 +1434,13 @@ class SequencingTest(BfRuntimeTest):
         use_pktgen = True
         if run_setup:
             # Initialize all 5, 21, 3, 19, 23, 7 ports (332244)
-	    self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring, pktgen_loopback_port)
+	    self.setup_switch_ports(target, list_of_switch_ports, loopback_ports, cntrl_port, port_speed, port_fec, size_of_ring)
 
             ####################### SETUP MATCH-ACTION TABLES ##########################
             global_group_id = 1
-            # if use_pktgen:
-            #     self.setup_circulate_table(target, bfrt_info, pktgen_loopback_port)
-                ##self.setup_ack_const(target, bfrt_info, 1)
-                ##self.setup_num_shard_const(self, target, bfrt_info, 1)
-                ##self.setup_shard_size_const(self, target, bfrt_info, 1)
-            #else:
-            self.setup_circulate_table(target, bfrt_info, loopback_port)
+            print("Number of loopback ports: {}".format(len(loopback_ports)))
+            self.setup_recirc_port_table(target, bfrt_info, len(loopback_ports))
+            self.setup_circulate_table(target, bfrt_info, loopback_ports)
             #self.setup_ack_const(target, bfrt_info, ack_threshold)
             #self.setup_num_shard_const(self, target, bfrt_info, num_shards)
             #self.setup_shard_size_const(self, target, bfrt_info, shard_size)
@@ -1427,11 +1463,14 @@ class SequencingTest(BfRuntimeTest):
             self.setup_subscriber_acks_table(target, bfrt_info)
         
         ######################## SETUP DATA PLANE LISTENER
-        recv_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(bfrt_info,target,cpu_interface,))
+        recv_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(bfrt_info,target,cpu_interface,total_time))
         recv_thread.start()
         time.sleep(2)
-        
-                # ============================================== UNIT TESTS ================================================= #
+        batch_check_thread = threading.Thread(target=self.batch_check, args=(bfrt_info, target, cpu_interface, total_time,))
+        batch_check_thread.start()
+
+
+        # ============================================== UNIT TESTS ================================================= #
         # Test connection SIMPLE
         #self.test_connection(dstAddr,srcAddr,ipAddr,cpu_interface)
 
@@ -1447,15 +1486,11 @@ class SequencingTest(BfRuntimeTest):
         # Subscribe test - DONE
         #self.test_subscribe_one_switch(cpu_interface, dstAddr, srcAddr, ipAddr)
 
-        # Tail test - DONE
-        if use_pktgen:
-            self.send_test_cntrl_packet(cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl,0)
-            self.setup_timer_pkt_gen(bfrt_info, target, 1, dstAddr, srcAddr, ipAddr, payload_size, in_cntrl, cpu_interface)
-	    #pktgen_thread = threading.Thread(target=self.process_pktgen, args=(bfrt_info, target, cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl))
-            #pktgen_thread.start()
-            #pktgen_thread.join()
-	else:
-            self.test_tail(cpu_interface, dstAddr, srcAddr, ipAddr, in_cntrl)
+        self.send_test_cntrl_packet(cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl,0)
+        self.setup_timer_pkt_gen(bfrt_info, target, 1, dstAddr, srcAddr, ipAddr, payload_size, in_cntrl, cpu_interface, duration)
+	#pktgen_thread = threading.Thread(target=self.process_pktgen, args=(bfrt_info, target, cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl))
+        #pktgen_thread.start()
+        #pktgen_thread.join()
 
         ####### TEST 1: End-to-end sequencing test ######
         # Send one append
@@ -1479,4 +1514,5 @@ class SequencingTest(BfRuntimeTest):
         # Tofino Listener join
         print("Waiting to join threads!")
         recv_thread.join()
+        batch_check_thread.join()
 

@@ -9,8 +9,8 @@
 #include <tna.p4>
 #endif
 
-#include "common/headers.p4"
-#include "common/util.p4"
+#include "../common/headers.p4"
+#include "../common/util.p4"
 
 
 const bit<16> TYPE_IPV4  = 0x0800;
@@ -926,13 +926,14 @@ control MyIngress(inout headers hdr,
 		hdr.tail.tail_seq_no = tail_seq;
 	    }
 	    process_tail.apply();
-	} else if (hdr.start_view.isValid()) {
+	} else if (hdr.start_view.isValid() && hdr.start_view.switch_id != meta.switch_id) {
             bit<16> cntrl_pkt_it_reg = latest_complete_cntrl_pkt_it.execute(0);
 	    hdr.start_view.highest_seen_seq_no = get_gsn.execute(cntrl_pkt_it_reg); 
 	    get_switch_id.apply();
 	    hdr.start_view.switch_id = meta.switch_id;
 	    get_ring_view.apply();
 	    hdr.start_view.old_ring_view = meta.ring_view;
+	    meta.route_to_client = 1;
 	}
 
 
