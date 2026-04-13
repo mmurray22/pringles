@@ -64,7 +64,6 @@ class LogClient {
 	std::string client_recv_port;
 
 	uint64_t min_matching_acks = 0;
-	uint64_t num_pkt_types = 0; 
 	
 	/* Receive queue which slots messages */
 	bool end_thread = false;

@@ -13,6 +13,8 @@ sudo apt -y install libtbb-dev
 
 #pip install toml PyYAML
 sudo apt install -y python3-toml python3-yaml python3-matplotlib python3-paramiko
+pip install pandas matplotlib
+pip install --upgrade matplotlib
 
 # Go
 wget https://go.dev/dl/go1.26.1.linux-amd64.tar.gz

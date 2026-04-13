@@ -33,6 +33,7 @@ ssh_user = "mathwiz23pi"
 # Local path where Scalog will be cloned and cross-compiled.
 # Binaries are then SCP'd to the appropriate remote nodes.
 scalog_bin = "/home/mathwiz23pi/pringles/scalog/scalog"
+data_yaml_path = "/home/mathwiz23pi/pringles/scalog"
 # Remote paths where each binary will be placed (directory must exist or will be created).
 config_path = "/home/mathwiz23pi/pringles/experiments/scripts/.scalog.yaml"
 # Set to "True" to clone/build on first run. Safe to leave "True" on repeat runs
@@ -41,8 +42,7 @@ run_comparison_setup = "True"
 run_setup_script = "False"
 
 [experiment_parameters]
-experiment_name     = "scalog_baseline"
-json_name           = "scalog"
+json_name           = "default"
 experiment_duration = 30    # seconds (excluding warm_up and cool_down)
 warm_up             = 5     # seconds
 cool_down           = 5     # seconds
@@ -50,10 +50,10 @@ message_size        = 4000  # bytes
 num_client_threads  = 1
 log_level           = 6
 num_failures        = 0
-data_replication_factor  = 1   # Scalog replication factor set in .scalog.yaml TODO make 2
-order_replication_factor  = 3  # Scalog replication factor set in .scalog.yaml TODO make 2
+#data_replication_factor  = 1   # Scalog replication factor set in .scalog.yaml TODO make 2
+order_replication_factor  = 3  # Scalog replication factor set in .scalog.yaml
 num_sequencer_nodes = 3   # number of order layer nodes; must equal len(seq_ips)
-num_shards          = 1   # number of data layer nodes; must equal len(stor_ips)
+#num_shards          = 1   # number of data layer nodes; must equal len(stor_ips)
 batching_interval   = "1ms"
 
 # --- Experiment sweep: 4 KB messages ---

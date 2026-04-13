@@ -53,7 +53,7 @@ switch_binary = "switch"
 # Speclog binary TODO
 # Boolean indicating whether the install script should be run to install packages on all machines
 # Generally safe to set to "False"
-
+run_setup_script = "False"
 
 ######## Defines variables necessary for experiments #######
 [experiment_parameters]

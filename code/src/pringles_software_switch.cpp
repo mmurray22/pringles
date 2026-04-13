@@ -600,7 +600,6 @@ void LogSoftwareSwitch::read_response() {
     spdlog::critical("READ RESPONSE Network Sequencer Thread starting with TID = {}", gettid());
     uint64_t pkt_resp_cntr = 0;
 
-
     if (true) {
         // Request header
 	while (!end_thread) {
@@ -783,7 +782,7 @@ bool LogSoftwareSwitch::store_sub(std::string client_ip, std::string recv_port, 
 }
 
 bool LogSoftwareSwitch::recover_switch() {
-    return false; // TODO
+    return false; // TODO: Only being implemented in the hardware switch for now
 }
 
 void LogSoftwareSwitch::change_view(uint64_t new_view_num) {

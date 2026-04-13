@@ -127,3 +127,4 @@ experiments/yaml/*.swp
 
 # Experiments
 experiments/results/*
+experiments/scripts/*.png

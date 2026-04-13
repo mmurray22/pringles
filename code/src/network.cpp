@@ -496,6 +496,7 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     } else if (!batch_on && pkt_len > 0) {
         memcpy(final_send_packet, send_packet.get(), pkt_len);
 	running_pkt_size = pkt_len;
+	num_pkts = 1;
     }
 
     auto curr_time = (std::chrono::steady_clock::now()).time_since_epoch();
@@ -503,9 +504,11 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     double dur = curr_time_s - batch_timer;
     if (batch_on && num_pkts < batch_size && (running_pkt_size + pkt_len) < MAX_PACKET_SIZE && dur < batch_timeout) {
         // Copy new packet into the batch and update the running packet size for the append request batch
+        spdlog::info("Waiting to fill the batch!");
 	return false;
     }
     if (running_pkt_size == 0 || num_pkts == 0) {
+        spdlog::info("No packets or the packet size is zero");
         return false;
     }
   

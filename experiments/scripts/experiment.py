@@ -12,6 +12,7 @@ import json
 import glob
 import shutil
 from pathlib import Path
+from itertools import chain
 from datetime import datetime
 from copy import deepcopy
 
@@ -88,7 +89,7 @@ def generate_switch_config(base_config, i, cntrl_port_num, ring_size, client_bas
     return switch_config
 
 
-def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, json_name=None, num_failures=None, network_interface=None, shard_id=None, total_shards=None, shard_multicast=None):
+def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, json_name=None, num_failures=None, network_interface=None, shard_id=None, total_shards=None, shard_multicast=None):
     """Generates the configuration dictionary for a client or server."""
 
     # Base port calculation to ensure uniqueness
@@ -96,14 +97,14 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     recv_port = BASE_PORT + port_offset + 1
 
     # Extract required parameters from the fully merged base_config
-    exp_params = base_config['experiment_parameters']
-    proto_params = base_config['protocol_batching']
-    net_params = base_config['network_setup']
+    general_exp_params = base_config['experiment_parameters']
+    exp_params = pringles_config['experiment_parameters']
+    net_params = pringles_config['network_setup']
 
     # Calculate experiment duration, adding a delay for servers (Feature 3)
-    exp_duration = exp_params['experiment_duration']
-    warm_up = exp_params['warm_up']
-    cool_down = exp_params['cool_down']
+    exp_duration = general_exp_params['experiment_duration']
+    warm_up = general_exp_params['warm_up']
+    cool_down = general_exp_params['cool_down']
 
     if entity_type == 'server':
         # Servers run longer than the client to ensure no early termination
@@ -121,7 +122,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     stor_ips = [QuotedString(mac) for mac in net_params['stor_ips']]
 
     yaml_config = {
-        'log_level': exp_params['log_level'],
+        'log_level': general_exp_params['log_level'],
         'switch_ip': QuotedString(net_params['switch_ip']),
         'switch_mac': QuotedString(net_params['switch_mac']),
         'cli_macs': cli_macs,
@@ -132,7 +133,6 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         'recv_port': QuotedString(recv_port),
         'stor_recv_port': QuotedString(net_params['stor_recv_port']),
         'switch_recv_port': QuotedString(net_params['switch_recv_port']),
-        'send_threads': 1,  # [INACTIVE]
         # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
         'socket_type': QuotedString(exp_params['socket_type']),
         # WRAPPED: Ensures self_ip is quoted
@@ -140,11 +140,10 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         # WRAPPED: Ensures interface name is quoted
         'batch_size': exp_params['batch_size'],
         'batch_usec_timeout': exp_params['batch_usec_timeout'], 
-        'batch_on': proto_params['batch_on'],
-        'num_pkt_types': proto_params['num_packet_types'],
+        'batch_on': exp_params['batch_on'],
         # Use the calculated final duration (adjusted for servers)
         'experiment_duration': final_duration, 
-        'payload_size': exp_params['message_size'],
+        'payload_size': general_exp_params['message_size'],
         'use_switch': exp_params['use_switch'],
         'use_store': exp_params['use_store'],
         'use_shard': exp_params['use_shard'],
@@ -159,8 +158,7 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
     if entity_type == 'client':
         dummy = ""
         yaml_config.update({
-            'sequencer_type': proto_params['sequencer_type'],
-            'num_client_threads': exp_params['num_client_threads'],
+            'num_client_threads': general_exp_params['num_client_threads'],
             'cli_id': entity_id, # Integer
 
             # Add json_name to client config (as a QuotedString)
@@ -185,7 +183,6 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
         shard_switch_id = random.randint(0, 9)
 
         yaml_config.update({
-            'storage_type': proto_params['storage_server_type'],
             'shard_id': shard_id,
             'shard_switch_id': shard_switch_id,
             'stor_id': entity_id, # Integer
@@ -194,7 +191,8 @@ def generate_yaml_config(base_config, entity_type, entity_ip, port_offset, entit
             'interface': QuotedString(network_interface),
             'shard_multicast_addr': QuotedString(shard_multicast)
         })
-
+    
+    # --- Switch Specific Fields ---
     elif entity_type == 'switch':
         dummy = ""
         yaml_config.update({
@@ -270,14 +268,19 @@ def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user,
         print(f"ERROR starting remote process on {ip}: {e}")
         return None, log_filename # Return log_filename even on error
 
-def transfer_file(local_path, remote_ip, remote_user, ssh_key, remote_filename=None):
+def transfer_file(local_path, remote_ip, remote_user, ssh_key, remote_filename=None, remote_filepath=None):
     """
     Transfers a file from the local machine to the remote machine's home directory using SCP.
     """
     if not remote_filename:
         remote_filename = os.path.basename(local_path) # Use the basename remotely
+    if not remote_filepath:
+        remote_filepath = f'~/{remote_filename}'
+    else:
+        remote_filepath = f'{remote_filepath}/{remote_filename}'
+    print(remote_filepath)
 
-    print(f"Transferring {local_path} to {remote_user}@{remote_ip}:~/{remote_filename}...")
+    print(f"Transferring {local_path} to {remote_user}@{remote_ip}:{remote_filepath}...")
 
     command = [
         'scp',
@@ -285,7 +288,7 @@ def transfer_file(local_path, remote_ip, remote_user, ssh_key, remote_filename=N
         '-o', 'StrictHostKeyChecking=no',
         '-o', 'UserKnownHostsFile=/dev/null',
         local_path,
-        f'{remote_user}@{remote_ip}:~/{remote_filename}'
+        f'{remote_user}@{remote_ip}:{remote_filepath}'
     ]
     print(f"Command: {command}")
     try:
@@ -456,7 +459,7 @@ def cleanup_remote_yaml_files(hosts, ssh_key, ssh_user):
 
     print("Remote YAML cleanup finished.")
 
-def process_and_aggregate_results(local_target_dir, local_json_dir, config_file):
+def process_and_aggregate_results(local_target_dir, json_name, system_name, base_config, system_config):
     """
     Reads all JSON files in the target directory, calculates aggregate throughput and 
     total average latency PER JSON_NAME, and writes a summary JSON file for each group.
@@ -511,7 +514,7 @@ def process_and_aggregate_results(local_target_dir, local_json_dir, config_file)
 
             # Aggregate Time-to-first-Subscribe
             sub_lat = data.get('sub_lat')
-            if isinstance(avg_latency, (int, float)):
+            if isinstance(sub_lat, (int, float)):
                 total_sub_lat_sum += sub_lat
         except json.JSONDecodeError:
             print(f"Error: Failed to decode JSON from file: {filename}. Skipping.")
@@ -521,35 +524,54 @@ def process_and_aggregate_results(local_target_dir, local_json_dir, config_file)
     # Calculate Final Average Latency
     final_avg_latency = total_avg_latency_sum / file_count if file_count > 0 else 0.0
     final_avg_sub_lat = total_sub_lat_sum / file_count if file_count > 0 else 0.0
-
+    print("=========== FINAL STATS")
     # Construct Final Output
+    num_switches = 0
+    if system_name == "pringles":
+        num_switches = len(system_config['experiment_parameters']['switches_in_ring'])
+
     final_results = {
         "agg_tput": total_agg_tput,
         "total_avg_latency": final_avg_latency,
+        "subscribe_delay": final_avg_sub_lat,
         "num_clients": file_count,
         "batch_size": batch_size,
-        "subscribe_delay": final_avg_sub_lat,
-        "num_switches_in_ring": len(config_file['experiment_parameters']['switches_in_ring']),
-        "num_shards": config_file['experiment_parameters']['num_shards'],
-        "num_servers_per_shard": config_file['experiment_parameters']['num_servers_per_shard'],
-        "git_hash": config_file['experiment_parameters']['git_hash']
+        "payload_size": base_config['experiment_parameters']['message_size'],
+        "num_switches_in_ring": num_switches,
+        "num_shards": base_config['experiment_parameters']['num_shards'],
+        "num_servers_per_shard": base_config['experiment_parameters']['num_servers_per_shard'],
+        "git_hash": base_config['experiment_parameters']['git_hash'],
+        "system_name": system_name
     }
+    print(final_results)
 
+    # Iterate over all .json files in the source directory
+    local_indiv_json_dir = Path(local_target_dir) /  json_name #os.path.join(local_target_dir, json_name) # NEW
+    print(str(local_indiv_json_dir))
+    local_indiv_json_dir.mkdir(parents=True, exist_ok=True)
+    print(result_files)
+    for json_file in result_files:
+        source_path = Path(local_target_dir) / json_file
+        print(str(source_path))
+        target_path = local_indiv_json_dir
+        shutil.move(str(source_path), str(target_path))
+        print(f"Moved: {source_path.name} to {str(target_path)}")
+    patterns = ['*.txt', '*.log']
+    files_to_move = chain.from_iterable(Path(local_target_dir).glob(pattern) for pattern in patterns)
+    for file_path in files_to_move:
+        source_path = Path(local_target_dir) / file_path
+        target_path = local_indiv_json_dir
+        shutil.move(str(source_path), str(target_path))
+        print(f"Moved: {source_path.name}")
     # Write the final aggregated JSON file named [json_name].json
-    json_name_prefix = config_file['experiment_parameters']['json_name']
-    output_filename = f"{json_name_prefix}.json"
+    output_filename = f"{json_name}.json"
     output_filepath = os.path.join(local_target_dir, output_filename)
-
-	# Iterate over all .json files in the source directory
-    for json_file in Path(local_target_dir).glob('*.json'):
-        shutil.move(str(json_file), local_json_dir / json_file.name)
-
-    print(f"Moved: {json_file.name}")  
+    #print(f"Moved: {json_file.name}")  
 
     try:
         with open(output_filepath, 'w') as f:
             json.dump(final_results, f, indent=4)
-        print(f"Summary for {json_name_prefix} written to: {output_filepath}")
+        print(f"Summary for {json_name} written to: {output_filepath}")
     except IOError as e:
         print(f"Error: Failed to write final summary JSON to {output_filepath}: {e}")
 
@@ -784,7 +806,6 @@ def setup_scalog_nodes(config, ssh_key, ssh_user):
             if not run_remote_command_sync(ip, install_cmd, ssh_key, ssh_user):
                 print(f"ERROR: Failed to install {binary_name} on {ip}")
                 return False
-
     print("--- Scalog setup complete ---")
     return True
 
@@ -1022,326 +1043,373 @@ def setup_switches(config):
         jump_client.close()
 
 # To be executed for each experiment
-def run_experiment_cycle(config, exp_index, local_results_dir, with_tunnel=False):
+def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, local_results_dir, system_name, with_tunnel=False):
     """Runs a single, full experiment cycle based on the merged configuration."""
-
-    # Extract run-specific parameters from the merged config
-    ssh_key = os.path.expanduser(config['network_setup']['ssh_key'])
-    ssh_user = config['network_setup']['ssh_user']
-    client_ips = config['network_setup']['cli_ips'] # TODO SEQ make plural?
-    cli_net_ifs = config['network_setup']['cli_net_ifs'] # TODO SEQ make plural?
-    switch_ip = config['network_setup']['switch_ip']
-    switch_net_if = config['network_setup']['switch_net_if']
-    server_ips = config['network_setup']['stor_ips']
-    server_net_ifs = config['network_setup']['stor_net_ifs']
-    path_client = config['program_paths']['path_client']
-    path_server = config['program_paths']['path_server']
-    path_switch = config['program_paths']['path_switch']
-
-    json_output_name = config['experiment_parameters']['json_name']
-    num_failures = config['experiment_parameters']['num_failures']
-
-    print(f"\n========================================================")
-    print(f"   RUNNING EXPERIMENT {exp_index + 1}: {json_output_name}")
-    print(f"   Client Threads: {config['experiment_parameters']['num_client_threads']}")
-    print(f"========================================================")
-
-    server_processes = []
-    client_log_files = []
-    client_processes = []
-    server_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
-    switch_processes = []
-    switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
-
-    # Setup shards TODO only for a single switch
-    size_of_shard = config['experiment_parameters']['num_servers_per_shard']
-    print(f"Size of shards: {size_of_shard}")
-    total_list_of_shards = []
-    total_list_of_shards_yaml = []
-    ip_to_shard = {}
-    shard_to_multicast_addr = []
-    num_of_shard = 0
-    max_num_shards = config['experiment_parameters']['num_shards']
-    base_multicast_addr = "239.1.1."
-    for i in range(0, len(server_ips), size_of_shard): # TODO check whether the number of servers divides evenly into shard size
-        shard = []
-        shard_yaml = []
-        for j in range(i, i+size_of_shard):
-            print(server_ips[j])
-            shard.append(server_ips[j])
-            shard_yaml.append(QuotedString(server_ips[j]))
-            ip_to_shard[server_ips[j]] = num_of_shard
-        total_list_of_shards.append(shard)
-        total_list_of_shards_yaml.append(shard_yaml)
-        num_of_shard += 1
-        if (num_of_shard == max_num_shards):
-            break
-    print(total_list_of_shards_yaml)
-    for i in range(0, num_of_shard): #255 <-- TODO max number of shards
-        shard_to_multicast_addr.append((base_multicast_addr + str(i)));
-    yaml_shard_to_multicast_addr = [QuotedString(addr) for addr in shard_to_multicast_addr]
-    print(yaml_shard_to_multicast_addr)
-
     try:
-        # --- 5. Generate Server Configurations and Start Processes ---
-        print("\n--- Starting Storage Servers ---")
+        with open(pringles_config_file, 'r') as f:
+            full_config = toml.load(f)
+    except FileNotFoundError:
+        print(f"Error: Configuration file '{pringles_config_file}' not found.")
+        return
+    except toml.TomlDecodeError as e:
+        print(f"Error: Failed to parse TOML file: {e}")
+        return
 
-        for shard in total_list_of_shards: 
-            for i, ip in enumerate(shard):
-                server_id = random.randint(100000, 999999) 
-                config_filename = f"server_config_{json_output_name}_{i}.yaml" # Unique filename
-                port_offset = i * 2
+    # Extract the list of experiments to run and remove it from the base config
+    experiments_to_run = full_config.pop('experiment', [])
+    if not experiments_to_run:
+        print("Warning: No '[[experiment]]' sections found. Running only the default configuration once.")
+        default_params = full_config.get('experiment_parameters', {})
+        experiments_to_run.append(default_params)
 
-                server_config = generate_yaml_config(
+    # The remaining dictionary is the base configuration
+    config = full_config.copy() 
+
+    #print("\n--- Compiling Binaries on All Machines ---") TODO do I need this?
+    #for ip in all_ips:
+    #    if not run_compile_command(ip, ssh_key, ssh_user):
+    #        print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
+    #        return
+    #print("--- Compilation Complete ---")
+
+    for exp_index, exp_params in enumerate(experiments_to_run): 
+       # 2. Merge experiment-specific parameters (overrides)
+        for key, value in exp_params.items():
+            print(key)
+            print(value)
+            if key in config.get('experiment_parameters', {}):
+                config['experiment_parameters'][key] = value
+        
+        # Extract run-specific parameters from the merged config
+        ssh_key = os.path.expanduser(config['network_setup']['ssh_key'])
+        ssh_user = config['network_setup']['ssh_user']
+        client_ips = config['network_setup']['cli_ips'] # TODO SEQ make plural?
+        cli_net_ifs = config['network_setup']['cli_net_ifs'] # TODO SEQ make plural?
+        switch_ip = config['network_setup']['switch_ip']
+        switch_net_if = config['network_setup']['switch_net_if']
+        server_ips = config['network_setup']['stor_ips']
+        server_net_ifs = config['network_setup']['stor_net_ifs']
+        path_client = config['program_paths']['path_client']
+        path_server = config['program_paths']['path_server']
+        path_switch = config['program_paths']['path_switch']
+
+        general_json_output_name = base_config['experiment_parameters']['general_json_name']
+        json_output_name = general_json_output_name + "-" + config['experiment_parameters']['json_name']
+
+        num_failures = config['experiment_parameters']['num_failures']
+
+        print(f"\n========================================================")
+        print(f"   RUNNING EXPERIMENT {exp_index + 1}: {json_output_name}")
+        print(f"   Client Threads: {base_config['experiment_parameters']['num_client_threads']}")
+        print(f"========================================================")
+
+        server_processes = []
+        client_log_files = []
+        client_processes = []
+        server_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
+        switch_processes = []
+        switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
+
+        # Setup shards TODO only for a single switch
+        size_of_shard = base_config['experiment_parameters']['num_servers_per_shard']
+        print(f"Size of shards: {size_of_shard}")
+        total_list_of_shards = []
+        total_list_of_shards_yaml = []
+        ip_to_shard = {}
+        shard_to_multicast_addr = []
+        num_of_shard = 0
+        max_num_shards = base_config['experiment_parameters']['num_shards']
+        base_multicast_addr = "239.1.1."
+        for i in range(0, len(server_ips), size_of_shard): # TODO check whether the number of servers divides evenly into shard size
+            shard = []
+            shard_yaml = []
+            for j in range(i, i+size_of_shard):
+                print(server_ips[j])
+                shard.append(server_ips[j])
+                shard_yaml.append(QuotedString(server_ips[j]))
+                ip_to_shard[server_ips[j]] = num_of_shard
+            total_list_of_shards.append(shard)
+            total_list_of_shards_yaml.append(shard_yaml)
+            num_of_shard += 1
+            if (num_of_shard == max_num_shards):
+                break
+        print(total_list_of_shards_yaml)
+        for i in range(0, num_of_shard): #255 <-- TODO max number of shards
+            shard_to_multicast_addr.append((base_multicast_addr + str(i)));
+        yaml_shard_to_multicast_addr = [QuotedString(addr) for addr in shard_to_multicast_addr]
+        print(yaml_shard_to_multicast_addr)
+
+        try:
+            # --- 5. Generate Server Configurations and Start Processes ---
+            print("\n--- Starting Storage Servers ---")
+
+            for shard in total_list_of_shards: 
+                for i, ip in enumerate(shard):
+                    server_id = random.randint(100000, 999999) 
+                    config_filename = f"server_config_{json_output_name}_{i}.yaml" # Unique filename
+                    port_offset = i * 2
+
+                    server_config = generate_yaml_config(
+                        base_config,
+                        config, 
+                        'server', 
+                        ip, 
+                        port_offset,
+                        entity_id=server_id,
+                        entity_idx=i,
+                        network_interface=server_net_ifs[i],
+                        shard_id=ip_to_shard[ip],
+                        shard_multicast=shard_to_multicast_addr[ip_to_shard[ip]]
+                    )
+
+                    server_exec = os.path.basename(path_server) # Use the basename remotely
+                    kill_process(server_exec, ssh_key, ssh_user, ip)
+
+                    # Write YAML file locally
+                    with open(config_filename, 'w') as f:
+                        yaml.dump(server_config, f, default_flow_style=False)
+                    print(f"Generated server config: {config_filename}")
+                    print(f"Server binary to copy: {path_server}")
+
+                    # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+                    if not with_tunnel:
+                        if not transfer_file(config_filename, ip, ssh_user, ssh_key):
+                            raise Exception(f"Failed to transfer config to server {ip}")
+                        if not transfer_file(path_server, ip, ssh_user, ssh_key):
+                            raise Exception(f"Failed to transfer server binary to server {ip}")
+                    else:
+                        local_path = os.path.abspath(config_filename)
+                        print("SCPing the server config")
+                        execute_scp_switch_cmd(config, local_path, config_filename)
+                        print("Done SCPing the server config")
+
+                    # Start remote process
+                    if not with_tunnel:
+                        print("MADE IT HERE ====================================================")
+                        print(path_server)
+                        exec_filepath = "~/" + server_exec
+                        prefix = "server"
+                        execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix)
+                        # Second, execute the command
+                        process, log_filename = execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
+                        print("Done executing the server!")
+                        if process:
+                            server_processes.append(process)
+                            server_log_files[ip] = log_filename # MODIFIED: Store log filename
+                        else:
+                            raise Exception(f"Failed to start server process on {ip}")
+                    else:
+                        cli_binary = config['program_paths']['client_binary']
+                        server_binary = config['program_paths']['server_binary']
+                        print("SCPing the server binary")
+                        execute_scp_switch_cmd(config, path_server, server_binary)
+                        print("Executing the server binary")
+                        execute_remote_switch_cmd(config, path_server, config_filename)
+                        print("Done with the server binary!")
+
+
+            if not with_tunnel and not server_processes:
+                raise Exception("No servers were successfully started.")
+
+            # --- 6. Wait for Servers to Initialize ---
+            print(f"\nWaiting {SERVER_START_DELAY} seconds for storage servers to initialize...")
+            time.sleep(SERVER_START_DELAY)
+
+            # --- 7. Generate Switch Configuration and Start Process --- # TODO
+            if not config['experiment_parameters']['use_hardware_switch']:
+                print("\n--- Starting Switch ---")
+                switch_id = random.randint(100000, 999999)
+                switch_config_filename = f"switch_config_{json_output_name}.yaml" # Unique filename
+                switch_port_offset = len(server_ips) * 2
+
+                switch_config = generate_yaml_config(
+                    base_config,
                     config, 
-                    'server', 
-                    ip, 
-                    port_offset,
-                    entity_id=server_id,
-                    entity_idx=i,
-                    network_interface=server_net_ifs[i],
-                    shard_id=ip_to_shard[ip],
-                    shard_multicast=shard_to_multicast_addr[ip_to_shard[ip]]
+                    'switch',
+                    switch_ip,
+                    switch_port_offset,
+                    entity_id=switch_id,
+                    json_name=json_output_name,
+                    num_failures=num_failures,
+                    network_interface=switch_net_if,
+                    total_shards=total_list_of_shards_yaml
                 )
 
-                server_exec = os.path.basename(path_server) # Use the basename remotely
-                kill_process(server_exec, ssh_key, ssh_user, ip)
+                switch_exec = os.path.basename(path_switch) # Use the basename remotely
+                kill_process(switch_exec, ssh_key, ssh_user, switch_ip)
+
+                # Write YAML file locally
+                with open(switch_config_filename, 'w') as f:
+                    yaml.dump(switch_config, f, default_flow_style=False)
+                print(f"Generated client config: {switch_config_filename}")
+
+                # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+                if not transfer_file(switch_config_filename, switch_ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer config to server {switch_ip}")
+                if not transfer_file(path_switch, switch_ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer switch binary to switch {switch_ip}")
+                    
+                # Start remote process
+                exec_switch_filepath = "~/" + switch_exec
+                prefix = "switch"
+                process, log_filename = execute_remote_command(switch_ip, exec_switch_filepath, switch_config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
+                if process:
+                    switch_processes.append(process)
+                    switch_log_files[ip] = log_filename # MODIFIED: Store log filename
+                else:
+                    raise Exception(f"Failed to start server process on {ip}")
+
+                if not switch_processes:
+                    raise Exception("No servers were successfully started.")
+
+                # --- 8. Wait for Servers to Initialize --- TODO
+                print(f"\nWaiting {SWITCH_START_DELAY} seconds for software switch to initialize...")
+                time.sleep(SWITCH_START_DELAY)
+
+            # --- 9. Generate Client Configuration and Start Process ---
+            print("\n--- Starting Client ---")
+            for i, ip in enumerate(client_ips):
+                client_id = random.randint(100000, 999999) 
+                config_filename = f"client_config_{json_output_name}_{i}.yaml" # Unique filename
+                client_port_offset = len(server_ips) * 2
+                client_config = generate_yaml_config(
+                    base_config,
+                     config, 
+                     'client',
+                     ip,
+                     client_port_offset,
+                     entity_id=client_id,
+                     entity_idx=i,
+                     json_name=json_output_name,
+                     num_failures=num_failures,
+                     network_interface=cli_net_ifs[i]
+                )
+                client_exec = os.path.basename(path_client) # Use the basename remotely
+                kill_process(client_exec, ssh_key, ssh_user, ip)
 
                 # Write YAML file locally
                 with open(config_filename, 'w') as f:
-                    yaml.dump(server_config, f, default_flow_style=False)
+                    yaml.dump(client_config, f, default_flow_style=False)
                 print(f"Generated server config: {config_filename}")
-                print(f"Server binary to copy: {path_server}")
 
                 # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
-                if not with_tunnel:
+                if not with_tunnel: 
                     if not transfer_file(config_filename, ip, ssh_user, ssh_key):
                         raise Exception(f"Failed to transfer config to server {ip}")
-                    if not transfer_file(path_server, ip, ssh_user, ssh_key):
+                    if not transfer_file(path_client, ip, ssh_user, ssh_key):
                         raise Exception(f"Failed to transfer server binary to server {ip}")
                 else:
                     local_path = os.path.abspath(config_filename)
-                    print("SCPing the server config")
                     execute_scp_switch_cmd(config, local_path, config_filename)
-                    print("Done SCPing the server config")
 
-                # Start remote process
+                #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name) TODO
                 if not with_tunnel:
-                    print("MADE IT HERE ====================================================")
-                    print(path_server)
-                    exec_filepath = "~/" + server_exec
-                    prefix = "server"
-                    execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix)
-                    # Second, execute the command
-                    process, log_filename = execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
-                    print("Done executing the server!")
-                    if process:
-                        server_processes.append(process)
-                        server_log_files[ip] = log_filename # MODIFIED: Store log filename
-                    else:
-                        raise Exception(f"Failed to start server process on {ip}")
+                    cli_exec_file = "~/" + client_exec
+                    prefix = "client"
+                    client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
+                        ip, 
+                        cli_exec_file, 
+                        config_filename, 
+                        ssh_key, 
+                        ssh_user,
+                        exp_index,
+                        prefix
+                    )
+                    if client_process:
+                        print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
+                        print("This script is now waiting for the client process to finish...")
+                        client_processes.append(client_process)
+                        client_log_files.append(client_log_filename)
+                    else: # TODO more error handling?
+                        raise Exception("Failed to start client process.")
                 else:
                     cli_binary = config['program_paths']['client_binary']
-                    server_binary = config['program_paths']['server_binary']
-                    print("SCPing the server binary")
-                    execute_scp_switch_cmd(config, path_server, server_binary)
-                    print("Executing the server binary")
+                    execute_scp_switch_cmd(config, path_server, cli_binary)
                     execute_remote_switch_cmd(config, path_server, config_filename)
-                    print("Done with the server binary!")
 
+            i = 0 
+            for proc in client_processes: 
+                # Wait for the client process to finish
+                print("Waiting for the client process {proc.id} to finish!")
+                proc.wait()
 
-        if not with_tunnel and not server_processes:
-            raise Exception("No servers were successfully started.")
-
-        # --- 6. Wait for Servers to Initialize ---
-        print(f"\nWaiting {SERVER_START_DELAY} seconds for storage servers to initialize...")
-        time.sleep(SERVER_START_DELAY)
-
-        # --- 7. Generate Switch Configuration and Start Process --- # TODO
-        if not config['experiment_parameters']['use_hardware_switch']:
-            print("\n--- Starting Switch ---")
-            switch_id = random.randint(100000, 999999)
-            switch_config_filename = f"switch_config_{json_output_name}.yaml" # Unique filename
-            switch_port_offset = len(server_ips) * 2
-
-            switch_config = generate_yaml_config(
-                config, 
-                'switch',
-                switch_ip,
-                switch_port_offset,
-                entity_id=switch_id,
-                json_name=json_output_name,
-                num_failures=num_failures,
-                network_interface=switch_net_if,
-                total_shards=total_list_of_shards_yaml
-            )
-
-            switch_exec = os.path.basename(path_switch) # Use the basename remotely
-            kill_process(switch_exec, ssh_key, ssh_user, switch_ip)
-
-            # Write YAML file locally
-            with open(switch_config_filename, 'w') as f:
-                yaml.dump(switch_config, f, default_flow_style=False)
-            print(f"Generated client config: {switch_config_filename}")
-
-            # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
-            if not transfer_file(switch_config_filename, switch_ip, ssh_user, ssh_key):
-                raise Exception(f"Failed to transfer config to server {switch_ip}")
-            if not transfer_file(path_switch, switch_ip, ssh_user, ssh_key):
-                raise Exception(f"Failed to transfer switch binary to switch {switch_ip}")
-                
-            # Start remote process
-            exec_switch_filepath = "~/" + switch_exec
-            prefix = "switch"
-            process, log_filename = execute_remote_command(switch_ip, exec_switch_filepath, switch_config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
-            if process:
-                switch_processes.append(process)
-                switch_log_files[ip] = log_filename # MODIFIED: Store log filename
-            else:
-                raise Exception(f"Failed to start server process on {ip}")
-
-            if not switch_processes:
-                raise Exception("No servers were successfully started.")
-
-            # --- 8. Wait for Servers to Initialize --- TODO
-            print(f"\nWaiting {SWITCH_START_DELAY} seconds for software switch to initialize...")
-            time.sleep(SWITCH_START_DELAY)
-
-        # --- 9. Generate Client Configuration and Start Process ---
-        print("\n--- Starting Client ---")
-        for i, ip in enumerate(client_ips):
-            client_id = random.randint(100000, 999999) 
-            config_filename = f"client_config_{json_output_name}_{i}.yaml" # Unique filename
-            client_port_offset = len(server_ips) * 2
-            client_config = generate_yaml_config(
-                 config, 
-                 'client',
-                 ip,
-                 client_port_offset,
-                 entity_id=client_id,
-                 entity_idx=i,
-                 json_name=json_output_name,
-                 num_failures=num_failures,
-                 network_interface=cli_net_ifs[i]
-            )
-            client_exec = os.path.basename(path_client) # Use the basename remotely
-            kill_process(client_exec, ssh_key, ssh_user, ip)
-
-            # Write YAML file locally
-            with open(config_filename, 'w') as f:
-                yaml.dump(client_config, f, default_flow_style=False)
-            print(f"Generated server config: {config_filename}")
-
-            # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
-            if not with_tunnel: 
-                if not transfer_file(config_filename, ip, ssh_user, ssh_key):
-                    raise Exception(f"Failed to transfer config to server {ip}")
-                if not transfer_file(path_client, ip, ssh_user, ssh_key):
-                    raise Exception(f"Failed to transfer server binary to server {ip}")
-            else:
-                local_path = os.path.abspath(config_filename)
-                execute_scp_switch_cmd(config, local_path, config_filename)
-
-            #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name) TODO
-            if not with_tunnel:
-                cli_exec_file = "~/" + client_exec
-                prefix = "client"
-                client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
-                    ip, 
-                    cli_exec_file, 
-                    config_filename, 
+                # --- 8. Copy JSON Results Back ---
+                copy_results_back(
+                    client_ips[i], 
+                    ssh_user, 
                     ssh_key, 
-                    ssh_user,
-                    exp_index,
-                    prefix
+                    json_output_name, 
+                    local_results_dir
                 )
-                if client_process:
-                    print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
-                    print("This script is now waiting for the client process to finish...")
-                    client_processes.append(client_process)
-                    client_log_files.append(client_log_filename)
-                else: # TODO more error handling?
-                    raise Exception("Failed to start client process.")
-            else:
-                cli_binary = config['program_paths']['client_binary']
-                execute_scp_switch_cmd(config, path_server, cli_binary)
-                execute_remote_switch_cmd(config, path_server, config_filename)
 
-        i = 0 
-        for proc in client_processes: 
-            # Wait for the client process to finish
-            print("Waiting for the client process {proc.id} to finish!")
-            proc.wait()
+                # NEW: Copy Client Log File Back
+                copy_log_file_back(
+                    client_ips[i],
+                    ssh_user,
+                    ssh_key,
+                    client_log_files[i],
+                    local_results_dir
+                )
+                i += 1
 
-            # --- 8. Copy JSON Results Back ---
-            copy_results_back(
-                client_ips[i], 
-                ssh_user, 
-                ssh_key, 
-                json_output_name, 
-                local_results_dir
-            )
+        except Exception as e:
+            print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
 
-            # NEW: Copy Client Log File Back
-            copy_log_file_back(
-                client_ips[i],
-                ssh_user,
-                ssh_key,
-                client_log_files[i],
-                local_results_dir
-            )
-            i += 1
+        finally:
+            # --- 10. Kill all server processes and retrieve logs ---
+            print("\n--- Experiment finished. Retrieving server logs and cleaning up ---")
 
-    except Exception as e:
-        print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
+            # MODIFIED: Copy Server Log Files Back (for all servers)
+            for ip, log_filename in server_log_files.items():
+                copy_log_file_back(
+                    ip,
+                    ssh_user,
+                    ssh_key,
+                    log_filename,
+                    local_results_dir
+                )
 
-    finally:
-        # --- 10. Kill all server processes and retrieve logs ---
-        print("\n--- Experiment finished. Retrieving server logs and cleaning up ---")
+            for ip, log_filename in switch_log_files.items():
+                copy_log_file_back(
+                    switch_ip,
+                    ssh_user,
+                    ssh_key,
+                    log_filename,
+                    local_results_dir
+                )
 
-        # MODIFIED: Copy Server Log Files Back (for all servers)
-        for ip, log_filename in server_log_files.items():
-            copy_log_file_back(
-                ip,
-                ssh_user,
-                ssh_key,
-                log_filename,
-                local_results_dir
-            )
+            for proc in server_processes:
+                try:
+                    if proc.poll() is None:
+                        print(f"Terminating server process (PID: {proc.pid})...")
+                        proc.kill()
+                    # The nohup process is difficult to kill via Popen.terminate(). 
+                    # Relying on the server timeout is safer.
+                    #pass 
+                except Exception as e:
+                    print(f"Could not check on server process: {e}")
 
-        for ip, log_filename in switch_log_files.items():
-            copy_log_file_back(
-                switch_ip,
-                ssh_user,
-                ssh_key,
-                log_filename,
-                local_results_dir
-            )
+            print("Server processes are assumed to exit on their own after the client terminates.")
+            for proc in switch_processes:
+                try:
+                    if proc.poll() is None:
+                        print(f"Terminating server process (PID: {proc.pid})...")
+                        proc.kill()
+                    # The nohup process is difficult to kill via Popen.terminate(). 
+                    # Relying on the server timeout is safer.
+                    #pass 
+                except Exception as e:
+                    print(f"Could not check on switch process: {e}")
 
-        for proc in server_processes:
-            try:
-                if proc.poll() is None:
-                    print(f"Terminating server process (PID: {proc.pid})...")
-                    proc.kill()
-                # The nohup process is difficult to kill via Popen.terminate(). 
-                # Relying on the server timeout is safer.
-                #pass 
-            except Exception as e:
-                print(f"Could not check on server process: {e}")
+            print("Switch processes are assumed to exit on their own after the client terminates.") # TODO
+            process_and_aggregate_results(local_results_dir, json_output_name, system_name, base_config, config)
 
-        print("Server processes are assumed to exit on their own after the client terminates.")
-        for proc in switch_processes:
-            try:
-                if proc.poll() is None:
-                    print(f"Terminating server process (PID: {proc.pid})...")
-                    proc.kill()
-                # The nohup process is difficult to kill via Popen.terminate(). 
-                # Relying on the server timeout is safer.
-                #pass 
-            except Exception as e:
-                print(f"Could not check on switch process: {e}")
-
-        print("Switch processes are assumed to exit on their own after the client terminates.")
+def run_experiment_cycle_hardware(config, hardware_config, exp_index, local_results_dir, system_name, with_tunnel=False): # TODO
+    switches_up = True
+    switches_up = setup_switches(hardware_config)
+    num_switches = len(base_config['experiment_parameters']['switches_in_ring'])
+    if switches_up:
+        print("--- All {num_switches} switches up and running ---")
 
 def generate_kafka_server_properties(node_id, ip, all_seq_ips, num_partitions, replication_factor, log_dir):
     """Returns KRaft-mode server.properties content for a single Kafka broker node."""
@@ -1419,7 +1487,7 @@ def parse_kafka_results(consumer_output_path, consumer_log_path, json_name, exp_
     return output_path
 
 
-def run_experiment_cycle_kafka(config, exp_index, local_results_dir):
+def run_experiment_cycle_kafka(config, kafka_config_file, exp_index, local_results_dir, system_name):
     """
     Runs a single experiment cycle for the Kafka comparison system.
 
@@ -1657,7 +1725,6 @@ def generate_scalog_config(discovery_ip, order_ips, data_ips, order_replication_
     """
     Generates .scalog.yaml content for the Scalog cluster.
     """
-
     cfg = {
         'order-port': order_port,
         'raft-port': raft_port,
@@ -1681,6 +1748,16 @@ def generate_scalog_config(discovery_ip, order_ips, data_ips, order_replication_
         cfg.update({
             key: QuotedString(data_ips[idx]),
         })
+    return yaml.dump(cfg, default_flow_style=False)
+
+def generate_scalog_stats_config(json_name, client_ip):
+    """
+    Generates .scalog.yaml content for the Scalog cluster.
+    """
+    cfg = {
+        'json_name': json_name,
+        'client_ip': QuotedString(client_ip),
+    }
     return yaml.dump(cfg, default_flow_style=False)
 
 
@@ -1733,8 +1810,7 @@ def parse_scalog_results(client_log_path, json_name, exp_index, local_results_di
     return output_path
 
 
-def run_experiment_cycle_scalog(dummy_config, exp_index, local_results_dir):
-    scalog_config = "scalog.toml"
+def run_experiment_cycle_scalog(base_config, scalog_config_file, exp_index, local_results_dir, system_name):
     """
     Runs a single experiment cycle for the Scalog comparison system.
 
@@ -1751,7 +1827,7 @@ def run_experiment_cycle_scalog(dummy_config, exp_index, local_results_dir):
     TODO: Verify parse_scalog_results output patterns against actual client output.
     """
     try:
-        with open(scalog_config, 'r') as f:
+        with open(scalog_config_file, 'r') as f:
             full_config = toml.load(f)
     except FileNotFoundError:
         print(f"Error: Configuration file '{config_file}' not found.")
@@ -1770,198 +1846,221 @@ def run_experiment_cycle_scalog(dummy_config, exp_index, local_results_dir):
     # The remaining dictionary is the base configuration
     config = full_config.copy() 
 
+    #print("\n--- Compiling Binaries on All Machines ---") TODO do I need this?
+    #for ip in all_ips:
+    #    if not run_compile_command(ip, ssh_key, ssh_user):
+    #        print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
+    #        return
+    #print("--- Compilation Complete ---")
 
-    ssh_key   = os.path.expanduser(config['network_setup']['ssh_key'])
-    ssh_user  = config['network_setup']['ssh_user']
-    client_ips = config['network_setup']['cli_ips']
-    seq_ips    = config['network_setup'].get('seq_ips', [])   # order layer nodes
-    stor_ips   = config['network_setup']['stor_ips']           # data layer nodes
-    discovery_ip   = config['network_setup']['discovery_ip']           # discovery layer nodes
-    client_ip     = config['network_setup']['cli_ips'][0]
-    order_port = config['network_setup']['order_port']
-    raft_port = config['network_setup']['raft_port']
-    data_port = config['network_setup']['data_port']
-    disc_port = config['network_setup']['disc_port']
+    for exp_index, exp_params in enumerate(experiments_to_run): 
+        # 2. Merge experiment-specific parameters (overrides)
+        for key, value in exp_params.items():
+            print(key)
+            print(value)
+            if key in config.get('experiment_parameters', {}):
+                config['experiment_parameters'][key] = value
+     
+        ssh_key   = os.path.expanduser(config['network_setup']['ssh_key'])
+        ssh_user  = config['network_setup']['ssh_user']
+        client_ips = config['network_setup']['cli_ips']
+        seq_ips    = config['network_setup'].get('seq_ips', [])   # order layer nodes
+        stor_ips   = config['network_setup']['stor_ips']           # data layer nodes
+        discovery_ip   = config['network_setup']['discovery_ip']           # discovery layer nodes
+        client_ip     = config['network_setup']['cli_ips'][0]
+        order_port = config['network_setup']['order_port']
+        raft_port = config['network_setup']['raft_port']
+        data_port = config['network_setup']['data_port']
+        disc_port = config['network_setup']['disc_port']
+        data_yaml_path = config['program_paths']['data_yaml_path']
 
-    if not seq_ips:
-        raise Exception("No seq_ips defined for Scalog order nodes in [network_setup].")
-    if not stor_ips:
-        raise Exception("No stor_ips defined for Scalog data nodes in [network_setup].")
+        if not seq_ips:
+            raise Exception("No seq_ips defined for Scalog order nodes in [network_setup].")
+        if not stor_ips:
+            raise Exception("No stor_ips defined for Scalog data nodes in [network_setup].")
 
-    exp              = config['experiment_parameters']
-    json_output_name = exp['json_name']
-    duration         = exp['experiment_duration']
-    warm_up          = exp['warm_up']
-    cool_down        = exp['cool_down']
-    message_size     = exp['message_size']
-    num_sequencer_nodes = exp['num_sequencer_nodes']
-    num_shards          = exp['num_shards']
-    data_replication_factor  = exp['data_replication_factor']
-    order_replication_factor  = exp['order_replication_factor']
-    num_shards = exp['num_shards']
-    num_client_threads = exp['num_client_threads']
-    batching_interval = exp['batching_interval']
-
-    scalog_exec = config['program_paths']['scalog_bin']
-    config_path = config['program_paths']['config_path']
-    
-    if num_sequencer_nodes > len(seq_ips):
-        raise Exception(f"num_sequencer_nodes ({num_sequencer_nodes}) > len(seq_ips) ({len(seq_ips)}).")
-    if num_shards > len(stor_ips):
-        raise Exception(f"num_shards ({num_shards}) > len(stor_ips) ({len(stor_ips)}).")
-
-    active_order  = seq_ips[:num_sequencer_nodes]
-    active_data   = stor_ips[:num_shards]
-
-    scalog_yaml_filename = f'scalog_{json_output_name}_{exp_index}.yaml'
-    client_log_filename  = f'scalog_client_{json_output_name}_{exp_index}.log'
-
-    component_log_files  = {}   # ip -> log filename, for cleanup retrieval
-
-    print(f"\n========================================================")
-    print(f"   RUNNING SCALOG EXPERIMENT {exp_index + 1}: {json_output_name}")
-    print(f"   Order nodes: {active_order}")
-    print(f"   Data  nodes: {active_data}")
-    print(f"   RF: {order_replication_factor} and {data_replication_factor}")
-    print(f"========================================================")
-
-    try:
-        # --- 1. Generate and distribute .scalog.yaml ---
-        print("\n--- Generating Scalog config ---")
-        scalog_yaml = generate_scalog_config(
-                discovery_ip, 
-                active_order, 
-                active_data, 
-                order_replication_factor, 
-                data_replication_factor,
-                batching_interval,
-                disc_port, 
-                order_port, 
-                data_port, 
-                raft_port
-        )
-        with open(scalog_yaml_filename, 'w') as f:
-            f.write(scalog_yaml)
-        print("Done generating Scalog config!")
-
-        all_scalog_nodes = list(dict.fromkeys(active_order + active_data + [discovery_ip] + [client_ip]))
-        for ip in all_scalog_nodes:
-            if not transfer_file(scalog_yaml_filename, ip, ssh_user, ssh_key):
-                raise Exception(f"Failed to transfer scalog config to {ip}")
+        exp              = config['experiment_parameters']
+        general_json_output_name = base_config['experiment_parameters']['general_json_name']
+        json_output_name = general_json_output_name + "-" + exp['json_name']
+        num_sequencer_nodes = exp['num_sequencer_nodes']
+        #data_replication_factor  = exp['data_replication_factor']
+        order_replication_factor  = exp['order_replication_factor']
+        batching_interval = exp['batching_interval']
+        scalog_exec = config['program_paths']['scalog_bin']
+        config_path = config['program_paths']['config_path']
         
-        # --- 2. Start order layer nodes ---
-        print("\n--- Starting Scalog order nodes ---")
-        for idx in range(0, len(active_order)):
-            path_order_exec = f"sudo {scalog_exec} order -i {str(idx)} --config"
-            print(path_order_exec)
-            process, log_filename = execute_remote_command(
-                active_order[idx], path_order_exec, scalog_yaml_filename, ssh_key, ssh_user, exp_index, json_output_name
+        general_exp = base_config['experiment_parameters']
+        message_size     = general_exp['message_size']
+        num_client_threads = general_exp['num_client_threads']
+        duration         = general_exp['experiment_duration']
+        warm_up          = general_exp['warm_up']
+        cool_down        = general_exp['cool_down']
+        num_shards = general_exp['num_shards']
+        data_replication_factor  = general_exp['num_servers_per_shard']
+
+        if num_sequencer_nodes > len(seq_ips):
+            raise Exception(f"num_sequencer_nodes ({num_sequencer_nodes}) > len(seq_ips) ({len(seq_ips)}).")
+        if num_shards > len(stor_ips):
+            raise Exception(f"num_shards ({num_shards}) > len(stor_ips) ({len(stor_ips)}).")
+
+        active_order  = seq_ips[:num_sequencer_nodes]
+        active_data   = stor_ips[:num_shards]
+
+        scalog_yaml_filename = f'scalog_{json_output_name}_{exp_index}.yaml'
+        client_log_filename  = f'scalog_client_{json_output_name}_{exp_index}.log'
+        scalog_stats_yaml_filename = 'data.yaml'
+
+        component_log_files  = {}   # ip -> log filename, for cleanup retrieval
+
+        print(f"\n========================================================")
+        print(f"   RUNNING SCALOG EXPERIMENT {exp_index + 1}: {json_output_name}")
+        print(f"   Order nodes: {active_order}")
+        print(f"   Data  nodes: {active_data}")
+        print(f"   RF: {order_replication_factor} and {data_replication_factor}")
+        print(f"========================================================")
+
+        try:
+            # --- 1. Generate and distribute .scalog.yaml ---
+            print("\n--- Generating Scalog config ---")
+            scalog_yaml = generate_scalog_config(
+                    discovery_ip, 
+                    active_order, 
+                    active_data, 
+                    order_replication_factor, 
+                    data_replication_factor,
+                    batching_interval,
+                    disc_port, 
+                    order_port, 
+                    data_port, 
+                    raft_port
             )
-            if not process:
-                raise Exception(f"Failed to start order node on {ip}")
-            component_log_files[f'order_{active_order[idx]}'] = (active_order[idx], log_filename)
+            with open(scalog_yaml_filename, 'w') as f:
+                f.write(scalog_yaml)
+            print("Done generating Scalog config!")
+            stats_yaml = generate_scalog_stats_config(json_output_name, client_ip)
+            with open(scalog_stats_yaml_filename, 'w') as f:
+                f.write(stats_yaml)
+            print("Done generating Scalog data.yaml config!")
 
-        time.sleep(2)  # order nodes register with discovery before data nodes connect
+            all_scalog_nodes = list(dict.fromkeys(active_order + active_data + [discovery_ip] + [client_ip]))
+            for ip in all_scalog_nodes:
+                if not transfer_file(scalog_yaml_filename, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer scalog config to {ip}")
+            transfer_file(scalog_stats_yaml_filename, client_ip, ssh_user, ssh_key, None, data_yaml_path)
 
-
-        # --- 3. Start discovery node ---
-        print(f"\n--- Starting Scalog discovery node on {discovery_ip} ---")
-        path_order_discovery = f"sudo {scalog_exec} discovery --config"
-        print(path_order_discovery)
-        process, log_filename = execute_remote_command(
-            discovery_ip, path_order_discovery, scalog_yaml_filename, ssh_key, ssh_user, exp_index, json_output_name
-        )
-        if not process:
-            raise Exception(f"Failed to start discovery node on {discovery_ip}")
-        component_log_files[f'discovery_{discovery_ip}'] = (discovery_ip, log_filename)
-
-        time.sleep(2)  # discovery must be up before order nodes connect
-
-        # --- 4. Start data layer nodes ---
-        print("\n--- Starting Scalog data nodes ---")
-        for shard in range(0, num_shards):
-            for idx in range(0, len(active_data)):
-                path_data_exec = f"sudo {scalog_exec} data --rid {str(idx)} --sid {str(shard)} --config"
-                print(path_data_exec)
+            # --- 2. Start order layer nodes ---
+            print("\n--- Starting Scalog order nodes ---")
+            for idx in range(0, len(active_order)):
+                path_order_exec = f"sudo {scalog_exec} order -i {str(idx)} --config"
+                print(path_order_exec)
                 process, log_filename = execute_remote_command(
-                    active_data[idx], path_data_exec, scalog_yaml_filename, ssh_key, ssh_user, exp_index, json_output_name
+                    active_order[idx], path_order_exec, scalog_yaml_filename, ssh_key, ssh_user, exp_index, json_output_name
                 )
                 if not process:
-                    raise Exception(f"Failed to start data node on {ip}")
-                component_log_files[f'data_{active_data[idx]}'] = (active_data[idx], log_filename)
-        print(f"\nWaiting {SERVER_START_DELAY}s for cluster to stabilize...")
-        time.sleep(SERVER_START_DELAY)
+                    raise Exception(f"Failed to start order node on {ip}")
+                component_log_files[f'order_{active_order[idx]}'] = (active_order[idx], log_filename)
 
-        # --- 5. Run client benchmark ---
-        # TODO: Verify the client binary accepts these flags; update if it uses a config-only
-        # approach (in which case add duration/message_size/threads to scalog_yaml instead).
-        print(f"\n--- Starting Scalog client benchmark on {client_ip} ---")
-        total_bench = warm_up + duration + cool_down
-        # execute_remote_command runs: sudo <path_client> ~/<config>
-        # We append extra flags by embedding them in the path string.
-        # TODO: adjust if the client takes flags differently.
-        client_cmd = f'sudo {scalog_exec} perf -t {num_client_threads} -s {message_size} -d {duration}s --config {config_path} > ~/{client_log_filename} 2>&1'
-        client_ssh_cmd = [
-            'ssh', '-i', ssh_key,
-            '-o', 'StrictHostKeyChecking=no',
-            '-o', 'UserKnownHostsFile=/dev/null',
-            f'{ssh_user}@{client_ip}',
-            f'/bin/bash -c "{client_cmd} &"',
-        ]
-        print(client_ssh_cmd)
-        client_process = subprocess.Popen(
-            client_ssh_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-
-        total_wait = total_bench + 15  # 15s buffer for startup/teardown
-        print(f"Waiting {total_wait}s for client benchmark to complete...")
-        time.sleep(total_wait)
-
-        # --- 6. Retrieve results ---
-        print("\n--- Retrieving Scalog results ---")
-        client_log_local = os.path.join(local_results_dir, client_log_filename)
-        copy_log_file_back(client_ip, ssh_user, ssh_key, client_log_filename, local_results_dir)
-        copy_log_file_back(client_ip, ssh_user, ssh_key, client_log_filename, local_results_dir)
-        copy_results_back(
-            client_ip, 
-            ssh_user, 
-            ssh_key, 
-            json_output_name, 
-            local_results_dir
-        )
-
-    except Exception as e:
-        print(f"\nFATAL ERROR during Scalog experiment cycle {exp_index + 1}: {e}")
-
-    finally:
-        # --- 7. Stop all cluster components and retrieve logs ---
-        print("\n--- Stopping Scalog cluster ---")
-        for component, (ip, log_filename) in component_log_files.items():
-            copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
-        
-        for idx in range(0, len(active_data)):
-            kill_remote_process(active_data[idx], "scalog", ssh_key, ssh_user)
-        for idx in range(0, len(active_order)):
-            kill_remote_process(active_order[idx], "scalog", ssh_key, ssh_user)
-        kill_remote_process(discovery_ip, "scalog", ssh_key, ssh_user)
-        kill_remote_process(client_ip, "scalog", ssh_key, ssh_user)
+            time.sleep(2)  # order nodes register with discovery before data nodes connect
 
 
-def run_experiment_cycle_lazylog(config, exp_index, local_results_dir):
-    """Runs a single experiment cycle for LazyLog. Not yet implemented."""
-    raise NotImplementedError("run_experiment_cycle_lazylog is not yet implemented.")
+            # --- 3. Start discovery node ---
+            print(f"\n--- Starting Scalog discovery node on {discovery_ip} ---")
+            path_order_discovery = f"sudo {scalog_exec} discovery --config"
+            print(path_order_discovery)
+            process, log_filename = execute_remote_command(
+                discovery_ip, path_order_discovery, scalog_yaml_filename, ssh_key, ssh_user, exp_index, json_output_name
+            )
+            if not process:
+                raise Exception(f"Failed to start discovery node on {discovery_ip}")
+            component_log_files[f'discovery_{discovery_ip}'] = (discovery_ip, log_filename)
 
+            time.sleep(2)  # discovery must be up before order nodes connect
+
+            # --- 4. Start data layer nodes ---
+            print("\n--- Starting Scalog data nodes ---")
+            for shard in range(0, num_shards):
+                for idx in range(0, len(active_data)):
+                    path_data_exec = f"sudo {scalog_exec} data --rid {str(idx)} --sid {str(shard)} --config"
+                    print(path_data_exec)
+                    process, log_filename = execute_remote_command(
+                        active_data[idx], path_data_exec, scalog_yaml_filename, ssh_key, ssh_user, exp_index, json_output_name
+                    )
+                    if not process:
+                        raise Exception(f"Failed to start data node on {ip}")
+                    component_log_files[f'data_{active_data[idx]}'] = (active_data[idx], log_filename)
+            print(f"\nWaiting {SERVER_START_DELAY}s for cluster to stabilize...")
+            time.sleep(SERVER_START_DELAY)
+
+            # --- 5. Run client benchmark ---
+            # TODO: Verify the client binary accepts these flags; update if it uses a config-only
+            # approach (in which case add duration/message_size/threads to scalog_yaml instead).
+            print(f"\n--- Starting Scalog client benchmark on {client_ip} ---")
+            total_bench = warm_up + duration + cool_down
+            # execute_remote_command runs: sudo <path_client> ~/<config>
+            # We append extra flags by embedding them in the path string.
+            # TODO: adjust if the client takes flags differently.
+            client_cmd = f'sudo {scalog_exec} perf -t {num_client_threads} -s {message_size} -d {duration}s --config {config_path} > ~/{client_log_filename} 2>&1'
+            client_ssh_cmd = [
+                'ssh', '-i', ssh_key,
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'UserKnownHostsFile=/dev/null',
+                f'{ssh_user}@{client_ip}',
+                f'/bin/bash -c "{client_cmd} &"',
+            ]
+            print(client_ssh_cmd)
+            client_process = subprocess.Popen(
+                client_ssh_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+
+            total_wait = total_bench + 15  # 15s buffer for startup/teardown
+            print(f"Waiting {total_wait}s for client benchmark to complete...")
+            time.sleep(total_wait)
+
+            # --- 6. Retrieve results ---
+            print("\n--- Retrieving Scalog results ---")
+            client_log_local = os.path.join(local_results_dir, client_log_filename)
+            copy_log_file_back(client_ip, ssh_user, ssh_key, client_log_filename, local_results_dir)
+            copy_log_file_back(client_ip, ssh_user, ssh_key, client_log_filename, local_results_dir)
+            copy_results_back(
+                client_ip, 
+                ssh_user, 
+                ssh_key, 
+                json_output_name, 
+                local_results_dir
+            )
+
+        except Exception as e:
+            print(f"\nFATAL ERROR during Scalog experiment cycle {exp_index + 1}: {e}")
+
+        finally:
+            # --- 7. Stop all cluster components and retrieve logs ---
+            print("\n--- Stopping Scalog cluster ---")
+            for component, (ip, log_filename) in component_log_files.items():
+                copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
+            
+            for idx in range(0, len(active_data)):
+                kill_remote_process(active_data[idx], "scalog", ssh_key, ssh_user)
+            for idx in range(0, len(active_order)):
+                kill_remote_process(active_order[idx], "scalog", ssh_key, ssh_user)
+            kill_remote_process(discovery_ip, "scalog", ssh_key, ssh_user)
+            kill_remote_process(client_ip, "scalog", ssh_key, ssh_user)
+            process_and_aggregate_results(local_results_dir, json_output_name, system_name, base_config, config)
+
+def run_experiment_cycle_speclog(base_config, exp_index, local_results_dir, system_name):
+    """Runs a single experiment cycle for Speclog. Not yet implemented."""
+    raise NotImplementedError("run_experiment_cycle_speclog is not yet implemented.")
 
 
 EXPERIMENT_CYCLE_FNS = {
-    'pringles': run_experiment_cycle,
+    'pringles': run_experiment_cycle_pringles,
+    'pringles_hardware': run_experiment_cycle_hardware,
     'scalog':   run_experiment_cycle_scalog,
-    'lazylog':  run_experiment_cycle_lazylog,
+    'speclog':  run_experiment_cycle_speclog,
     'kafka':    run_experiment_cycle_kafka,
 }
 
 
-def main(config_file="config.toml"):
+def main(config_file="general.toml"):
     """Main function to parse config, generate YAMLs, and execute experiments in a loop."""
 
     # --- 1. Parse Generic TOML Configuration ---
@@ -1984,29 +2083,7 @@ def main(config_file="config.toml"):
 
     # The remaining dictionary is the base configuration
     base_config = full_config.copy() 
-
-    # --- Initial Setup ---
-    #system_name = base_config.get('system', {}).get('name', 'pringles')
-    system_name = base_config.get('system', {}).get('name', 'scalog')
-    cycle_fn = EXPERIMENT_CYCLE_FNS.get(system_name)
-    if cycle_fn is None:
-        print(f"FATAL: Unknown system '{system_name}'. Valid options: {list(EXPERIMENT_CYCLE_FNS.keys())}")
-        return
-    print(f"\n--- System: {system_name} ---")
-
-    client_ips = base_config['network_setup']['cli_ips']
-    stor_ips = base_config['network_setup']['stor_ips']
-    ssh_key = os.path.expanduser(base_config['network_setup']['ssh_key'])
-    ssh_user = base_config['network_setup']['ssh_user']
-    with_tunnel = base_config['experiment_parameters']['with_tunnel']
-
-    if system_name == 'pringles':
-        switch_ip = base_config['network_setup']['switch_ip']
-        all_ips = client_ips + stor_ips + [switch_ip]
-    else:
-        seq_ips = base_config['network_setup'].get('seq_ips', [])
-        all_ips = client_ips + stor_ips + seq_ips
-
+    
     # --- 2. Create Unique Local Results Folder (All results will be copied here) ---
     now = datetime.now()
     timestamp_str = now.strftime("%Y-%m-%d_%H%M%S") + f".{now.microsecond // 1000:03d}"
@@ -2015,7 +2092,6 @@ def main(config_file="config.toml"):
     timestamp_name = f"run-{timestamp_str}"
     results_folder_name = base_config['experiment_parameters']['experiment_name'] + '_' + timestamp_name
     local_results_dir = os.path.join(RESULTS_BASE_DIR, results_folder_name)
-    local_indiv_json_dir = os.path.join(local_results_dir, results_folder_name) # NEW
 
     try:
         os.makedirs(local_results_dir, exist_ok=True)
@@ -2025,7 +2101,7 @@ def main(config_file="config.toml"):
         return
 
     # --- 3. RUN SETUP SCRIPT ON ALL MACHINES (Conditional) ---
-    run_setup = base_config['program_paths'].get('run_setup_script', 'False').lower() == 'true'
+    run_setup = base_config['setup'].get('run_setup_script', 'False').lower() == 'true'
     if run_setup:
         print("\n--- Running Setup Script on All Machines ---")
         for ip in all_ips:
@@ -2035,32 +2111,6 @@ def main(config_file="config.toml"):
         print("--- Setup Complete ---")
     else:
         print("\n--- Setup Script Execution Skipped ---")
-
-    # --- 4. COMPILE BINARIES ON ALL MACHINES (Pringles only) ---
-    if system_name == 'pringles':
-        print("\n--- Compiling Binaries on All Machines ---")
-        for ip in all_ips:
-            if not run_compile_command(ip, ssh_key, ssh_user):
-                print("FATAL: Compilation failed on at least one machine. Aborting experiment.")
-                return
-        print("--- Compilation Complete ---")
-    else:
-        print(f"\n--- Skipping Pringles meson compile (system: {system_name}) ---")
-
-    # --- 5. SETUP COMPARISON SYSTEM BINARIES (conditional) ---
-    run_comparison_setup = base_config['program_paths'].get('run_comparison_setup', 'False').lower() == 'true'
-    if run_comparison_setup:
-        setup_fns = {'kafka': setup_kafka_nodes, 'scalog': setup_scalog_nodes}
-        setup_fn = setup_fns.get(system_name)
-        if setup_fn:
-            print(f"\n--- Setting up {system_name} binaries on remote nodes ---")
-            if not setup_fn(base_config, ssh_key, ssh_user):
-                print(f"FATAL: {system_name} setup failed. Aborting experiment.")
-                return
-        else:
-            print(f"\n--- No comparison setup defined for system '{system_name}', skipping ---")
-    else:
-        print(f"\n--- Comparison system setup skipped (run_comparison_setup = False) ---")
 
         # --- Start Experiment Loop ---
     print(f"\n--- Starting {len(experiments_to_run)} Experiment Runs ---")
@@ -2074,30 +2124,55 @@ def main(config_file="config.toml"):
             print(value)
             if key in current_config.get('experiment_parameters', {}):
                 current_config['experiment_parameters'][key] = value
-            elif key in current_config.get('protocol_batching', {}):
-                current_config['protocol_batching'][key] = value
+        print(current_config['experiment_parameters'])
+        system_name = current_config['experiment_parameters']['protocol_name']
 
-        # --- 2.5. START SWITCHES --- 
-        if current_config['experiment_parameters']['use_hardware_switch']:
-            current_config = deepcopy(base_config)
-            switches_up = True
-            switches_up = setup_switches(current_config) #TODO 
+        protocol_config = ""
+        if system_name == "pringles":
+            protocol_config = "pringles_software.toml"
+        elif system_name == "pringles_hardware" or system_name == "pktgen":
+            protocol_config = "pringles_hardware.toml"
+        elif system_name == "scalog":
+            protocol_config = "scalog.toml"
+        elif system_name == "speclog":
+            protocol_config = "speclog.toml"
+        elif system_name == "kakfa":
+            protocol_config = "kafka.toml"
 
-            num_switches = len(base_config['experiment_parameters']['switches_in_ring'])
-            if switches_up:
-                print("--- All {num_switches} switches up and running ---")
+        cycle_fn = EXPERIMENT_CYCLE_FNS.get(system_name)
+        if cycle_fn is None:
+            print(f"FATAL: Unknown system '{system_name}'. Valid options: {list(EXPERIMENT_CYCLE_FNS.keys())}")
+            return
+        print(f"\n--- System: {system_name} ---")
+        cycle_fn(current_config, protocol_config, exp_index, local_results_dir, system_name)
+        time.sleep(EXPERIMENT_DELAY)
+        #client_ips = base_config['network_setup']['cli_ips']
+        #stor_ips = base_config['network_setup']['stor_ips']
+        #ssh_key = os.path.expanduser(base_config['network_setup']['ssh_key'])
+        #ssh_user = base_config['network_setup']['ssh_user']
+        #with_tunnel = base_config['experiment_parameters']['with_tunnel']
+        #switch_ip = base_config['network_setup']['switch_ip']
+        #all_ips = client_ips + stor_ips + [switch_ip]
+
+        # --- 5. SETUP COMPARISON SYSTEM BINARIES (conditional) --- TODO
+        #run_comparison_setup = base_config['program_paths'].get('run_comparison_setup', 'False').lower() == 'true'
+        #if run_comparison_setup:
+        #    setup_fns = {'kafka': setup_kafka_nodes, 'scalog': setup_scalog_nodes}
+        #    setup_fn = setup_fns.get(system_name)
+        #    if setup_fn:
+        #        print(f"\n--- Setting up {system_name} binaries on remote nodes ---")
+        #        if not setup_fn(base_config, ssh_key, ssh_user):
+        #            print(f"FATAL: {system_name} setup failed. Aborting experiment.")
+        #            return
+        #    else:
+        #        print(f"\n--- No comparison setup defined for system '{system_name}', skipping ---")
+        #else:
+        #    print(f"\n--- Comparison system setup skipped (run_comparison_setup = False) ---")
 
         # 3. Run the full experiment cycle with the merged configuration
-        cycle_fn(current_config, exp_index, local_results_dir)
-        time.sleep(EXPERIMENT_DELAY)
-        #process_and_aggregate_results(local_results_dir, local_indiv_json_dir, current_config)
-
-    # --- Final Step A: Aggregate ALL results from the shared directory ---\
-    # Only run this once after ALL experiment cycles are finished
-
-
-    # --- Final Cleanup: Delete all temporary YAML files on remote hosts ---
-    #cleanup_remote_yaml_files(all_ips, ssh_key, ssh_user)
+        # --- Final Step A: Aggregate ALL results from the shared directory ---\
+        # --- Final Cleanup: Delete all temporary YAML files on remote hosts ---
+        #cleanup_remote_yaml_files(all_ips, ssh_key, ssh_user)
 
     print("\n--- All Experiment Cycles Finished Successfully ---")
 
@@ -2144,7 +2219,7 @@ if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser(description="Run Pringles or comparison system experiments.")
-    parser.add_argument("config", nargs="?", default="config.toml",
-                        help="Path to the TOML config file (default: config.toml)")
+    parser.add_argument("config", nargs="?", default="general.toml",
+                        help="Path to the TOML config file (default: general.toml)")
     args = parser.parse_args()
     main(args.config)

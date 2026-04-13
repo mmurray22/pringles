@@ -88,7 +88,6 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_p
      /* Logistics */
      this->collect_stats = false;
      this->dur = get_experiment_duration(config) - get_warm_up(config) - get_cool_down(config);
-     this->num_pkt_types = get_num_pkt_types(config);
      this->ring_view = 1;
 
      /* Statistics gathering */
