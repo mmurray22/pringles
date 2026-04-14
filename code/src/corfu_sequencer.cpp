@@ -2,10 +2,10 @@
 
 CorfuSequencer::CorfuSequencer(std::string input_file) {
     YAML::Node config = YAML::LoadFile(input_file);
-    this->switch_mac = get_switch_mac(config);
-    this->switch_ip = get_switch_ip(config); 
     this->num_pkt_types = get_num_pkt_types(config);
-    
+
+    this->cli_ips = get_cli_ips(config);
+
     bool run_threads = false;
     net = std::make_shared<Network>(
         std::to_string(get_send_port(config)), 
@@ -51,9 +51,6 @@ void CorfuSequencer::run_sequencer_thread() {
         auto rcv_str = std::make_unique<std::string>(recv_ptr);
         corfuclient::Payload packet_contents = corfu_client_deserialize_str_entry(std::move(rcv_str));
 
-        spdlog::debug("Parsed Packet Type: {}", packet_contents.packet_type());
-        spdlog::debug("Has token_req? : {}", packet_contents.has_token_req());
-
         if (packet_contents.has_token_req() && packet_contents.token_req().reqtoken()) {
             spdlog::debug("Sequencer received a token request from client {}", packet_contents.clientid());
             
@@ -65,18 +62,19 @@ void CorfuSequencer::run_sequencer_thread() {
             memcpy(packet.get(), token_packet->c_str(), allocated_packet_size);
             packet[token_packet->length()] = '\0';
 
-            // TODO: how to get these things?
-            // net->send_packet(std::move(packet), allocated_packet_size, static_cast<int>(SeqPacketType::sendtoken), ETH_CLI_SEQ, switch_mac, inet_addr(switch_ip.c_str()));
+            int cid = std::stoi(packet_contents.clientid()); // TODO: ADD ERROR CHECK FOR THIS!!
+
             net->send_client_udp_packet(
                 std::move(packet), 
                 allocated_packet_size, 
                 static_cast<int>(SeqPacketType::sendtoken),
                 ETH_CLI_SEQ, 
-                switch_ip,
+                cli_ips.at(cid),
                 send_port
             );
+            spdlog::debug("Sequencer gave index {} to cid {}", idx, packet_contents.clientid());
         } else {
-            spdlog::error("PACKET DROPPED: Did not match token_req condition!");
+            spdlog::error("PACKET DROPPED: not asking for a token");
         }
     }
 }

@@ -264,6 +264,32 @@ std::vector<std::string> get_cli_ip(YAML::Node config) {
     return config["cli_ips"].as<std::vector<std::string>>();
 }
 
+std::vector<std::string> get_cli_ips(const YAML::Node& config) {
+    if (config["packet_types"]) {
+        for (const auto& node : config["packet_types"]) {
+            if (node["type"].as<std::string>() == "client") {
+                return node["ips"].as<std::vector<std::string>>();
+            }
+        }
+    }
+    
+    spdlog::warn("Could not find 'client' in packet_types. Returning empty IP list.");
+    return std::vector<std::string>{};
+}
+
+std::vector<std::string> get_seq_ips(const YAML::Node& config) {
+    if (config["packet_types"]) {
+        for (const auto& node : config["packet_types"]) {
+            if (node["type"].as<std::string>() == "sequencer") {
+                return node["ips"].as<std::vector<std::string>>();
+            }
+        }
+    }
+    
+    spdlog::warn("Could not find 'sequencer' in packet_types. Returning empty IP list.");
+    return std::vector<std::string>{};
+}
+
 std::array<uint8_t,6> get_stor_mac(YAML::Node config) {
     unsigned int bytes[6];
     std::string mac = config["stor_macs"].as<std::vector<std::string>>()[0]; // TODO

@@ -54,6 +54,8 @@ std::array<uint8_t,6> get_switch_mac(YAML::Node config);
 std::string get_switch_ip(YAML::Node config);
 std::array<uint8_t,6> get_cli_mac(YAML::Node config);
 std::vector<std::string> get_cli_ip(YAML::Node config);
+std::vector<std::string> get_cli_ips(const YAML::Node& config);
+std::vector<std::string> get_seq_ips(const YAML::Node& config);
 std::array<uint8_t,6> get_stor_mac(YAML::Node config);
 std::vector<std::string> get_stor_ips(YAML::Node config);
 

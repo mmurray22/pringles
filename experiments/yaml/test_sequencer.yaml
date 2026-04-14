@@ -12,18 +12,11 @@ batch_usec_timeout: 460
 num_pkt_types: 2
 packet_types:
   - type: "sequencer"
-  - ips: ["127.0.0.1"]
+    ips: ["127.0.0.1"]
   - type: "client"
-  - ips: ["127.0.0.1"]
-packet_types_macs:
-  - type: "sequencer"
-    macs: ["00:00:00:00:00:00"]
-  - type: "client"
-    macs: ["00:00:00:00:00:00"]
+    ips: ["127.0.0.1"]
 protocol_type: "CORFU"
 sequencer_type: 1
 storage_type: 1
-switch_mac: "00:00:00:00:00:00"
-switch_ip: "127.0.0.1"
 trace_file: "/root/pringles/experiments/traces/unit_test_datagram.txt"
 ...

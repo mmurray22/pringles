@@ -15,21 +15,17 @@
 #include "corfu_sequencer.h"
 #include "utils.h"
 
-int dummy_client(std::string input_file, uint64_t thread_id) {
+int dummy_client(std::string input_file) {
    // Get packet types for sending/receiving
    YAML::Node config = YAML::LoadFile(input_file);
 
    uint64_t num_pkt_types = 0;
    uint64_t cid;
 
-
    num_pkt_types = get_num_pkt_types(config);
-   cid = thread_id;
-   std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
-   if (mac_addrs.size() < 1) {
-       spdlog::critical("Unable to parse mac address!");
-       throw;
-   }
+   cid = 0;
+
+   std::vector<std::string> seq_ips = get_seq_ips(config);
   
    // Create network
    bool run_threads = false;
@@ -66,14 +62,12 @@ int dummy_client(std::string input_file, uint64_t thread_id) {
     spdlog::debug("gettoken packet is of size: {}", allocated_packet_size);
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
     memcpy(packet.get(), sequencing_packet->c_str(), allocated_packet_size);
-    // packet[allocated_packet_size - 1] = '\0';
-    // net->send_client_udp_packet(std::move(packet), allocated_packet_size, static_cast<int>(PacketType::gettoken), ETH_CLI_SEQ, get_switch_mac(config), inet_addr(get_switch_ip(config).c_str())); // request a log position
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
         static_cast<int>(PacketType::gettoken), 
         ETH_CLI_SEQ, 
-        get_switch_ip(config),
+        seq_ips.at(0),
         std::to_string(get_recv_port(config))
     );
     char* msg = net->recv_packet();
@@ -96,7 +90,7 @@ int dummy_client(std::string input_file, uint64_t thread_id) {
 
     uint64_t log_idx = packet_contents.send_token().token();
 
-    spdlog::info("sequencer gave client_{} index value: {}", cid, log_idx);
+    spdlog::info("cid {} got index value {} from sequencer", cid, log_idx);
     return log_idx;
 }
 
@@ -112,7 +106,7 @@ int main(int argc, char* argv[]) {
     std::unique_ptr<CorfuSequencer> seq = std::make_unique<CorfuSequencer>(cli_input_file);
 
     spdlog::info("creating dummy client thread");
-    std::thread cli_thread(dummy_client, cli_input_file, 0);
+    std::thread cli_thread(dummy_client, cli_input_file);
     //std::thread(storage, stor_input_file);
     
 

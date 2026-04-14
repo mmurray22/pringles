@@ -36,7 +36,8 @@ class CorfuSequencer {
         std::atomic<uint64_t> curr_idx{0};
         std::atomic<bool> terminate{false};
 
-        std::array<uint8_t, 6> switch_mac;
+        std::vector<std::string> cli_ips;
+
         std::string switch_ip;
 
         std::string send_port;
