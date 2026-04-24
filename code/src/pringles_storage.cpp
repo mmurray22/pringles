@@ -210,7 +210,7 @@ void LogStorage::append_server() {
              memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
              
              if (use_switch) {
-     	     spdlog::debug("Sending to the switch! IP: {} and Port: {}", switch_ip, switch_recv_port);
+     	         spdlog::debug("Sending to the switch! IP: {} and Port: {}", switch_ip, switch_recv_port);
                  net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, switch_recv_port, false);
              } else {
      	         char buffer[INET_ADDRSTRLEN];

@@ -228,7 +228,7 @@ void LogSoftwareSwitch::append_request() {
     	       if (!append_req_q.try_pop(recv_ptr) || !recv_ptr) {
     	           if (use_store) {
     	               for (uint64_t i = 0; i < stor_ips.size(); i++) {
-                           net->send_udp_packet(NULL, 0, stor_ips[i], stor_receive_port, false);
+                           net->send_udp_packet(NULL, 0, stor_ips[i], stor_receive_port, false); // TODO What is this doing here??
     	               }  
     	           }
                    continue;
@@ -248,33 +248,9 @@ void LogSoftwareSwitch::append_request() {
         	
             // If the batch isn't full and the timeout not expired exceed
     	    // Create the packet to send to the storage server with the running packet size and the additional header
-                	    // Send the network packet
+            // Send the network packet
             bool res = false;
     	    if (use_store) {
-	        /*if (use_streams) { // TODO do I need this?
-		    spdlog::debug("Stream processing here now!");
-	            uint32_t stream_id = ntohl(append_entry->stream_id);
-	            tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>>::const_accessor acc;
-		    
-		    // If the stream isn't being tracked yet, add it to the store
-		    if (!concurrent_stream_tracker.find(acc, stream_id)) {
-		        spdlog::debug("Stream is being added to the tracker: {}", stream_id);
-		        tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>>::accessor put_acc;
-		        concurrent_stream_tracker.insert(put_acc, stream_id);
-			put_acc.release();
-		    }
-	            	
-	            tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>>::accessor update_set_acc;
-  		    if (concurrent_stream_tracker.find(update_set_acc, stream_id)) { // Should find stream_id
-			spdlog::debug("Concurrent stream tracker being updated");
-			auto result = update_set_acc->second.insert(ntohl(append_entry->g_idx));
-		        if (!result.second) {
-		            spdlog::critical("Unable to add seq no {} in stream ID {} to the set!", ntohl(append_entry->g_idx), stream_id);
-		        }	
-		    }
-		    update_set_acc.release();
-	        }*/
-
 		if (use_shards) {
 		    std::string multicast_addr;
 		    tbb::concurrent_vector<std::string> shard;
@@ -346,7 +322,7 @@ void LogSoftwareSwitch::append_request() {
     
 		std::string client_ip = get_quad_ip(append_entry->client_ip);
 
-                net->send_client_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(append_entry->recv_port));
+                net->send_client_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(ntohs(append_entry->recv_port)));
     	        res = true;
     	    }
     	    pkt_req_cntr += 1;

@@ -34,13 +34,14 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # ---------------------------------------
 
 # --- Configuration Constants ---
+pringles_base = os.environ.get("PRINGLES_PATH", "/home/mathwiz23pi/")
 BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
 EXPERIMENT_DELAY = 15  # Time to wait between experiments
-SETUP_SCRIPT_PATH = "/home/mathwiz23pi/pringles/setup.sh"
-COMPILATION_DIR = "/home/mathwiz23pi/pringles/build" # Directory where 'meson compile' is run
-RESULTS_BASE_DIR = "/home/mathwiz23pi/pringles/experiments/results" # Base path for results folder
+SETUP_SCRIPT_PATH = f"{pringles_base}/pringles/setup.sh"
+COMPILATION_DIR = f"{pringles_base}/pringles/build" # Directory where 'meson compile' is run
+RESULTS_BASE_DIR = f"{pringles_base}/pringles/experiments/results" # Base path for results folder
 
 def generate_switch_config(base_config, i, cntrl_port_num, ring_size, client_base_recv_port, serv_recv_port, loopback_port, num_client_threads):
     switch_params = base_config['switches']
@@ -89,7 +90,7 @@ def generate_switch_config(base_config, i, cntrl_port_num, ring_size, client_bas
     return switch_config
 
 
-def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, port_offset, entity_id=None, entity_idx=None, json_name=None, num_failures=None, network_interface=None, shard_id=None, total_shards=None, shard_multicast=None):
+def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, port_offset, server_ips, entity_id=None, entity_idx=None, json_name=None, num_failures=None, network_interface=None, shard_id=None, total_shards=None, shard_multicast=None):
     """Generates the configuration dictionary for a client or server."""
 
     # Base port calculation to ensure uniqueness
@@ -100,6 +101,7 @@ def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, p
     general_exp_params = base_config['experiment_parameters']
     exp_params = pringles_config['experiment_parameters']
     net_params = pringles_config['network_setup']
+    print(net_params)
 
     # Calculate experiment duration, adding a delay for servers (Feature 3)
     exp_duration = general_exp_params['experiment_duration']
@@ -119,7 +121,9 @@ def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, p
     cli_macs = [QuotedString(mac) for mac in net_params['cli_macs']]
     cli_ips = [QuotedString(mac) for mac in net_params['cli_ips']]
     stor_macs = [QuotedString(mac) for mac in net_params['stor_macs']]
-    stor_ips = [QuotedString(mac) for mac in net_params['stor_ips']]
+    print("STOR IPS")
+    stor_ips = [QuotedString(ips) for ips in server_ips]
+    print(stor_ips)
 
     yaml_config = {
         'log_level': general_exp_params['log_level'],
@@ -524,7 +528,7 @@ def process_and_aggregate_results(local_target_dir, json_name, system_name, base
     # Calculate Final Average Latency
     final_avg_latency = total_avg_latency_sum / file_count if file_count > 0 else 0.0
     final_avg_sub_lat = total_sub_lat_sum / file_count if file_count > 0 else 0.0
-    print("=========== FINAL STATS")
+    print("=========== INAL STATS")
     # Construct Final Output
     num_switches = 0
     if system_name == "pringles":
@@ -1087,11 +1091,11 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
         cli_net_ifs = config['network_setup']['cli_net_ifs'] # TODO SEQ make plural?
         switch_ip = config['network_setup']['switch_ip']
         switch_net_if = config['network_setup']['switch_net_if']
-        server_ips = config['network_setup']['stor_ips']
+        all_server_ips = config['network_setup']['stor_ips']
         server_net_ifs = config['network_setup']['stor_net_ifs']
-        path_client = config['program_paths']['path_client']
-        path_server = config['program_paths']['path_server']
-        path_switch = config['program_paths']['path_switch']
+        path_client = f"{pringles_base}" + config['program_paths']['path_client']
+        path_server = f"{pringles_base}" + config['program_paths']['path_server']
+        path_switch = f"{pringles_base}" + config['program_paths']['path_switch']
 
         general_json_output_name = base_config['experiment_parameters']['general_json_name']
         json_output_name = general_json_output_name + "-" + config['experiment_parameters']['json_name']
@@ -1111,56 +1115,69 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
         switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
 
         # Setup shards TODO only for a single switch
-        size_of_shard = base_config['experiment_parameters']['num_servers_per_shard']
-        print(f"Size of shards: {size_of_shard}")
+        server_ips = []
         total_list_of_shards = []
         total_list_of_shards_yaml = []
-        ip_to_shard = {}
         shard_to_multicast_addr = []
-        num_of_shard = 0
-        max_num_shards = base_config['experiment_parameters']['num_shards']
+        ip_to_shard = {}
         base_multicast_addr = "239.1.1."
-        for i in range(0, len(server_ips), size_of_shard): # TODO check whether the number of servers divides evenly into shard size
-            shard = []
-            shard_yaml = []
-            for j in range(i, i+size_of_shard):
-                print(server_ips[j])
-                shard.append(server_ips[j])
-                shard_yaml.append(QuotedString(server_ips[j]))
-                ip_to_shard[server_ips[j]] = num_of_shard
-            total_list_of_shards.append(shard)
-            total_list_of_shards_yaml.append(shard_yaml)
-            num_of_shard += 1
-            if (num_of_shard == max_num_shards):
-                break
+        if config['experiment_parameters']['use_shard']: 
+            size_of_shard = base_config['experiment_parameters']['num_servers_per_shard']
+            print(f"Size of shards: {size_of_shard}")
+            num_of_shard = 0
+            max_num_shards = base_config['experiment_parameters']['num_shards']
+            for i in range(0, len(all_server_ips), size_of_shard): # TODO check number of servers divides evenly into shard size
+                shard = []
+                shard_yaml = []
+                for j in range(i, i+size_of_shard):
+                    shard.append(all_server_ips[j])
+                    server_ips.append(all_server_ips[j])
+                    shard_yaml.append(QuotedString(all_server_ips[j]))
+                    ip_to_shard[all_server_ips[j]] = num_of_shard
+                total_list_of_shards.append(shard)
+                total_list_of_shards_yaml.append(shard_yaml)
+                num_of_shard += 1
+                if (num_of_shard == max_num_shards):
+                    break
+            for i in range(0, num_of_shard): #255 <-- TODO max number of shards
+                shard_to_multicast_addr.append((base_multicast_addr + str(i)));
+            yaml_shard_to_multicast_addr = [QuotedString(addr) for addr in shard_to_multicast_addr]
+            print(yaml_shard_to_multicast_addr)
+        else:
+            total_list_of_shards.append([all_server_ips[0]])
+            total_list_of_shards_yaml.append([all_server_ips[0]])
+            ip_to_shard[all_server_ips[0]] = 0
+            shard_to_multicast_addr.append((base_multicast_addr + str(0)));
+            server_ips.append(all_server_ips[0])
         print(total_list_of_shards_yaml)
-        for i in range(0, num_of_shard): #255 <-- TODO max number of shards
-            shard_to_multicast_addr.append((base_multicast_addr + str(i)));
-        yaml_shard_to_multicast_addr = [QuotedString(addr) for addr in shard_to_multicast_addr]
-        print(yaml_shard_to_multicast_addr)
+        print(total_list_of_shards)
 
         try:
             # --- 5. Generate Server Configurations and Start Processes ---
             print("\n--- Starting Storage Servers ---")
-
             for shard in total_list_of_shards: 
+                print(shard)
                 for i, ip in enumerate(shard):
+                    print(ip)
+                    print(server_ips)
                     server_id = random.randint(100000, 999999) 
                     config_filename = f"server_config_{json_output_name}_{i}.yaml" # Unique filename
                     port_offset = i * 2
-
+                    print(config_filename)
                     server_config = generate_yaml_config(
                         base_config,
                         config, 
                         'server', 
                         ip, 
                         port_offset,
+                        server_ips,
                         entity_id=server_id,
                         entity_idx=i,
                         network_interface=server_net_ifs[i],
                         shard_id=ip_to_shard[ip],
                         shard_multicast=shard_to_multicast_addr[ip_to_shard[ip]]
                     )
+                    print("Done with the YAML file!")
 
                     server_exec = os.path.basename(path_server) # Use the basename remotely
                     kill_process(server_exec, ssh_key, ssh_user, ip)
@@ -1228,6 +1245,7 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
                     'switch',
                     switch_ip,
                     switch_port_offset,
+                    server_ips,
                     entity_id=switch_id,
                     json_name=json_output_name,
                     num_failures=num_failures,
@@ -1271,13 +1289,14 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
             for i, ip in enumerate(client_ips):
                 client_id = random.randint(100000, 999999) 
                 config_filename = f"client_config_{json_output_name}_{i}.yaml" # Unique filename
-                client_port_offset = len(server_ips) * 2
+                client_port_offset = len(server_ips) * 3
                 client_config = generate_yaml_config(
                     base_config,
                      config, 
                      'client',
                      ip,
                      client_port_offset,
+                     server_ips,
                      entity_id=client_id,
                      entity_idx=i,
                      json_name=json_output_name,
@@ -1872,7 +1891,7 @@ def run_experiment_cycle_scalog(base_config, scalog_config_file, exp_index, loca
         raft_port = config['network_setup']['raft_port']
         data_port = config['network_setup']['data_port']
         disc_port = config['network_setup']['disc_port']
-        data_yaml_path = config['program_paths']['data_yaml_path']
+        data_yaml_path = f"{pringles_base}" + config['program_paths']['data_yaml_path']
 
         if not seq_ips:
             raise Exception("No seq_ips defined for Scalog order nodes in [network_setup].")
@@ -1886,8 +1905,8 @@ def run_experiment_cycle_scalog(base_config, scalog_config_file, exp_index, loca
         #data_replication_factor  = exp['data_replication_factor']
         order_replication_factor  = exp['order_replication_factor']
         batching_interval = exp['batching_interval']
-        scalog_exec = config['program_paths']['scalog_bin']
-        config_path = config['program_paths']['config_path']
+        scalog_exec = f"{pringles_base}" + config['program_paths']['scalog_bin']
+        config_path = f"{pringles_base}" + config['program_paths']['config_path']
         
         general_exp = base_config['experiment_parameters']
         message_size     = general_exp['message_size']

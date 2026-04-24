@@ -7,47 +7,47 @@
 # There is one receive port per machine, current assumption is each machine has one storage server
 stor_recv_port = "30003"
 # This is the mac address of every storage server being used
-stor_macs = ["42:01:0a:00:00:06", "42:01:0a:00:00:07", "42:01:0a:00:00:08", "42:01:0a:00:00:09", "42:01:0a:00:00:10", "42:01:0a:00:00:11"]
+stor_macs = ["0c:42:a1:d6:fd:48", "0c:42:a1:dd:57:90", "0c:42:a1:dd:5e:ac", "0c:42:a1:dd:57:88", "0c:42:a1:dd:5f:88", "0c:42:a1:dd:5c:48"]
 # This is the IP address of every storage server being used
-stor_ips = ["10.0.0.6", "10.0.0.7", "10.0.0.8","10.0.0.9", "10.0.0.10", "10.0.0.11"]
+stor_ips = ["10.10.1.4", "10.10.1.5", "10.10.1.6", "10.10.1.7","10.10.1.8", "10.10.1.9"]
 # This is the network interface the storage servers use to send/receive
-stor_net_ifs = ["ens4", "ens4", "ens4","ens4", "ens4", "ens4"] 
+stor_net_ifs = ["enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0","enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0"] 
 ######## Client Network Info #######
 # This is the mac address of every client machine
-cli_macs = ["42:01:0a:00:00:04"]
+cli_macs = ["0c:42:a1:e2:a6:a4"]
 # This is the IP address of every client machine
-cli_ips = ["10.0.0.4"]
+cli_ips = ["10.10.1.2"]
 # This is the network interface the client machines use to send/receive
-cli_net_ifs = ["ens4"]
+cli_net_ifs = ["enp65s0f0np0"]
 ####### Switch Network information ########
 # NOTE : Only one software switch is supported at this time. I will need to update this TODO
 # This is the IP address of the software switch
-switch_ip = "10.0.0.5"
+switch_ip = "10.10.1.3"
 # This is the receive port of the software switch
 switch_recv_port = "30002"
 # This is the network interface the software switch uses to send/receive
-switch_net_if = "ens4"
+switch_net_if = "enp65s0f0np0"
 # This is the mac address of every switch machine
-switch_mac = "42:01:0a:00:00:05"
+switch_mac = "0c:42:a1:dd:5b:98"
 ###### Authentication Information for the switch #######
 # NOTE: I don't know if I need this if ssh key forwarding is used? Might deprecate TODO
 # SSH key 
-ssh_key = "/home/mathwiz23pi/.ssh/gcloud"
+ssh_key = "/proj/ove-PG0/murray/ssh/cloudlab"
 # SSH username
-ssh_user = "mathwiz23pi" # Added for complete SSH command
+ssh_user = "murray22" # Added for complete SSH command
 
 ######## Should contain the necessary information to figure out what programs are being run where (and also the setup script?) #######
 [program_paths]
 # This is the full path to the client binary that will be run on all clients
-path_client = "/home/mathwiz23pi/pringles/build/experiments/unit_tests/cli"
+path_client = "pringles/build/experiments/unit_tests/cli"
 # Name of the actual client binary 
 client_binary = "cli"
 # This is the full path to the storage server binary that will be run on all storage servers
-path_server = "/home/mathwiz23pi/pringles/build/experiments/unit_tests/stor"
+path_server = "pringles/build/experiments/unit_tests/stor"
 # Name of the actual storage binary 
 server_binary = "stor"
 # This is the full path to the software switch binary that will be run on all software switches
-path_switch = "/home/mathwiz23pi/pringles/build/experiments/unit_tests/switch"
+path_switch = "pringles/build/experiments/unit_tests/switch"
 switch_binary = "switch"
 # Boolean indicating whether the install script should be run to install packages on all machines
 # Generally safe to set to "False"
@@ -70,13 +70,13 @@ use_switch = 1
 # Boolean indicates whetehr the current experiments use the HARDWARE switch or not TODO actually don't use this yet, is it needed?
 use_hardware_switch = 0
 # Boolean indicates whether the current experiments use the storage server or not (if not then cli <-> switches)
-use_store = 1
+use_store = 0
 # Boolean indicates whether the current experiments do sharding or not (if not then cli sends to all storage servers)
-use_shard = 1
+use_shard = 0
 # Number of packets in a batch
 batch_size = 1 # Number of packets
 # Whether batching will be used or not...
-batch_on = false
+batch_on = true
 # How long to wait until sending a batch off
 batch_usec_timeout = 460
 # indices of the switches active in the ring, list of unique values, each val 0 <= v <= MAX_NUM_SWITCHES

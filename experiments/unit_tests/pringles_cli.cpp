@@ -41,6 +41,35 @@ void run_sub_client(std::string input_file, uint64_t i, uint64_t num_threads) {
     pringles_cli.subscribe(0);
 }
 
+void run_basic_append(std::string input_file, uint64_t i, uint64_t num_threads, uint64_t payload_size) {
+    LogClient pringles_cli = LogClient(input_file, i, num_threads);
+    uint64_t idx = 0;
+    std::string entry = "";
+
+    std::string payload_x(payload_size, 'X');
+    idx = pringles_cli.append(payload_x);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 1);
+
+    std::string payload_y(payload_size, 'Y');
+    idx = pringles_cli.append(payload_y);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 2);
+
+    std::string payload_z(payload_size, 'Z');
+    idx = pringles_cli.append(payload_z);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 3);
+
+    idx = pringles_cli.append(payload_z);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 4);
+
+    idx = pringles_cli.append(payload_z);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 5);
+}
+
 
 // Simplest Correctness Test of append, read, getTail
 void run_basic_client(std::string input_file, uint64_t i, uint64_t num_threads, uint64_t payload_size) {
@@ -153,9 +182,11 @@ int main(int argc, char* argv[]) {
 
     // Basic scaling experiments
     std::vector<std::thread> cli_threads = {};
+    //uint64_t num_work_threads = get_num_client_threads(config);
     uint64_t num_work_threads = get_num_client_threads(config);
     for (uint64_t i = 0; i < num_work_threads; i++) {
         cli_threads.emplace_back(std::thread(&run_append_client, input_file, i, num_work_threads));	
+        //cli_threads.emplace_back(std::thread(&run_basic_append, input_file, i, num_work_threads, 100));	
     }
     for (uint64_t i = 0; i < cli_threads.size(); i++) {
         cli_threads[i].join();

@@ -451,7 +451,7 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
     while (!terminate && !sent_all) {
         ssize_t num_bytes = send(s_fd, send_packet.get(), pkt_len, 0);
         if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
-            spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
+            //spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
         } else {
              spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
 	     sent_all = true;

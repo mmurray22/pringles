@@ -263,7 +263,6 @@ void LogClient::receiver() {
 
 uint64_t LogClient::append(std::string entry) {
     spdlog::info("Simple Network: Sending/Receiving to remote host");
-    
     size_t size_of_hdr = get_ring_append_size();
     size_t size_of_type_hdr = get_ring_type_size();
     append_type_hdr.get()->type = htons(ETH_APPEND_REQ);
@@ -329,6 +328,7 @@ uint64_t LogClient::append(std::string entry) {
     	    }
             got_quorum = true;
         }
+	free(recv_ptr);
     }
     append_nonce += 1;
     append_cntr += 1;
