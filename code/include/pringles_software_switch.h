@@ -9,6 +9,8 @@
 
 const uint64_t MAX_TIMEOUT = 100;
 const uint64_t MAX_POLL_TIME = 100;
+//const uint64_t MAX_PACKET_SIZE = 5000;
+
 class LogSoftwareSwitch {
 
     public:
@@ -20,6 +22,8 @@ class LogSoftwareSwitch {
 	std::string get(uint64_t idx);
 	void change_view(uint64_t new_view_num);
 	void wait_to_finish();
+	void run_client_send();
+
     private:
         uint64_t switch_id;
         std::shared_ptr<Network> net;
@@ -43,7 +47,6 @@ class LogSoftwareSwitch {
 	bool use_streams;
         tbb::concurrent_hash_map<uint64_t, tbb::concurrent_unordered_set<uint64_t>> concurrent_stream_tracker;
 
-
 	uint64_t view_num;
 	uint64_t max_duration;
 	bool end_thread = false;
@@ -56,6 +59,7 @@ class LogSoftwareSwitch {
 	std::thread tail_req_thread;
 	std::thread sub_thread;
 	std::atomic<uint64_t> max_idx; 
+	tbb::concurrent_vector<std::thread> send_threads;
 	
 	tbb::concurrent_vector<std::vector<std::string>> subscribe_stor;
 	tbb::concurrent_hash_map<uint32_t, tbb::concurrent_vector<std::vector<std::string>>> stream_subscribe_stor;
@@ -88,6 +92,9 @@ class LogSoftwareSwitch {
 	std::mutex sub_q_mutex;
 	tbb::concurrent_queue<char*> sub_q;
 
+	std::condition_variable cli_send_cv;
+	std::mutex cli_send_q_mutex;
+	tbb::concurrent_queue<char*> cli_send_q;
 
 	// Thread functions
 	void receiver();

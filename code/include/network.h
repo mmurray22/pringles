@@ -79,6 +79,7 @@ class Network {
 
 	std::string get_recv_port();
 
+	bool raw_send_client_udp_packet(char* send_packet, uint64_t pkt_len, std::string dst_ip, std::string dst_port);
 	bool send_client_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, std::string dst_ip, std::string dst_port);
 	bool send_udp_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, std::string dst_ip, std::string dst_port, bool use_multicast);
  	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, in_addr_t dst_ip);
@@ -105,7 +106,7 @@ class Network {
 
 	std::unordered_map<std::string, int> port_to_fd;
 		
-	tbb::concurrent_hash_map<uint64_t, std::string> concurrent_port_to_fd;
+	tbb::concurrent_hash_map<std::string, int> concurrent_port_to_fd;
 	tbb::concurrent_queue<char*> concurrent_recv_q;
        
 

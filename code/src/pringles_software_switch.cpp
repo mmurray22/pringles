@@ -101,6 +101,10 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
     read_resp_thread = std::thread(&LogSoftwareSwitch::read_response, this);
     tail_req_thread = std::thread(&LogSoftwareSwitch::tail_request, this);
     sub_thread = std::thread(&LogSoftwareSwitch::subscribe_request, this);
+
+    for (uint64_t i = 0; i < 2; i++) { // TODO toggle?
+        send_threads.emplace_back(std::thread(&LogSoftwareSwitch::run_client_send, this));
+    }
 }
 
 LogSoftwareSwitch::~LogSoftwareSwitch() {
@@ -110,7 +114,8 @@ LogSoftwareSwitch::~LogSoftwareSwitch() {
     read_resp_cv.notify_all();
     tail_req_cv.notify_all();
     sub_cv.notify_all();
-
+    cli_send_cv.notify_all();
+            
     recv_thread.join();
     append_req_thread.join();
     append_resp_thread.join();
@@ -118,7 +123,9 @@ LogSoftwareSwitch::~LogSoftwareSwitch() {
     read_resp_thread.join();
     tail_req_thread.join();
     sub_thread.join();
-
+    for (uint64_t i = 0; i < 2; i++) { // TODO toggle?
+        send_threads[i].join();
+    }
     net->done();
 }
 
@@ -210,137 +217,132 @@ void LogSoftwareSwitch::append_request() {
 
     // Request header
     while (!end_thread) {
-        bool got_quorum = false;
-	auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-	double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+	//auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	//double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
 
-        while (!got_quorum) {
-    	    // Stop receiving/sending messages since the experiment is over
-            if (end_thread) {
-                break;
-            }
-
-    	    // Wait to receive the packet 
-    	    char* recv_ptr;
-       	    {
-               std::unique_lock<std::mutex> lock(append_req_q_mutex);
-    	       append_req_cv.wait(lock, [this] {return end_thread || !append_req_q.empty();});
-    	       if (!append_req_q.try_pop(recv_ptr) || !recv_ptr) {
-    	           if (use_store) {
-    	               for (uint64_t i = 0; i < stor_ips.size(); i++) {
-                           net->send_udp_packet(NULL, 0, stor_ips[i], stor_receive_port, false); // TODO What is this doing here??
-    	               }  
-    	           }
-                   continue;
-               }
-            }
-    	    
-    	    // Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
-
-    	    // Isolate the ethernet header from the receive ptr
-             	    	
-    	    // Get the correct header (ring append entry) from the received packet
-            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-	    max_idx += 1;
-	    append_entry->g_idx = htonl(max_idx);
-	    spdlog::debug("Global sequence number is now: {}", ntohl(append_entry->g_idx));
-            uint64_t pkt_size = size_of_type_hdr + size_of_hdr + ntohl(append_entry->payload_size) + 1;
-        	
-            // If the batch isn't full and the timeout not expired exceed
-    	    // Create the packet to send to the storage server with the running packet size and the additional header
-            // Send the network packet
-            bool res = false;
-    	    if (use_store) {
-		if (use_shards) {
-		    std::string multicast_addr;
-		    tbb::concurrent_vector<std::string> shard;
-		    uint64_t key_id = 0;
-		    if (use_streams) {
-			key_id = ntohl(append_entry->stream_id);
-			spdlog::debug("Stream, yes shard Key ID for which shard to send to: {}", key_id);
-		        tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
-		        if (stream_id_to_shard_id.find(acc, key_id)) {
-		            //multicast_addr = all_shards[acc->second];
-		            shard = all_shards[acc->second];
-		        } else {
-                            //multicast_addr = all_shards[next_available_shard];
-                            shard = all_shards[next_available_shard];
-		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
-		            bool insert_succ = stream_id_to_shard_id.insert(put_acc, key_id);
-			    if (insert_succ) {
-			        put_acc->second = next_available_shard;
-			    }
-			    put_acc.release();
-		            next_available_shard = (next_available_shard + 1) % all_shards.size();
-		        }
-			spdlog::debug("Stream multicast addr: {}", multicast_addr);
-		    } else { // If streams aren't used, then sequence number will be used
-		        key_id = ntohl(append_entry->g_idx) % all_shards.size(); // TODO bit shift?
-			spdlog::debug("No stream, yes shard Key ID for which shard to send to: {}", key_id);
-			tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
-		        if (seq_idx_to_shard_id.find(acc, key_id)) {
-		            //multicast_addr = all_shards[acc->second];
-		            shard = all_shards[acc->second];
-		        } else {
-                            //multicast_addr = all_shards[next_available_shard];
-                            shard = all_shards[next_available_shard];
-		            tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
-		            bool insert_succ = seq_idx_to_shard_id.insert(put_acc, key_id);
-			    if (insert_succ) {
-			        put_acc->second = next_available_shard;
-			    }
-			    put_acc.release();
-		            next_available_shard = (next_available_shard + 1) % all_shards.size();
-		        }
-			spdlog::debug("No stream multicast addr: {}", multicast_addr);
-		    }
-		    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-            	    memcpy(reply_packet.get(), recv_ptr, pkt_size);
-		    for (std::string ip : shard) {
-			 spdlog::debug("Sending to IP: {}", ip);
-			 std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-            	    	 memcpy(reply_packet.get(), recv_ptr, pkt_size);
-		         net->send_udp_packet(std::move(reply_packet), pkt_size, ip, stor_receive_port, false);
-		    }
-		} else {
-    	             for (uint64_t i = 0; i < stor_ips.size(); i++) {
-		         spdlog::debug("Req payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}",  ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
-            	         std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-    	                 // Copy batch header into the reply packet, and the batch content 
-            	         memcpy(reply_packet.get(), recv_ptr, pkt_size);
-	                 res = net->send_udp_packet(std::move(reply_packet), pkt_size, stor_ips[i], stor_receive_port, false);
-    	             }
-		}
-    	    } else {
-                struct ring_type* append_type = (struct ring_type*)(recv_ptr + sizeof(struct ring_type));
-		spdlog::debug("Final # entry: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
-                std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-    	        // Copy batch header into the reply packet, and the batch content 
-                memcpy(reply_packet.get(), recv_ptr, pkt_size);
-    	
-    	        ((struct ring_type*)reply_packet.get())->type = htons(ETH_APPEND_RESP);
-    
-		std::string client_ip = get_quad_ip(append_entry->client_ip);
-
-                net->send_client_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(ntohs(append_entry->recv_port)));
-    	        res = true;
-    	    }
-    	    pkt_req_cntr += 1;
-            if (!res) {
-           	   continue;
-    	    }
-            got_quorum = true;
-	    
-	    duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-	    double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
-	    double dur = end_time_s - start_time_s;
-	    lats.push_back(dur);
+    	// Wait to receive the packet 
+    	char* recv_ptr;
+       	{
+           std::unique_lock<std::mutex> lock(append_req_q_mutex);
+    	   append_req_cv.wait(lock, [this] {return end_thread || !append_req_q.empty();});
+    	   if (!append_req_q.try_pop(recv_ptr) || !recv_ptr) {
+    	       if (use_store) {
+    	           for (uint64_t i = 0; i < stor_ips.size(); i++) {
+                       net->send_udp_packet(NULL, 0, stor_ips[i], stor_receive_port, false); // TODO What is this doing here??
+    	           }  
+    	       }
+               continue;
+           }
         }
-    }
-    double final_avg_latency = std::accumulate(lats.begin(), lats.end(), 0.0) / lats.size();
-    final_avg_latency *= 1000;
+    	
+    	// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
+    	// Isolate the ethernet header from the receive ptr
+    	// Get the correct header (ring append entry) from the received packet
+        struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
+	max_idx += 1;
+	append_entry->g_idx = htonl(max_idx);
+	spdlog::debug("Global sequence number is now: {}", ntohl(append_entry->g_idx));
+        uint64_t pkt_size = size_of_type_hdr + size_of_hdr + ntohl(append_entry->payload_size) + 1;
+            
+        // If the batch isn't full and the timeout not expired exceed
+    	// Create the packet to send to the storage server with the running packet size and the additional header
+        // Send the network packet
+        bool res = false;
+    	if (use_store) {
+	    if (use_shards) {
+	        std::string multicast_addr;
+	        tbb::concurrent_vector<std::string> shard;
+	        uint64_t key_id = 0;
+	        if (use_streams) {
+	    	key_id = ntohl(append_entry->stream_id);
+	    	spdlog::debug("Stream, yes shard Key ID for which shard to send to: {}", key_id);
+	            tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
+	            if (stream_id_to_shard_id.find(acc, key_id)) {
+	                //multicast_addr = all_shards[acc->second];
+	                shard = all_shards[acc->second];
+	            } else {
+                        //multicast_addr = all_shards[next_available_shard];
+                        shard = all_shards[next_available_shard];
+	                tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
+	                bool insert_succ = stream_id_to_shard_id.insert(put_acc, key_id);
+	    	    if (insert_succ) {
+	    	        put_acc->second = next_available_shard;
+	    	    }
+	    	    put_acc.release();
+	                next_available_shard = (next_available_shard + 1) % all_shards.size();
+	            }
+	    	spdlog::debug("Stream multicast addr: {}", multicast_addr);
+	        } else { // If streams aren't used, then sequence number will be used
+	            key_id = ntohl(append_entry->g_idx) % all_shards.size(); // TODO bit shift?
+	    	spdlog::debug("No stream, yes shard Key ID for which shard to send to: {}", key_id);
+	    	tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
+	            if (seq_idx_to_shard_id.find(acc, key_id)) {
+	                //multicast_addr = all_shards[acc->second];
+	                shard = all_shards[acc->second];
+	            } else {
+                        //multicast_addr = all_shards[next_available_shard];
+                        shard = all_shards[next_available_shard];
+	                tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
+	                bool insert_succ = seq_idx_to_shard_id.insert(put_acc, key_id);
+	    	    if (insert_succ) {
+	    	        put_acc->second = next_available_shard;
+	    	    }
+	    	    put_acc.release();
+	                next_available_shard = (next_available_shard + 1) % all_shards.size();
+	            }
+	    	spdlog::debug("No stream multicast addr: {}", multicast_addr);
+	        }
+	        std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+        	    memcpy(reply_packet.get(), recv_ptr, pkt_size);
+	        for (std::string ip : shard) {
+	    	 spdlog::debug("Sending to IP: {}", ip);
+	    	 std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+        	    	 memcpy(reply_packet.get(), recv_ptr, pkt_size);
+	             net->send_udp_packet(std::move(reply_packet), pkt_size, ip, stor_receive_port, false);
+	        }
+	    } else {
+    	         for (uint64_t i = 0; i < stor_ips.size(); i++) {
+	             spdlog::debug("Req payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}",  ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
+        	     std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+    	             // Copy batch header into the reply packet, and the batch content 
+        	     memcpy(reply_packet.get(), recv_ptr, pkt_size);
+	             res = net->send_udp_packet(std::move(reply_packet), pkt_size, stor_ips[i], stor_receive_port, false);
+    	         }
+	    }
+    	} else {
+	    cli_send_q.push(recv_ptr);
+            {
+	        std::unique_lock<std::mutex> lock(cli_send_q_mutex);
+            }
+	    cli_send_cv.notify_one();
+	    res = true;
+            /*struct ring_type* append_type = (struct ring_type*)(recv_ptr + sizeof(struct ring_type));
+	    spdlog::debug("Final # entry: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
+            std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+    	    // Copy batch header into the reply packet, and the batch content 
+            memcpy(reply_packet.get(), recv_ptr, pkt_size);
+    	
+    	    ((struct ring_type*)reply_packet.get())->type = htons(ETH_APPEND_RESP);
+    
+	    std::string client_ip = get_quad_ip(append_entry->client_ip);
 
-    spdlog::critical("Done here! Req cntr: {} and Latencies: {}", pkt_req_cntr, final_avg_latency); 
+            net->send_client_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(ntohs(append_entry->recv_port)));
+    	    res = true;*/
+    	}
+    	pkt_req_cntr += 1;
+        if (!res) {
+               continue;
+    	}
+	/*duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+	double dur = end_time_s - start_time_s;
+	lats.push_back(dur);*/
+    }
+    //double final_avg_latency = std::accumulate(lats.begin(), lats.end(), 0.0) / lats.size();
+    //final_avg_latency *= 1000;
+
+    spdlog::critical("Done here! Req cntr: {}", pkt_req_cntr); 
+    //spdlog::critical("Done here! Req cntr: {} and Latencies: {}", pkt_req_cntr, final_avg_latency); 
     //spdlog::debug("Stats results: Lat: {}, Tput: {}, Total Ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
 }
 
@@ -764,6 +766,58 @@ bool LogSoftwareSwitch::recover_switch() {
 void LogSoftwareSwitch::change_view(uint64_t new_view_num) {
     view_num = new_view_num;
 }
+
+// Threadpool send thread function
+// Send packets as they are queued
+// cli_send_q_mutex, cli_send_cv, cli_send_q
+void LogSoftwareSwitch::run_client_send() {
+    spdlog::critical("Send-to-Client Thread with TID = {}", gettid());
+    //uint64_t pkt_req_cntr = 0;
+    size_t size_of_hdr = get_ring_append_size();
+    size_t size_of_type_hdr = get_ring_type_size();
+    std::vector<double> lats;
+
+
+    while (!end_thread) {
+        // Wait to receive the packet 
+    	char* recv_ptr;
+       	{
+           std::unique_lock<std::mutex> lock(cli_send_q_mutex);
+    	   cli_send_cv.wait(lock, [this] {return end_thread || !cli_send_q.empty();});
+    	   if (!cli_send_q.try_pop(recv_ptr) || !recv_ptr) {
+               continue;
+           }
+        }
+        	
+        struct ring_type* append_type = (struct ring_type*)(recv_ptr);
+        struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
+        uint64_t pkt_size = size_of_type_hdr + size_of_hdr + ntohl(append_entry->payload_size) + 1;
+	spdlog::debug("Final # entry: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
+
+    	// Copy batch header into the reply packet, and the batch content 
+        //std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(MAX_PACKET_SIZE); //pkt_size);
+        //memcpy(reply_packet.get(), recv_ptr, pkt_size); // TODO necessary?
+    	((struct ring_type*)recv_ptr)->type = htons(ETH_APPEND_RESP);
+	std::string client_ip = get_quad_ip(append_entry->client_ip);
+
+        bool res = net->raw_send_client_udp_packet(recv_ptr, pkt_size, client_ip, std::to_string(ntohs(append_entry->recv_port)));
+	free(recv_ptr);
+        if (!res) {
+               continue;
+    	}
+	
+	/*duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+	double dur = end_time_s - start_time_s;
+	lats.push_back(dur);*/
+    }
+    /*double final_avg_latency = std::accumulate(lats.begin(), lats.end(), 0.0) / lats.size();
+    final_avg_latency *= 1000;
+    spdlog::critical("Done here! Req cntr: {} and Latencies: {}", pkt_req_cntr, final_avg_latency); */
+    spdlog::critical("Done with this sender thread!");
+}
+
+
 
 void LogSoftwareSwitch::wait_to_finish() {
     std::chrono::seconds sleep_duration(max_duration);

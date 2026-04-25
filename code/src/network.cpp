@@ -434,8 +434,10 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
     int s_fd;
     spdlog::debug("SINGLE CLIENT Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
     std::string combined_addr = dst_ip + ":" + dst_port;
-    if (port_to_fd.count(combined_addr) > 0) {
-        s_fd = port_to_fd[combined_addr];
+    
+    tbb::concurrent_hash_map<std::string, int>::accessor acc;
+    if (concurrent_port_to_fd.find(acc, combined_addr)) {
+        s_fd = acc->second; //port_to_fd[combined_addr];
 	if (s_fd < 0) {
             spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
             throw std::runtime_error("Can't create sending socket");
@@ -446,7 +448,9 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
             spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
             throw std::runtime_error("Can't create sending socket");
         } 
-        port_to_fd.insert({combined_addr, s_fd});
+        concurrent_port_to_fd.insert(acc, combined_addr);
+	acc->second = s_fd;
+	//port_to_fd.insert({combined_addr, s_fd});
     }
     while (!terminate && !sent_all) {
         ssize_t num_bytes = send(s_fd, send_packet.get(), pkt_len, 0);
@@ -459,6 +463,52 @@ bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TO
     }
     return sent_all;
 }
+
+bool Network::raw_send_client_udp_packet(char* send_packet,  // TODO get rid of this
+		          uint64_t pkt_len, 
+			  std::string dst_ip,
+			  std::string dst_port) {
+    bool sent_all = false;
+    
+    // If socket_type is not UDP
+    if (socket_type != "UDP") {
+        return false;
+    }
+    
+    spdlog::debug("Sending a UDP packet!");
+    int s_fd;
+    spdlog::debug("SINGLE CLIENT Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
+    std::string combined_addr = dst_ip + ":" + dst_port;
+    
+    tbb::concurrent_hash_map<std::string, int>::accessor acc;
+    if (concurrent_port_to_fd.find(acc, combined_addr)) {
+        s_fd = acc->second; //port_to_fd[combined_addr];
+	if (s_fd < 0) {
+            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
+            throw std::runtime_error("Can't create sending socket");
+	}
+    } else {
+        s_fd = setup_talker_socket(dst_ip, dst_port, false);
+        if (s_fd < 0) {
+            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
+            throw std::runtime_error("Can't create sending socket");
+        } 
+        concurrent_port_to_fd.insert(acc, combined_addr);
+	acc->second = s_fd;
+	//port_to_fd.insert({combined_addr, s_fd});
+    }
+    while (!terminate && !sent_all) {
+        ssize_t num_bytes = send(s_fd, send_packet, pkt_len, 0);
+        if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
+            //spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        } else {
+             spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+	     sent_all = true;
+        }
+    }
+    return sent_all;
+}
+
 
 
 bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet, 
