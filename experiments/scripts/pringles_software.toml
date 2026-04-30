@@ -7,18 +7,18 @@
 # There is one receive port per machine, current assumption is each machine has one storage server
 stor_recv_port = "30003"
 # This is the mac address of every storage server being used
-stor_macs = ["0c:42:a1:d6:fd:48", "0c:42:a1:dd:57:90", "0c:42:a1:dd:5e:ac", "0c:42:a1:dd:57:88", "0c:42:a1:dd:5f:88", "0c:42:a1:dd:5c:48"]
+stor_macs = ["0c:42:a1:dd:59:bc"] #, "0c:42:a1:dd:57:90", "0c:42:a1:dd:5e:ac", "0c:42:a1:dd:57:88", "0c:42:a1:dd:5f:88", "0c:42:a1:dd:5c:48"]
 # This is the IP address of every storage server being used
-stor_ips = ["10.10.1.4", "10.10.1.5", "10.10.1.6", "10.10.1.7","10.10.1.8", "10.10.1.9"]
+stor_ips = ["10.10.1.4"] #, "10.10.1.5", "10.10.1.6", "10.10.1.7","10.10.1.8", "10.10.1.9"]
 # This is the network interface the storage servers use to send/receive
-stor_net_ifs = ["enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0","enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0"] 
+stor_net_ifs = ["enp65s0f0np0"] #, "enp65s0f0np0", "enp65s0f0np0","enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0"] 
 ######## Client Network Info #######
 # This is the mac address of every client machine
-cli_macs = ["0c:42:a1:e2:a6:a4"]
+cli_macs = ["0c:42:a1:dd:5a:45"]
 # This is the IP address of every client machine
 cli_ips = ["10.10.1.2"]
 # This is the network interface the client machines use to send/receive
-cli_net_ifs = ["enp65s0f0np0"]
+cli_net_ifs = ["enp65s0f1np1"]
 ####### Switch Network information ########
 # NOTE : Only one software switch is supported at this time. I will need to update this TODO
 # This is the IP address of the software switch
@@ -28,7 +28,7 @@ switch_recv_port = "30002"
 # This is the network interface the software switch uses to send/receive
 switch_net_if = "enp65s0f0np0"
 # This is the mac address of every switch machine
-switch_mac = "0c:42:a1:dd:5b:98"
+switch_mac = "0c:42:a1:dd:61:2c"
 ###### Authentication Information for the switch #######
 # NOTE: I don't know if I need this if ssh key forwarding is used? Might deprecate TODO
 # SSH key 

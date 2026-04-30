@@ -1,6 +1,6 @@
 project('pringles', 'cpp',
   version : '1.0.0',
-  default_options : ['warning_level=3', 'cpp_std=c++17', 'werror=true'])
+  default_options : ['warning_level=3', 'cpp_std=c++20', 'werror=true'])
 # flags + address sanitizers
 add_global_arguments('-DSOME_TOKEN=value', language : 'cpp')
 add_project_arguments(
@@ -24,7 +24,7 @@ fmt_dep = dependency('fmt', fallback: ['fmt', 'fmt_dep'], static: true)
 #spdlog = dependency('spdlog', fallback: ['spdlog', 'spdlog_dep'], static: true)
 #tbb_dep = dependency('tbb', required: true, static: true) 
 tbb_dep = declare_dependency(
-    link_args: ['../oneTBB/build/gnu_13.3_cxx11_64_release/libtbb.a'],
+    link_args: ['../oneTBB/build/gnu_11.4_cxx11_64_release/libtbb.a'],
     include_directories: include_directories('../oneTBB/include')
 )
 add_project_link_arguments(['-lprotobuf'], language: ['cpp'])

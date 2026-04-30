@@ -6,6 +6,7 @@
 #include <utility>
 #include <cassert>
 #include <fstream>
+#include <semaphore>
 
 #include <errno.h>
 #include <sys/types.h>
@@ -34,6 +35,9 @@
 #include "utils.h"
 #include "ring_headers.h"
 #include "pringles_software_switch.h"
+
+std::counting_semaphore signalAppendReq{0};
+std::counting_semaphore signalClientNet{0};
 
 LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id) {
     spdlog::critical("Pringles Software Switch is starting!");
@@ -108,6 +112,9 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
 }
 
 LogSoftwareSwitch::~LogSoftwareSwitch() {
+    //signalAppendReq.release();
+
+
     append_req_cv.notify_all();
     append_resp_cv.notify_all();
     read_req_cv.notify_all();
@@ -131,11 +138,16 @@ LogSoftwareSwitch::~LogSoftwareSwitch() {
 
 void LogSoftwareSwitch::receiver() {
     spdlog::critical("UNIVERSAL RECEIVER thread starting with tid = {}", gettid());
-    //pin_current_thread_linux(0);
+    pin_current_thread_linux(0);
     while (!end_thread) {
         char* recv_ptr = net->recv_packet();
 	if (!recv_ptr) {
-	    continue;
+	     /*append_req_q.push(NULL);
+	     {
+		std::unique_lock<std::mutex> lock(append_req_q_mutex);
+	     }
+	     append_req_cv.notify_all();*/
+	     continue;
 	}
 	spdlog::debug("Received something!!!");
 	struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
@@ -151,11 +163,10 @@ void LogSoftwareSwitch::receiver() {
             }
 	    append_resp_cv.notify_all();
 	} else if (ntohs(type_hdr->type) == ETH_APPEND_REQ) {
-	    spdlog::debug("Appending request being processed!");
             struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
 	    spdlog::debug("Appending request with payload size: {} and nonce {} and number of entries {}", ntohl(ring->payload_size), ntohl(ring->nonce), ntohs(type_hdr->num_entries));
-            char* pkt = (char*)std::malloc(ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1));
-            memcpy(pkt, recv_ptr, ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1)); 
+            char* pkt = (char*)std::malloc((sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1));
+            memcpy(pkt, recv_ptr, (sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1));
 	    append_req_q.push(pkt);
             {
 	        std::unique_lock<std::mutex> lock(append_req_q_mutex);
@@ -164,7 +175,7 @@ void LogSoftwareSwitch::receiver() {
 	} else if (ntohs(type_hdr->type) == ETH_READ_RESP) {
 	    spdlog::debug("Received read response!");
             struct ring_read_entry* ring = (struct ring_read_entry*)(recv_ptr + sizeof(struct ring_type));
-            char* pkt = (char*)std::malloc(type_hdr->num_entries*(sizeof(struct ring_type) + sizeof(struct ring_read_entry) + ntohl(ring->payload_size)+ 1));
+            char* pkt = (char*)std::malloc(type_hdr->num_entries*(sizeof(struct ring_type) + sizeof(struct ring_read_entry) + ntohl(ring->payload_size)+ 1)); // TODO :NUM ENTRIES ERROR???
             memcpy(pkt, recv_ptr, type_hdr->num_entries*(sizeof(struct ring_type) + sizeof(struct ring_read_entry) + ntohl(ring->payload_size)+ 1)); 
 	    read_resp_q.push(pkt);
             {
@@ -222,7 +233,13 @@ void LogSoftwareSwitch::append_request() {
 
     	// Wait to receive the packet 
     	char* recv_ptr;
-       	{
+	/*if (!append_req_q.try_pop(recv_ptr)) {
+	    signalAppendReq.acquire();
+	    append_req_q.try_pop(recv_ptr);
+	}*/
+       	//if (append_req_q.empty() || !append_req_q.try_pop(recv_ptr) || !recv_ptr) {
+ 	//   continue;
+	if (!append_req_q.try_pop(recv_ptr)) {
            std::unique_lock<std::mutex> lock(append_req_q_mutex);
     	   append_req_cv.wait(lock, [this] {return end_thread || !append_req_q.empty();});
     	   if (!append_req_q.try_pop(recv_ptr) || !recv_ptr) {
@@ -233,7 +250,9 @@ void LogSoftwareSwitch::append_request() {
     	       }
                continue;
            }
-        }
+	}
+
+        //}
     	
     	// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
     	// Isolate the ethernet header from the receive ptr
@@ -310,28 +329,34 @@ void LogSoftwareSwitch::append_request() {
     	         }
 	    }
     	} else {
+	    res = true;
+            //struct ring_type* append_type = (struct ring_type*)(recv_ptr + sizeof(struct ring_type));
+	    //spdlog::debug("Final # entry: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
+	    //bool empty = cli_send_q.empty();
 	    cli_send_q.push(recv_ptr);
+	    /*if (empty) {
+	        signalClientNet.release();
+	    }*/
             {
 	        std::unique_lock<std::mutex> lock(cli_send_q_mutex);
             }
-	    cli_send_cv.notify_one();
-	    res = true;
-            /*struct ring_type* append_type = (struct ring_type*)(recv_ptr + sizeof(struct ring_type));
-	    spdlog::debug("Final # entry: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
-            std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-    	    // Copy batch header into the reply packet, and the batch content 
-            memcpy(reply_packet.get(), recv_ptr, pkt_size);
-    	
-    	    ((struct ring_type*)reply_packet.get())->type = htons(ETH_APPEND_RESP);
-    
-	    std::string client_ip = get_quad_ip(append_entry->client_ip);
+	    cli_send_cv.notify_all();
 
-            net->send_client_udp_packet(std::move(reply_packet), pkt_size, client_ip, std::to_string(ntohs(append_entry->recv_port)));
+
+            //std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
+    	    //Copy batch header into the reply packet, and the batch content 
+            //memcpy(reply_packet.get(), recv_ptr, pkt_size);
+	    //((struct ring_type*)recv_ptr)->type = htons(ETH_APPEND_RESP);
+    	    //((struct ring_type*)reply_packet.get())->type = htons(ETH_APPEND_RESP);
+    
+	    /*std::string client_ip = get_quad_ip(append_entry->client_ip);
+            net->raw_send_client_udp_packet(recv_ptr, pkt_size, client_ip, std::to_string(ntohs(append_entry->recv_port)));
+	    free(recv_ptr);
     	    res = true;*/
     	}
     	pkt_req_cntr += 1;
         if (!res) {
-               continue;
+            continue;
     	}
 	/*duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
 	double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
@@ -341,7 +366,7 @@ void LogSoftwareSwitch::append_request() {
     //double final_avg_latency = std::accumulate(lats.begin(), lats.end(), 0.0) / lats.size();
     //final_avg_latency *= 1000;
 
-    spdlog::critical("Done here! Req cntr: {}", pkt_req_cntr); 
+    spdlog::critical("APPEND REQUEST Done here! Req cntr: {}", pkt_req_cntr); 
     //spdlog::critical("Done here! Req cntr: {} and Latencies: {}", pkt_req_cntr, final_avg_latency); 
     //spdlog::debug("Stats results: Lat: {}, Tput: {}, Total Ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
 }
@@ -780,8 +805,16 @@ void LogSoftwareSwitch::run_client_send() {
 
     while (!end_thread) {
         // Wait to receive the packet 
+	/*char* recv_ptr;
+	if (cli_send_q.empty()) {
+	    signalClientNet.acquire();
+	}
+	if (!cli_send_q.try_pop(recv_ptr) || !recv_ptr) {
+	    continue;
+	}*/
+
     	char* recv_ptr;
-       	{
+       	if (!cli_send_q.try_pop(recv_ptr)) {
            std::unique_lock<std::mutex> lock(cli_send_q_mutex);
     	   cli_send_cv.wait(lock, [this] {return end_thread || !cli_send_q.empty();});
     	   if (!cli_send_q.try_pop(recv_ptr) || !recv_ptr) {
@@ -801,11 +834,11 @@ void LogSoftwareSwitch::run_client_send() {
 	std::string client_ip = get_quad_ip(append_entry->client_ip);
 
         bool res = net->raw_send_client_udp_packet(recv_ptr, pkt_size, client_ip, std::to_string(ntohs(append_entry->recv_port)));
-	free(recv_ptr);
+
         if (!res) {
                continue;
     	}
-	
+	free(recv_ptr);
 	/*duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
 	double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
 	double dur = end_time_s - start_time_s;

@@ -30,6 +30,7 @@
 #include "spdlog/spdlog.h"
 #include "yaml-cpp/yaml.h"
 
+std::counting_semaphore clientAppend{0};
 LogClient::LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_port_offset) {
     this->thread_id = thread_id;
     YAML::Node config = YAML::LoadFile(input_file);
@@ -170,6 +171,8 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_p
 }
 
 LogClient::~LogClient() {
+
+    spdlog::critical("Released the client Append!");
     append_resp_cv.notify_all();
     read_resp_cv.notify_all();
     subscribe_resp_cv.notify_all();
@@ -226,6 +229,7 @@ void LogClient::receiver() {
 	        std::unique_lock<std::mutex> lock(append_resp_q_mutex);
             }
 	    append_resp_cv.notify_all();
+	    //clientAppend.release();
 	} else if (ntohs(type_hdr->type) == ETH_READ_RESP) {
             struct ring_read_entry* ring = (struct ring_read_entry*)(recv_ptr + sizeof(struct ring_type));
 	    uint64_t pkt_size = ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_read_entry) + ntohl(ring->payload_size) + 1);
@@ -259,6 +263,8 @@ void LogClient::receiver() {
 	    continue;
 	}
     }
+    //clientAppend.release();
+    spdlog::critical("Done in the receiver!");
 }
 
 uint64_t LogClient::append(std::string entry) {
@@ -301,10 +307,18 @@ uint64_t LogClient::append(std::string entry) {
         if (end_thread) {
             break;
         }
+	
+	/*char* recv_ptr;
+	if (append_resp_q.empty()) {
+		clientAppend.acquire();
+	}
+	if (!append_resp_q.try_pop(recv_ptr) || !recv_ptr) {
+		continue;
+	}*/
 
 	// Wait to receive the packet 
 	char* recv_ptr;
-	{
+	if (!append_resp_q.try_pop(recv_ptr)) {
 	    std::unique_lock<std::mutex> lock(append_resp_q_mutex);
 	    append_resp_cv.wait(lock, [this] {return end_thread || !append_resp_q.empty();});
 	    if (end_thread) {

@@ -128,3 +128,6 @@ experiments/yaml/*.swp
 # Experiments
 experiments/results/*
 experiments/scripts/*.png
+experiments/client
+experiments/scripts/venv/*
+experiments/server

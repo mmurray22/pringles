@@ -361,7 +361,7 @@ bool get_use_streams(YAML::Node config) {
 }
 
 bool get_use_shards(YAML::Node config) {
-    return config["use_shard"].as<uint64_t>();
+    return config["use_shard"].as<uint64_t>() == 1;
 }
 
 std::string get_multicast_addr(YAML::Node config) {
