@@ -40,6 +40,7 @@ class LogSoftwareSwitch {
 	bool use_shards;
 	uint64_t next_available_shard = 0;
         tbb::concurrent_vector<tbb::concurrent_vector<std::string>> all_shards;
+        tbb::concurrent_vector<std::string> all_shards_multicast;
         tbb::concurrent_hash_map<uint64_t, uint64_t> stream_id_to_shard_id;
         tbb::concurrent_hash_map<uint64_t, uint64_t> seq_idx_to_shard_id;
 
@@ -52,7 +53,6 @@ class LogSoftwareSwitch {
 	bool end_thread = false;
 
 	std::thread recv_thread;
-	std::thread append_req_thread;
 	std::thread append_resp_thread;
 	std::thread read_req_thread;
 	std::thread read_resp_thread;
@@ -60,7 +60,9 @@ class LogSoftwareSwitch {
 	std::thread sub_thread;
 	std::atomic<uint64_t> max_idx; 
 	tbb::concurrent_vector<std::thread> send_threads;
-	
+	tbb::concurrent_vector<std::thread> append_req_threads;
+	uint64_t num_append_req_threads;
+
 	tbb::concurrent_vector<std::vector<std::string>> subscribe_stor;
 	tbb::concurrent_hash_map<uint32_t, tbb::concurrent_vector<std::vector<std::string>>> stream_subscribe_stor;
 
@@ -68,6 +70,7 @@ class LogSoftwareSwitch {
 	tbb::concurrent_hash_map<uint64_t, uint64_t> ack_map;
 	uint64_t ack_threshold;
 	
+	tbb::concurrent_vector<int> batch_socket_vec;	
 	std::condition_variable append_req_cv;
 	std::mutex append_req_q_mutex;
 	tbb::concurrent_queue<char*> append_req_q;
@@ -98,8 +101,8 @@ class LogSoftwareSwitch {
 
 	// Thread functions
 	void receiver();
-	void append_request();
-	void append_response();
+        void append_request(int append_port, std::unique_ptr<Network> append_net);
+	void append_response(int append_port, std::unique_ptr<Network> append_net);
 	void read_request();
 	void read_response();
 	void tail_request();

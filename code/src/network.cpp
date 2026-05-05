@@ -15,12 +15,59 @@
 #include <fcntl.h>
 #include <stdexcept>
 #include <unordered_map>
-
 #include "ring_headers.h"
 #include "network.h"
 #include "yaml-cpp/yaml.h"
 #include "utils.h"
 #include "spdlog/spdlog.h"
+
+Network::Network(std::string socket_type,
+                 uint64_t log_level,
+                 uint64_t batch_size,
+                 bool batch_on,
+		 uint64_t batch_timeout,
+                 std::string send_interface,
+                 std::string self_ip)
+{ 
+    if(!check_socket_type(socket_type)) { 
+        throw std::runtime_error("Invalid socket type!");
+    }
+    set_spdlog_level(log_level);
+    this->run_threads = run_threads;
+    this->socket_type = socket_type;
+    this->send_interface = send_interface;
+    this->batch_size = batch_size;
+    this->self_ip = self_ip;
+    this->batch_on = batch_on;
+
+    this->running_pkt_size = 0;
+    this->num_pkts = 0;
+    this->batch_timeout = static_cast<double>(batch_timeout) / 1000000; //.000460
+    auto start_time = (std::chrono::steady_clock::now()).time_since_epoch();
+    this->batch_timer = std::chrono::duration_cast<std::chrono::duration<double>>(start_time).count();
+
+    this->send_ip_hdr = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
+    this->norm_buf = (char*)std::malloc(MAX_PACKET_SIZE);
+    this->final_send_packet = (char*)std::malloc(MAX_PACKET_SIZE);
+
+    this->sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
+    this->sin.sll_halen = ETH_ALEN;
+
+    memset(msgs, 0, sizeof(msgs)); 
+    for (uint64_t i = 0; i < BATCH_SIZE; i++) {
+        iovecs[i].iov_base = buffers[i];
+        iovecs[i].iov_len = MAX_PACKET_SIZE;
+
+        msgs[i].msg_hdr.msg_name = &client_addrs[i];
+        msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
+        msgs[i].msg_hdr.msg_iov = &iovecs[i];
+        msgs[i].msg_hdr.msg_iovlen = 1;
+    }
+
+    spdlog::critical("DONE with the network setup!");
+    /* End of new initializing socket */
+}
+
 
 Network::Network(std::string send_port, 
                  std::string recv_port,
@@ -34,10 +81,8 @@ Network::Network(std::string send_port,
 		 std::string multicast_ip,
 		 bool is_in_shard,
 		 bool run_threads) :  rcv_pkt(1000000)
-{ 
-    /*if (geteuid() != 0) { // Check if we are running as root
-        throw std::runtime_error("Not running as root!");
-    }*/
+{
+    (void) is_in_shard;	
     if(!check_socket_type(socket_type)) { 
         throw std::runtime_error("Invalid socket type!");
     }
@@ -56,15 +101,38 @@ Network::Network(std::string send_port,
     this->running_pkt_size = 0;
     this->num_pkts = 0;
     this->batch_timeout = static_cast<double>(batch_timeout) / 1000000; //.000460
-    auto start_time = (std::chrono::steady_clock::now()).time_since_epoch();
-    this->batch_timer = std::chrono::duration_cast<std::chrono::duration<double>>(start_time).count();
+    //this->batch_timer = std::chrono::duration_cast<std::chrono::duration<double>>(start_time).count();
     /*send_socket = setup_raw_talker_socket();
     if (send_socket < 0) {
         spdlog::critical("SENDER Socket creation unsuccessful. Aborting");
         throw std::runtime_error("Can't create sending socket");
     }
     spdlog::debug("The socket fd is {}", send_socket);*/
-    if (is_in_shard) {
+    struct sockaddr_in client_addr;
+
+    if ((recv_socket = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        throw;
+    }
+
+    // Optional: Add a timeout to recvfrom so threads don't hang forever if a packet drops
+    // Because we are blasting multiple threads, a single dropped packet shouldn't freeze a thread.
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(recv_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    setsockopt(recv_socket, SOL_SOCKET, SO_BINDTODEVICE, send_interface.c_str(), strlen(send_interface.c_str()));
+
+    memset(&client_addr, 0, sizeof(client_addr));
+    client_addr.sin_family = AF_INET;
+    client_addr.sin_port = htons(std::stoi(recv_port)); // Port 0 lets the OS assign a unique ephemeral port
+    client_addr.sin_addr.s_addr = inet_addr(self_ip.c_str());
+
+    if (bind(recv_socket, (const struct sockaddr *)&client_addr, sizeof(client_addr)) < 0) {
+        close(recv_socket);
+        return;
+    }
+
+    /*if (is_in_shard) {
 	recv_socket = setup_multicast_receiver(self_ip);
         if (recv_socket < 0) {
             spdlog::critical("MULTICAST RECEIVER Socket creation unsuccessful. Aborting");
@@ -77,7 +145,7 @@ Network::Network(std::string send_port,
            throw std::runtime_error("Can't create receiving socket");
        }
 
-    }
+    }*/
     spdlog::debug("The socket fd is {}", recv_socket);
 
     this->send_ip_hdr = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
@@ -90,6 +158,18 @@ Network::Network(std::string send_port,
     if (run_threads) {
    	 //this->send_thread = std::thread(&Network::run_send, this);	
    	 this->recv_thread = std::thread(&Network::run_recv, this, recv_socket);
+    }
+
+
+    memset(msgs, 0, sizeof(msgs)); 
+    for (uint64_t i = 0; i < BATCH_SIZE; i++) {
+        iovecs[i].iov_base = buffers[i];
+        iovecs[i].iov_len = MAX_PACKET_SIZE;
+
+        msgs[i].msg_hdr.msg_name = &client_addrs[i];
+        msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
+        msgs[i].msg_hdr.msg_iov = &iovecs[i];
+        msgs[i].msg_hdr.msg_iovlen = 1;
     }
     /* End of new initializing socket */
 }
@@ -104,7 +184,7 @@ std::string Network::get_recv_port() {
 
 unsigned short Network::checksum(unsigned short *buf, int nwords) {
     unsigned long sum;
-    for(sum=0; nwords>0; nwords--) {
+    for(sum = 0; nwords > 0; nwords--) {
         sum += *buf++;
     }
     sum = (sum >> 16) + (sum &0xffff);
@@ -596,6 +676,99 @@ char* Network::recv_packet() { // do you need to memset? TODO
     return norm_buf;
 }
 
+/****** Function supporting the recvmmsg/sendmmsg programming paradigm *******/
+int Network::setup_batch_socket(int port) {
+    int sockfd;
+    struct sockaddr_in server_addr;
+    // 1. Every thread creates its own independent socket
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        //std::cerr << "Thread " << thread_id << ": Socket creation failed" << std::endl;
+        return -1;
+    }
+
+    // 2. CRITICAL: Enable SO_REUSEPORT
+    // This tells the kernel "Let me bind to 8888, even if other threads are already bound to it, 
+    // and please load-balance incoming packets among us."
+    int opt = 1;
+
+    spdlog::debug("Second!");
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+        //std::cerr << "Thread " << thread_id << ": SO_REUSEPORT failed" << std::endl;
+        close(sockfd);
+        return -1;
+    }
+    struct timeval timeout;      
+    timeout.tv_sec = 2;  // 5 seconds
+    timeout.tv_usec = 0; // 0 microseconds
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        close(sockfd);
+	return -1;
+    }
+
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, (this->send_interface).c_str(), strlen((this->send_interface).c_str())) < 0) {
+        // Silent failure here just in case interface doesn't match testing env
+    }
+
+    spdlog::debug("Third!");
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    server_addr.sin_addr.s_addr = inet_addr(this->self_ip.c_str());
+
+    spdlog::debug("Fourth!");
+    // 3. Bind the socket
+    if (bind(sockfd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        //std::cerr << "Thread " << thread_id << ": Bind failed." << std::endl;
+        close(sockfd);
+        return -1;
+    }
+
+    spdlog::debug("Fifth!");
+    return sockfd;
+}
+
+char* Network::get_buf(int i) {
+    return buffers[i];
+}
+
+struct mmsghdr Network::get_msg(int i) {
+    return msgs[i];
+}
+
+struct mmsghdr* Network::get_msgs() {
+    return msgs;
+}
+
+struct iovec* Network::get_iovecs() {
+    return iovecs;
+}
+
+struct iovec Network::get_iovec(int i) {
+    return iovecs[i];
+}
+
+int Network::recv_many_packets(int batch_socket) { // do you need to memset? TODO
+    int num_received = recvmmsg(batch_socket, msgs, BATCH_SIZE, MSG_WAITFORONE, NULL);
+    return num_received;
+}
+
+
+void Network::send_many_packets(int num_received, int batch_socket) { // do you need to memset? TODO
+    for (int i = 0; i < num_received; i++) {
+        if (msgs[i].msg_len > 0) {
+            iovecs[i].iov_len = msgs[i].msg_len;
+        }
+    }
+
+    sendmmsg(batch_socket, msgs, num_received, 0);
+    for (int i = 0; i < num_received; i++) {
+        msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
+        iovecs[i].iov_len = MAX_PACKET_SIZE;
+    }
+}
+
+/**** End of functions supporting batching *****/
+
 int Network::get_recv_socket() {
     return recv_socket;
 }
@@ -626,6 +799,29 @@ void Network::destroy_socket(int s_fd) {
     if (s_fd > -1) {
         close(s_fd);
     }
+}
+
+void Network::stop_batch_threads() {
+    spdlog::debug("Starting to clean up threads!");
+    {
+        std::unique_lock<std::mutex> lock(lock_terminate);
+        terminate = true;
+    }
+    
+    spdlog::debug("The threads are being cleaned up!");
+    mutex_condition.notify_all();
+    for (auto it = port_to_fd.begin(); it != port_to_fd.end(); ++it) {
+        close(it->second);
+    }
+
+    for (uint64_t i = 0; i < send_threads.size(); i++) {
+        send_threads[i].join();
+    }
+    send_threads.clear();
+    for (uint64_t i = 0; i < recv_threads.size(); i++) {
+        recv_threads[i].join();
+    }
+    recv_threads.clear();
 }
 
 void Network::stop_threads() {

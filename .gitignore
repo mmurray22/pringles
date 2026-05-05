@@ -129,5 +129,6 @@ experiments/yaml/*.swp
 experiments/results/*
 experiments/scripts/*.png
 experiments/client
+experiments/scripts/.venv/
 experiments/scripts/venv/*
 experiments/server

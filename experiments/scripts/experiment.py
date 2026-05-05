@@ -90,7 +90,7 @@ def generate_switch_config(base_config, i, cntrl_port_num, ring_size, client_bas
     return switch_config
 
 
-def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, port_offset, server_ips, entity_id=None, entity_idx=None, json_name=None, num_failures=None, network_interface=None, shard_id=None, total_shards=None, shard_multicast=None):
+def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, port_offset, server_ips, entity_id=None, entity_idx=None, json_name=None, num_failures=None, network_interface=None, shard_id=None, total_shards=None, total_shards_multicast=None, shard_multicast=None):
     """Generates the configuration dictionary for a client or server."""
 
     # Base port calculation to ensure uniqueness
@@ -202,6 +202,8 @@ def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, p
         yaml_config.update({
             'interface': QuotedString(network_interface),
             'all_shards': total_shards,
+            'all_shards_multicast': total_shards_multicast,
+            'append_req_threads': general_exp_params['append_req_threads'],
             'shard_multicast_addr': QuotedString(dummy)
         })
 
@@ -1118,6 +1120,8 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
         server_ips = []
         total_list_of_shards = []
         total_list_of_shards_yaml = []
+        #total_list_of_shards_multicast_yaml = []
+        yaml_shard_to_multicast_addr = []
         shard_to_multicast_addr = []
         ip_to_shard = {}
         base_multicast_addr = "239.1.1."
@@ -1141,7 +1145,9 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
                     break
             for i in range(0, num_of_shard): #255 <-- TODO max number of shards
                 shard_to_multicast_addr.append((base_multicast_addr + str(i)));
+                print((base_multicast_addr + str(i)))
             yaml_shard_to_multicast_addr = [QuotedString(addr) for addr in shard_to_multicast_addr]
+            print("YAML SHARD TO MULTICAST ADDR: ")
             print(yaml_shard_to_multicast_addr)
         else:
             total_list_of_shards.append([all_server_ips[0]])
@@ -1250,7 +1256,8 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
                     json_name=json_output_name,
                     num_failures=num_failures,
                     network_interface=switch_net_if,
-                    total_shards=total_list_of_shards_yaml
+                    total_shards=total_list_of_shards_yaml,
+                    total_shards_multicast=yaml_shard_to_multicast_addr
                 )
 
                 switch_exec = os.path.basename(path_switch) # Use the basename remotely

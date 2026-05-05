@@ -34,6 +34,7 @@ uint64_t get_storage_type(YAML::Node config);  // covered
 
 uint64_t get_shard_id(YAML::Node config); 
 std::vector<std::vector<std::string>> get_all_shards(YAML::Node config);
+std::vector<std::string> get_all_shards_multicast(YAML::Node config);
 uint64_t get_shard_switch_id(YAML::Node config);
 
 uint64_t get_experiment_duration(YAML::Node config);
@@ -44,6 +45,7 @@ uint64_t get_payload_size(YAML::Node config);
 
 std::vector<std::array<uint8_t, 6>> get_dst_mac_addrs(YAML::Node config);
 
+uint64_t get_append_req_threads(YAML::Node config);
 uint64_t get_num_client_threads(YAML::Node config);
 uint64_t get_cli_id(YAML::Node config);
 uint64_t get_stor_id(YAML::Node config);

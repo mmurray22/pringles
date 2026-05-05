@@ -29,11 +29,14 @@ def main():
                 # Ensure the required keys exist in this JSON file
                 if args.x_key in d and args.y_key in d and "system_name" in d:
                     filename = os.path.splitext(os.path.basename(filepath))[0]
+                    # Capture the time the file was last modified/created
+                    file_time = os.path.getmtime(filepath) 
                     data.append({
                         args.x_key: d[args.x_key],
                         args.y_key: d[args.y_key],
                         'system_name': d['system_name'],
-                        'filename': filename
+                        'filename': filename,
+                        'timestamp': file_time  # Add it to our data
                     })
             except json.JSONDecodeError:
                 print(f"Warning: Could not parse {filepath}. Skipping.")
@@ -44,7 +47,7 @@ def main():
 
     # Convert to Pandas DataFrame and sort by the x-axis so lines draw correctly (left-to-right)
     df = pd.DataFrame(data)
-    df = df.sort_values(by=args.x_key)
+    df = df.sort_values(by='timestamp')
 
     # Plotting Setup
     plt.figure(figsize=(12, 7), dpi=150)

@@ -60,6 +60,10 @@ uint64_t get_threads(YAML::Node config) {
     return config["send_threads"].as<uint64_t>();
 }
 
+uint64_t get_append_req_threads(YAML::Node config) {
+    return config["append_req_threads"].as<uint64_t>();
+}
+
 /*Protocol type*/
 std::string get_protocol_type(YAML::Node config) {
     return config["protocol_type"].as<std::string>();
@@ -370,6 +374,10 @@ std::string get_multicast_addr(YAML::Node config) {
 
 std::vector<std::vector<std::string>> get_all_shards(YAML::Node config) {
     return config["all_shards"].as<std::vector<std::vector<std::string>>>();
+}
+
+std::vector<std::string> get_all_shards_multicast(YAML::Node config) {
+    return config["all_shards"].as<std::vector<std::string>>();
 }
 
 uint64_t get_ack_threshold(YAML::Node config) {

@@ -14,11 +14,11 @@ stor_ips = ["10.10.1.4"] #, "10.10.1.5", "10.10.1.6", "10.10.1.7","10.10.1.8", "
 stor_net_ifs = ["enp65s0f0np0"] #, "enp65s0f0np0", "enp65s0f0np0","enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0"] 
 ######## Client Network Info #######
 # This is the mac address of every client machine
-cli_macs = ["0c:42:a1:dd:5a:45"]
+cli_macs = ["0c:42:a1:dd:5a:45"] #, "0c:42:a1:dd:59:bc"]
 # This is the IP address of every client machine
-cli_ips = ["10.10.1.2"]
+cli_ips = ["10.10.1.2"] #, "10.10.1.4"]
 # This is the network interface the client machines use to send/receive
-cli_net_ifs = ["enp65s0f1np1"]
+cli_net_ifs = ["enp65s0f1np1","enp65s0f0np0"]
 ####### Switch Network information ########
 # NOTE : Only one software switch is supported at this time. I will need to update this TODO
 # This is the IP address of the software switch

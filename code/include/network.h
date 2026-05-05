@@ -35,6 +35,7 @@
  */
 
 const uint64_t MAX_PACKET_SIZE = 8192; // TODO put in the yaml
+const uint64_t BATCH_SIZE = 64; // TODO put in the yaml
 
 class Network {
     public:
@@ -55,6 +56,14 @@ class Network {
          * src_ip - the IP of the machine this network object currently lives on
          * pkt_types - these are the classes that packets will be sorted into when sent/received
          */
+	Network(std::string socket_type,
+                 uint64_t log_level,
+                 uint64_t batch_size,
+                 bool batch_on,
+		 uint64_t batch_timeout,
+                 std::string send_interface,
+                 std::string self_ip);
+
         Network(std::string send_port, 
                 std::string recv_port,
                 std::string socket_type,
@@ -85,8 +94,18 @@ class Network {
  	bool send_packet(std::unique_ptr<char[]> send_packet, uint64_t pkt_len, uint64_t pkt_type, int eth_type, std::array<uint8_t,6> dst_mac, in_addr_t dst_ip);
  
 
+        void stop_batch_threads();
 	int get_recv_socket();
         int setup_talker_socket(std::string dst_ip, std::string dst_port, bool use_multicast);
+	int setup_batch_socket(int port);
+	char* get_buf(int i);
+	struct mmsghdr get_msg(int i);
+	struct mmsghdr* get_msgs();
+	struct iovec* get_iovecs();
+	struct iovec get_iovec(int i);
+
+	int recv_many_packets(int batch_socket);
+	void send_many_packets(int num_received, int batch_socket);
         
     private:
 
@@ -105,6 +124,12 @@ class Network {
 	std::thread recv_thread;
 
 	std::unordered_map<std::string, int> port_to_fd;
+
+	struct mmsghdr msgs[BATCH_SIZE];
+	struct iovec iovecs[BATCH_SIZE];
+	struct sockaddr_in client_addrs[BATCH_SIZE];
+	char buffers[BATCH_SIZE][MAX_PACKET_SIZE]; // TODO: NEed this?
+
 		
 	tbb::concurrent_hash_map<std::string, int> concurrent_port_to_fd;
 	tbb::concurrent_queue<char*> concurrent_recv_q;
@@ -169,6 +194,7 @@ class Network {
         uint64_t total_num_threads;
 
         // Send Thread pool
+        std::vector<std::thread> append_req_threads;
         std::vector<std::thread> send_threads;
         std::mutex lock_send_thread_queue;
         std::condition_variable mutex_condition;

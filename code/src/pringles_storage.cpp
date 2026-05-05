@@ -51,8 +51,7 @@ LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
 				   get_interface(config),
 				   get_self_ip(config),
 				   get_multicast_addr(config),
-				   //use_shards,
-				   false,
+				   use_shards,
 				   false); 
 
     // Initialize storage server identity variables
@@ -120,13 +119,14 @@ void LogStorage::wait_to_finish() {
 }
 
 void LogStorage::receiver() {
-    spdlog::critical("network recv thread starting with tid = {}", gettid());
+    spdlog::critical("Storage receiver thread starting with tid = {}", gettid());
     pin_current_thread_linux(0);
     while (!end_thread) {
         char* recv_ptr = net->recv_packet();
 	if (!recv_ptr) {
 	    continue;
 	}
+	spdlog::debug("Received a packet in the storage!");
 	struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
 	if (ntohs(type_hdr->type) == ETH_APPEND_REQ) {
 	    spdlog::debug("ETH_APPEND_REQ");
@@ -157,6 +157,7 @@ void LogStorage::receiver() {
     }
 }
 
+// TODO: Make into an append server threadpool with recvmmsg & sendmmsg
 void LogStorage::append_server() {
     spdlog::critical("Network Storage Thread starting with TID = {}", gettid());
     spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
@@ -210,8 +211,9 @@ void LogStorage::append_server() {
              memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
              
              if (use_switch) {
-     	         spdlog::debug("Sending to the switch! IP: {} and Port: {}", switch_ip, switch_recv_port);
-                 net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, switch_recv_port, false);
+		 std::string send_switch_port  = "60009";
+     	         spdlog::debug("Sending to the switch! IP: {} and Port: {}", switch_ip, send_switch_port);
+                 net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, send_switch_port, false);
              } else {
      	         char buffer[INET_ADDRSTRLEN];
      	         if (inet_ntop(AF_INET, &batch_append_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {

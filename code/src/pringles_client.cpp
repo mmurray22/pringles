@@ -286,20 +286,28 @@ uint64_t LogClient::append(std::string entry) {
     memcpy(packet.get() + size_of_type_hdr + size_of_hdr, entry.c_str(), payload_size + 1);
 
     spdlog::debug("Size of packet: {} and size of app info: {} and size of hdr: {} with num entries {}", allocated_packet_size, payload.length(), size_of_hdr, ntohs(append_type_hdr.get()->num_entries));
-    bool res = false;
+    //bool res = false;
     if (use_switch) {
         spdlog::debug("Sending to the SWITCH at IP {} and port {}, recv at port {} and nonce {}", switch_ip, switch_receive_port, client_recv_port, append_nonce);
-        res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, switch_ip, switch_receive_port);
+	uint64_t send_cli_port  = 60008;
+        struct sockaddr_in server_addr;
+        memset(&server_addr, 0, sizeof(server_addr));
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(send_cli_port);
+        server_addr.sin_addr.s_addr = inet_addr(switch_ip.c_str());
+
+        sendto(net->get_recv_socket(), packet.get(), allocated_packet_size, MSG_CONFIRM, (const struct sockaddr *)&server_addr, sizeof(server_addr));
+        //res = net->send_new_client_udp_packet(std::move(packet), allocated_packet_size, switch_ip, send_switch_port);
     } else {
         for (uint64_t i = 0; i < stor_ips.size(); i++) {
             spdlog::debug("Sending to the STORAGE SERVER at IP {} and port {} at port {}", stor_ips[i], stor_receive_port, client_recv_port);
-            res = net->send_client_udp_packet(std::move(packet), allocated_packet_size, stor_ips[i], stor_receive_port);
+            net->send_client_udp_packet(std::move(packet), allocated_packet_size, stor_ips[i], stor_receive_port);
         }
     }
-    if (!res) {
+    /*if (!res) {
         spdlog::critical("Sending append to the system failed!");
 	return 0;
-    }
+    }*/
 
     bool got_quorum = false;
     uint64_t return_idx = 0;

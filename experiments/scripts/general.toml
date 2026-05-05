@@ -27,45 +27,31 @@ num_shards = 1
 # Name of the json file which will hold final results
 general_json_name = "json_name"
 # Name of the experiment
-experiment_name = "gcp_experiments"
+experiment_name = "sequence_only_cli_sat"
 # Supposed to be the git hash of the code that we are using for this experiment
 git_hash = "1b0aec5ee4e12df008d835842cafe794b9e77615" # TODO
 # Protocol name
 # Valid options include: pringles, scalog, kafka, speclog
 protocol_name = "pringles"
 num_servers_per_shard = 1
+append_req_threads = 1
+append_resp_threads = 1
+
+
 
 ###### THIS IS WHERE WE DEFINE EXPERIMENTS AND CHANGE EXPERIMENT VARIABLES ########
-#[[experiment]]
-#num_client_threads = 1
-#general_json_name = "one-client-pringles"
-#message_size = 100
-#experiment_duration = 10
-#num_servers_per_shard = 1
-#num_shards = 1
-#protocol_name = "pringles"
-#
-#[[experiment]]
-#num_client_threads = 2
-#general_json_name = "two-client-pringles"
-#message_size = 100
-#experiment_duration = 10
-#num_servers_per_shard = 1
-#num_shards = 1
-#protocol_name = "pringles"
-#
-#
-#[[experiment]]
-#num_client_threads = 4
-#general_json_name = "four-client-pringles"
-#message_size = 100
-#experiment_duration = 20
-#num_servers_per_shard = 1
-#num_shards = 1
-#protocol_name = "pringles"
-#
-###
-#
+[[experiment]]
+num_client_threads = 1
+general_json_name = "one-client-pringles"
+message_size = 100
+experiment_duration = 10
+num_servers_per_shard = 1
+num_shards = 1
+protocol_name = "pringles"
+append_req_threads = 5
+##
+####
+##
 #[[experiment]]
 #num_client_threads = 10
 #general_json_name = "ten-client-pringles"
@@ -74,15 +60,7 @@ num_servers_per_shard = 1
 #num_servers_per_shard = 1
 #num_shards = 1
 #protocol_name = "pringles"
-##
-#[[experiment]]
-#num_client_threads = 15
-#general_json_name = "fifteen-client-pringles"
-#message_size = 100
-#experiment_duration = 20
-#num_servers_per_shard = 1
-#num_shards = 1
-#protocol_name = "pringles"
+#append_req_threads = 5
 ##
 #[[experiment]]
 #num_client_threads = 20
@@ -92,6 +70,7 @@ num_servers_per_shard = 1
 #num_servers_per_shard = 1
 #num_shards = 1
 #protocol_name = "pringles"
+#append_req_threads = 5
 #
 #[[experiment]]
 #num_client_threads = 30
@@ -101,16 +80,8 @@ num_servers_per_shard = 1
 #num_servers_per_shard = 1
 #num_shards = 1
 #protocol_name = "pringles"
-##
-#[[experiment]]
-#num_client_threads = 40
-#general_json_name = "forty-client-pringles"
-#message_size = 100
-#experiment_duration = 10
-#num_servers_per_shard = 1
-#num_shards = 1
-#protocol_name = "pringles"
-##
+#append_req_threads = 5
+###
 #[[experiment]]
 #num_client_threads = 50
 #general_json_name = "fifty-client-pringles"
@@ -119,25 +90,8 @@ num_servers_per_shard = 1
 #num_servers_per_shard = 1
 #num_shards = 1
 #protocol_name = "pringles"
-##
-[[experiment]]
-num_client_threads = 200
-general_json_name = "twohun-client-pringles"
-message_size = 100
-experiment_duration = 20
-num_servers_per_shard = 1
-num_shards = 1
-protocol_name = "pringles"
-##
-#[[experiment]]
-#num_client_threads = 80
-#general_json_name = "eighty-client-pringles"
-#message_size = 100
-#experiment_duration = 10
-#num_servers_per_shard = 1
-#num_shards = 1
-#protocol_name = "pringles"
-##
+#append_req_threads = 7
+###
 #[[experiment]]
 #num_client_threads = 100
 #general_json_name = "onehun-client-pringles"
@@ -146,6 +100,68 @@ protocol_name = "pringles"
 #num_servers_per_shard = 1
 #num_shards = 1
 #protocol_name = "pringles"
+#append_req_threads = 9
+###
+#[[experiment]]
+#num_client_threads = 170
+#general_json_name = "onesevenhun-client-pringles"
+#message_size = 100
+#experiment_duration = 10
+#num_servers_per_shard = 1
+#num_shards = 1
+#protocol_name = "pringles"
+#append_req_threads = 12
+#
+#[[experiment]]
+#num_client_threads = 280
+#general_json_name = "twoeighthun-client-pringles"
+#message_size = 100
+#experiment_duration = 10
+#num_servers_per_shard = 1
+#num_shards = 1
+#protocol_name = "pringles"
+#append_req_threads = 15
+#
+#[[experiment]]
+#num_client_threads = 380
+#general_json_name = "threeeighthun-client-pringles"
+#message_size = 100
+#experiment_duration = 10
+#num_servers_per_shard = 1
+#num_shards = 1
+#protocol_name = "pringles"
+#append_req_threads = 15
+##
+#[[experiment]]
+#num_client_threads = 500
+#general_json_name = "fivehun-client-pringles"
+#message_size = 100
+#experiment_duration = 10
+#num_servers_per_shard = 1
+#num_shards = 1
+#protocol_name = "pringles"
+#append_req_threads = 20
+#
+#[[experiment]]
+#num_client_threads = 850
+#general_json_name = "eightfivehun-client-pringles"
+#message_size = 100
+#experiment_duration = 10
+#num_servers_per_shard = 1
+#num_shards = 1
+#protocol_name = "pringles"
+#append_req_threads = 20
+#
+#[[experiment]]
+#num_client_threads = 1000
+#general_json_name = "onethousand-client-pringles"
+#message_size = 100
+#experiment_duration = 10
+#num_servers_per_shard = 1
+#num_shards = 1
+#protocol_name = "pringles"
+#append_req_threads = 25
+
 #[[experiment]]
 #num_client_threads = 1
 #general_json_name = "one-client-scalog"
