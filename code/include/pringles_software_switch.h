@@ -61,7 +61,10 @@ class LogSoftwareSwitch {
 	std::atomic<uint64_t> max_idx; 
 	tbb::concurrent_vector<std::thread> send_threads;
 	tbb::concurrent_vector<std::thread> append_req_threads;
+	tbb::concurrent_vector<std::thread> append_resp_threads;
 	uint64_t num_append_req_threads;
+	uint64_t num_append_resp_threads;
+	std::vector<int> append_socket;
 
 	tbb::concurrent_vector<std::vector<std::string>> subscribe_stor;
 	tbb::concurrent_hash_map<uint32_t, tbb::concurrent_vector<std::vector<std::string>>> stream_subscribe_stor;
@@ -101,8 +104,8 @@ class LogSoftwareSwitch {
 
 	// Thread functions
 	void receiver();
-        void append_request(int append_port, std::unique_ptr<Network> append_net);
-	void append_response(int append_port, std::unique_ptr<Network> append_net);
+        void append_request(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id);
+	void append_response(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id);
 	void read_request();
 	void read_response();
 	void tail_request();

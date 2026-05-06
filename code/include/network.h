@@ -96,6 +96,7 @@ class Network {
 
         void stop_batch_threads();
 	int get_recv_socket();
+	int create_random_port_socket();
         int setup_talker_socket(std::string dst_ip, std::string dst_port, bool use_multicast);
 	int setup_batch_socket(int port);
 	char* get_buf(int i);

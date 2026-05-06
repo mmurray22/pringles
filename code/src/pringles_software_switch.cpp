@@ -104,7 +104,6 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
     // Thread
     //recv_thread = std::thread(&LogSoftwareSwitch::receiver, this);
 
-    //append_req_thread = std::thread(&LogSoftwareSwitch::append_request, this);
     int append_req_port = 60008;
     this->num_append_req_threads = get_append_req_threads(config);
     for (uint64_t i = 0; i < num_append_req_threads; i++) {
@@ -116,11 +115,18 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
 				   get_batch_timeout(config),
 				   get_interface(config),
 				   get_self_ip(config));
-        append_req_threads.emplace_back(std::thread(&LogSoftwareSwitch::append_request, this, append_req_port, std::move(append_net)));
+        int random_socket = append_net->create_random_port_socket();
+        if (random_socket < 0) {
+            append_net->stop_batch_threads();
+            return;
+        }
+	append_socket.push_back(random_socket);
+        append_req_threads.emplace_back(std::thread(&LogSoftwareSwitch::append_request, this, append_req_port, std::move(append_net), i));
     }
     
     int append_resp_port = 60009;
-    for (uint64_t j = 0; j < 1; j++) {
+    this->num_append_resp_threads = 15; // get_append_resp_threads(config);
+    for (uint64_t j = 0; j < num_append_resp_threads; j++) {
 	std::unique_ptr<Network> append_net = std::make_unique<Network>( 
 				   get_socket_type(config),
                                    get_log_level(config),
@@ -129,7 +135,7 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
 				   get_batch_timeout(config),
 				   get_interface(config),
 				   get_self_ip(config));
-        append_resp_thread = std::thread(&LogSoftwareSwitch::append_response, this, append_resp_port, std::move(append_net));
+        append_resp_threads.emplace_back(std::thread(&LogSoftwareSwitch::append_response, this, append_resp_port, std::move(append_net), j));
     }
     /*read_req_thread = std::thread(&LogSoftwareSwitch::read_request, this);
     read_resp_thread = std::thread(&LogSoftwareSwitch::read_response, this);
@@ -146,11 +152,14 @@ LogSoftwareSwitch::~LogSoftwareSwitch() {
     sub_cv.notify_all();
     cli_send_cv.notify_all();
     spdlog::critical("Closing up everything!");
-    append_resp_thread.join();
     /*read_req_thread.join();
     read_resp_thread.join();
     tail_req_thread.join();
     sub_thread.join();*/
+    for (uint64_t i = 0; i < num_append_resp_threads; i++) { // TODO toggle?
+        append_resp_threads[i].join();
+    }
+
     for (uint64_t i = 0; i < num_append_req_threads; i++) { // TODO toggle?
         append_req_threads[i].join();
     }
@@ -239,13 +248,15 @@ void LogSoftwareSwitch::receiver() {
 }
 
 
-void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network> append_net) {
+void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id) {
     spdlog::critical("APPEND REQUEST thread starting with tid = {}", gettid());
     int batch_socket = append_net->setup_batch_socket(append_port);
     if (batch_socket < 0) {
         append_net->stop_batch_threads();
 	return;
     }
+    
+    int send_socket = append_socket[thread_id];
 
     uint64_t pkt_req_cntr = 0;
     spdlog::debug("Created batch socket {}!", batch_socket);
@@ -342,7 +353,7 @@ void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network>
 	struct mmsghdr* msgs = append_net->get_msgs();
 	struct iovec* iovecs = append_net->get_iovecs();
 	spdlog::debug("Sending the batch of processed messages out!");
-        sendmmsg(batch_socket, msgs, num_received, 0);
+        sendmmsg(send_socket, msgs, num_received, 0); // REPLACED batch_socket with random_socket TODO
         for (int i = 0; i < num_received; i++) {
             msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
             iovecs[i].iov_len = MAX_PACKET_SIZE;
@@ -353,163 +364,21 @@ void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network>
     spdlog::critical("Packet request counter: {}", pkt_req_cntr);
 }
 
-/*void LogSoftwareSwitch::append_request() {
-    spdlog::critical("APPEND REQUEST Thread starting with TID = {}", gettid());
-    pin_current_thread_linux(1);
-    uint64_t pkt_req_cntr = 0;
-    size_t size_of_hdr = get_ring_append_size();
-    size_t size_of_type_hdr = get_ring_type_size();
-    std::vector<double> lats;
-
-
-    // Request header
-    while (!end_thread) {
-	//auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-	//double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
-
-    	// Wait to receive the packet 
-    	char* recv_ptr;
-       	//if (append_req_q.empty() || !append_req_q.try_pop(recv_ptr) || !recv_ptr) {
- 	//   continue;
-	if (!append_req_q.try_pop(recv_ptr)) {
-           std::unique_lock<std::mutex> lock(append_req_q_mutex);
-    	   append_req_cv.wait(lock, [this] {return end_thread || !append_req_q.empty();});
-    	   if (!append_req_q.try_pop(recv_ptr) || !recv_ptr) {
-    	       if (use_store) {
-    	           for (uint64_t i = 0; i < stor_ips.size(); i++) {
-                       net->send_udp_packet(NULL, 0, stor_ips[i], stor_receive_port, false); // TODO What is this doing here??
-    	           }  
-    	       }
-               continue;
-           }
-	}
-
-        //}
-    	
-    	// Continue waiting for more packets if 1) recv_ptr is NULL and 2) max timeout hasn't been reached
-    	// Isolate the ethernet header from the receive ptr
-    	// Get the correct header (ring append entry) from the received packet
-        struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-	max_idx += 1;
-	append_entry->g_idx = htonl(max_idx);
-	spdlog::debug("Global sequence number is now: {}", ntohl(append_entry->g_idx));
-        uint64_t pkt_size = size_of_type_hdr + size_of_hdr + ntohl(append_entry->payload_size) + 1;
-            
-        // If the batch isn't full and the timeout not expired exceed
-    	// Create the packet to send to the storage server with the running packet size and the additional header
-        // Send the network packet
-        bool res = false;
-    	if (use_store) {
-	    if (use_shards) {
-	        std::string multicast_addr;
-	        tbb::concurrent_vector<std::string> shard;
-	        uint64_t key_id = 0;
-	        if (use_streams) {
-	    	key_id = ntohl(append_entry->stream_id);
-	    	spdlog::debug("Stream, yes shard Key ID for which shard to send to: {}", key_id);
-	            tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
-	            if (stream_id_to_shard_id.find(acc, key_id)) {
-	                //multicast_addr = all_shards[acc->second];
-	                shard = all_shards[acc->second];
-	            } else {
-                        //multicast_addr = all_shards[next_available_shard];
-                        shard = all_shards[next_available_shard];
-	                tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
-	                bool insert_succ = stream_id_to_shard_id.insert(put_acc, key_id);
-	    	    if (insert_succ) {
-	    	        put_acc->second = next_available_shard;
-	    	    }
-	    	    put_acc.release();
-	                next_available_shard = (next_available_shard + 1) % all_shards.size();
-	            }
-	    	spdlog::debug("Stream multicast addr: {}", multicast_addr);
-	        } else { // If streams aren't used, then sequence number will be used
-	            key_id = ntohl(append_entry->g_idx) % all_shards.size(); // TODO bit shift?
-	    	spdlog::debug("No stream, yes shard Key ID for which shard to send to: {}", key_id);
-	    	tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
-	            if (seq_idx_to_shard_id.find(acc, key_id)) {
-	                //multicast_addr = all_shards[acc->second];
-	                shard = all_shards[acc->second];
-	            } else {
-                        //multicast_addr = all_shards[next_available_shard];
-                        shard = all_shards[next_available_shard];
-	                tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
-	                bool insert_succ = seq_idx_to_shard_id.insert(put_acc, key_id);
-	    	    if (insert_succ) {
-	    	        put_acc->second = next_available_shard;
-	    	    }
-	    	    put_acc.release();
-	                next_available_shard = (next_available_shard + 1) % all_shards.size();
-	            }
-	    	spdlog::debug("No stream multicast addr: {}", multicast_addr);
-	        }
-	        std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-        	    memcpy(reply_packet.get(), recv_ptr, pkt_size);
-	        for (std::string ip : shard) {
-	    	 spdlog::debug("Sending to IP: {}", ip);
-	    	 std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-        	    	 memcpy(reply_packet.get(), recv_ptr, pkt_size);
-	             net->send_udp_packet(std::move(reply_packet), pkt_size, ip, stor_receive_port, false);
-	        }
-	    } else {
-    	         for (uint64_t i = 0; i < stor_ips.size(); i++) {
-	             spdlog::debug("Req payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}",  ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
-        	     std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-    	             // Copy batch header into the reply packet, and the batch content 
-        	     memcpy(reply_packet.get(), recv_ptr, pkt_size);
-	             res = net->send_udp_packet(std::move(reply_packet), pkt_size, stor_ips[i], stor_receive_port, false);
-    	         }
-	    }
-    	} else {
-	    res = true;
-            //struct ring_type* append_type = (struct ring_type*)(recv_ptr + sizeof(struct ring_type));
-	    //spdlog::debug("Final # entry: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
-	    //bool empty = cli_send_q.empty();
-	    cli_send_q.push(recv_ptr);
-            {
-	        std::unique_lock<std::mutex> lock(cli_send_q_mutex);
-            }
-	    cli_send_cv.notify_all();
-
-
-            //std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(pkt_size);
-    	    //Copy batch header into the reply packet, and the batch content 
-            //memcpy(reply_packet.get(), recv_ptr, pkt_size);
-	    //((struct ring_type*)recv_ptr)->type = htons(ETH_APPEND_RESP);
-    	    //((struct ring_type*)reply_packet.get())->type = htons(ETH_APPEND_RESP);
-    
-	    std::string client_ip = get_quad_ip(append_entry->client_ip);
-            net->raw_send_client_udp_packet(recv_ptr, pkt_size, client_ip, std::to_string(ntohs(append_entry->recv_port)));
-	    free(recv_ptr);
-    	    res = true;
-    	}
-    	pkt_req_cntr += 1;
-        if (!res) {
-            continue;
-    	}
-    }
-    //double final_avg_latency = std::accumulate(lats.begin(), lats.end(), 0.0) / lats.size();
-    //final_avg_latency *= 1000;
-
-    spdlog::critical("APPEND REQUEST Done here! Req cntr: {}", pkt_req_cntr); 
-    //spdlog::critical("Done here! Req cntr: {} and Latencies: {}", pkt_req_cntr, final_avg_latency); 
-    //spdlog::debug("Stats results: Lat: {}, Tput: {}, Total Ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
-}*/
-
-void LogSoftwareSwitch::append_response(int append_port, std::unique_ptr<Network> append_net) {
+void LogSoftwareSwitch::append_response(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id) {
     spdlog::critical("APPEND RESPONSE Thread starting with TID = {}", gettid());
     pin_current_thread_linux(2);
-
+    
     int batch_socket = append_net->setup_batch_socket(append_port);
     if (batch_socket < 0) {
         append_net->stop_batch_threads();
 	return;
     }
     uint64_t pkt_resp_cntr = 0;
+    int recv_socket = append_socket[thread_id];
     
     spdlog::debug("Created batch socket {}!", batch_socket);
     while (!end_thread) {
-	int num_received = append_net->recv_many_packets(batch_socket);
+	int num_received = append_net->recv_many_packets(recv_socket);
 	if (num_received < 0) {
 	    continue;
 	}

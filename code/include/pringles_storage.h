@@ -2,6 +2,7 @@
 #include <optional>
 #include <set>
 #include <tbb/concurrent_unordered_set.h>
+#include <tbb/concurrent_vector.h>
 #include "network.h"
 #include "base_storage.h"
 #include "measure.h"
@@ -48,6 +49,9 @@ class LogStorage : public BaseStorage {
 
 	std::string switch_ip;
 	std::string switch_recv_port;
+	uint64_t num_append_stor_threads;
+	tbb::concurrent_vector<std::thread> append_stor_threads;
+
 	bool use_switch;
 	std::thread recv_thread;
 	std::thread append_thread;
@@ -71,6 +75,8 @@ class LogStorage : public BaseStorage {
 
 	// Functions
 	void receiver();
-	void append_server();
+	void append_server(int append_port, std::unique_ptr<Network> append_net);
 	void read_server();
+
+	std::string get_quad_ip(uint32_t ip_addr);
 };

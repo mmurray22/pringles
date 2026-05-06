@@ -70,7 +70,7 @@ use_switch = 1
 # Boolean indicates whetehr the current experiments use the HARDWARE switch or not TODO actually don't use this yet, is it needed?
 use_hardware_switch = 0
 # Boolean indicates whether the current experiments use the storage server or not (if not then cli <-> switches)
-use_store = 0
+use_store = 1
 # Boolean indicates whether the current experiments do sharding or not (if not then cli sends to all storage servers)
 use_shard = 0
 # Number of packets in a batch

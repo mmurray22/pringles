@@ -182,6 +182,31 @@ std::string Network::get_recv_port() {
     return RECV_PORT;
 }
 
+// Creates a UDP socket bound to a random OS-assigned ephemeral port
+int Network::create_random_port_socket() {
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    struct sockaddr_in local_addr;
+    memset(&local_addr, 0, sizeof(local_addr));
+    
+    local_addr.sin_family = AF_INET;
+    local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    local_addr.sin_port = htons(0); // The magic zero: OS assigns a random port
+
+    // Bind the socket to apply the random port assignment
+    if (bind(sockfd, (const struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
+        perror("Bind to port 0 failed");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+
+    return sockfd;
+}
+
 unsigned short Network::checksum(unsigned short *buf, int nwords) {
     unsigned long sum;
     for(sum = 0; nwords > 0; nwords--) {

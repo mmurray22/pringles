@@ -27,7 +27,7 @@ num_shards = 1
 # Name of the json file which will hold final results
 general_json_name = "json_name"
 # Name of the experiment
-experiment_name = "sequence_only_cli_sat"
+experiment_name = "e2e_testing"
 # Supposed to be the git hash of the code that we are using for this experiment
 git_hash = "1b0aec5ee4e12df008d835842cafe794b9e77615" # TODO
 # Protocol name
@@ -40,18 +40,16 @@ append_resp_threads = 1
 
 
 ###### THIS IS WHERE WE DEFINE EXPERIMENTS AND CHANGE EXPERIMENT VARIABLES ########
-[[experiment]]
-num_client_threads = 1
-general_json_name = "one-client-pringles"
-message_size = 100
-experiment_duration = 10
-num_servers_per_shard = 1
-num_shards = 1
-protocol_name = "pringles"
-append_req_threads = 5
-##
-####
-##
+#[[experiment]]
+#num_client_threads = 1
+#general_json_name = "one-client-pringles"
+#message_size = 100
+#experiment_duration = 10
+#num_servers_per_shard = 1
+#num_shards = 1
+#protocol_name = "pringles"
+#append_req_threads = 15
+######
 #[[experiment]]
 #num_client_threads = 10
 #general_json_name = "ten-client-pringles"
@@ -60,7 +58,7 @@ append_req_threads = 5
 #num_servers_per_shard = 1
 #num_shards = 1
 #protocol_name = "pringles"
-#append_req_threads = 5
+#append_req_threads = 15
 ##
 #[[experiment]]
 #num_client_threads = 20
@@ -70,18 +68,17 @@ append_req_threads = 5
 #num_servers_per_shard = 1
 #num_shards = 1
 #protocol_name = "pringles"
-#append_req_threads = 5
-#
-#[[experiment]]
-#num_client_threads = 30
-#general_json_name = "thirty-client-pringles"
-#message_size = 100
-#experiment_duration = 30
-#num_servers_per_shard = 1
-#num_shards = 1
-#protocol_name = "pringles"
-#append_req_threads = 5
-###
+#append_req_threads = 15
+[[experiment]]
+num_client_threads = 30
+general_json_name = "thirty-client-pringles"
+message_size = 100
+experiment_duration = 30
+num_servers_per_shard = 1
+num_shards = 1
+protocol_name = "pringles"
+append_req_threads = 15
+##
 #[[experiment]]
 #num_client_threads = 50
 #general_json_name = "fifty-client-pringles"
@@ -90,8 +87,8 @@ append_req_threads = 5
 #num_servers_per_shard = 1
 #num_shards = 1
 #protocol_name = "pringles"
-#append_req_threads = 7
-###
+#append_req_threads = 15
+####
 #[[experiment]]
 #num_client_threads = 100
 #general_json_name = "onehun-client-pringles"
@@ -100,7 +97,7 @@ append_req_threads = 5
 #num_servers_per_shard = 1
 #num_shards = 1
 #protocol_name = "pringles"
-#append_req_threads = 9
+#append_req_threads = 15
 ###
 #[[experiment]]
 #num_client_threads = 170
