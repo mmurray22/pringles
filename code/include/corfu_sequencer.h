@@ -38,8 +38,6 @@ class CorfuSequencer {
 
         std::vector<std::string> cli_ips;
 
-        std::string switch_ip;
-
         std::string send_port;
 
         uint64_t num_pkt_types;

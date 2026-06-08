@@ -1,1 +1,1 @@
-sequencer GetToken
+write hello

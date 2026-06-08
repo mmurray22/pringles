@@ -62,13 +62,13 @@ void CorfuSequencer::run_sequencer_thread() {
             memcpy(packet.get(), token_packet->c_str(), allocated_packet_size);
             packet[token_packet->length()] = '\0';
 
-            int cid = std::stoi(packet_contents.clientid()); // TODO: ADD ERROR CHECK FOR THIS!!
+            int cid = packet_contents.clientid();
 
             net->send_client_udp_packet(
                 std::move(packet), 
                 allocated_packet_size, 
                 static_cast<int>(SeqPacketType::sendtoken),
-                ETH_CLI_SEQ, 
+                ETH_CLI_SEQ,
                 cli_ips.at(cid),
                 send_port
             );

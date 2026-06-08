@@ -290,6 +290,19 @@ std::vector<std::string> get_seq_ips(const YAML::Node& config) {
     return std::vector<std::string>{};
 }
 
+std::vector<std::string> get_storage_ips(const YAML::Node& config) {
+    if (config["packet_types"]) {
+        for (const auto& node : config["packet_types"]) {
+            if (node["type"].as<std::string>() == "storage") {
+                return node["ips"].as<std::vector<std::string>>();
+            }
+        }
+    }
+    
+    spdlog::warn("Could not find 'storage' in packet_types. Returning empty IP list.");
+    return std::vector<std::string>{};
+}
+
 std::array<uint8_t,6> get_stor_mac(YAML::Node config) {
     unsigned int bytes[6];
     std::string mac = config["stor_macs"].as<std::vector<std::string>>()[0]; // TODO

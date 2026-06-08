@@ -25,7 +25,7 @@ enum SequencerType {
 enum PacketType {
     	append,
     	readentry,
-	trim,
+		trim,
         seal,
         gettoken
 };

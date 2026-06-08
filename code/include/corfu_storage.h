@@ -8,9 +8,19 @@
 #include "trace.h"
 
 
+enum StorageType {
+    ack,
+    err_sealed,
+    err_unwritten,
+    err_written,
+    err_deleted,
+    store_read,
+    store_seal
+};
+
 class CorfuStorage : public BaseStorage {
     public:
-        CorfuStorage(uint64_t ssid, std::shared_ptr<Network> net);
+        CorfuStorage(uint64_t ssid, std::string input_file);
         ~CorfuStorage();
 
         // response functions for when the server receives certain packets over the network
@@ -26,15 +36,24 @@ class CorfuStorage : public BaseStorage {
 
         void server();
 
+        bool store(uint64_t idx, std::string entry) override;
+        std::string get(uint64_t idx) override;
+
     protected:
         struct map_entry {
             bool deleted;
             std::string contents;
         };
 
+        std::thread storage_thread;
+
         std::unordered_map<uint64_t, map_entry> storage_map;
+        std::vector<std::string> cli_ips;
 
         std::shared_ptr<Network> net;
         std::thread server_thread;
         std::atomic<bool> terminate{false};
+
+        std::string send_port;
+        uint64_t num_pkt_types;
 };

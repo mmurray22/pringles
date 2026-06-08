@@ -26,7 +26,6 @@
 #include "utils.h"
 #include "spdlog/spdlog.h"
 #include "yaml-cpp/yaml.h"
-#define RECEIVE_PORT 3149
 
 #include "corfuclient.pb.h"
 #include "corfustorage.pb.h"
@@ -38,11 +37,11 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id, CorfuSequen
    this->cid = thread_id;
    YAML::Node config = YAML::LoadFile(input_file);
    num_pkt_types = get_num_pkt_types(config);
-   std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
-   if (mac_addrs.size() < 1) {
-       spdlog::critical("Unable to parse mac address!");
-       throw;
-   }
+//    std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
+//    if (mac_addrs.size() < 1) {
+//        spdlog::critical("Unable to parse mac address!");
+//        throw;
+//    }
   
    this->num_work_threads = get_num_client_threads(config);
    // Create network

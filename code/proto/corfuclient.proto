@@ -8,7 +8,7 @@ message Payload {
     optional Read read = 3;
     optional Trim trim = 4;
     optional GetToken token_req = 5;
-    string clientID = 6;
+    int64 clientID = 6;
     optional Seal seal = 7;
 }
 
