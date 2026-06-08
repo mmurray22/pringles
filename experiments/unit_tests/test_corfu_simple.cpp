@@ -75,7 +75,7 @@ int dummy_client(std::string input_file) {
     }
 
     if (!msg && read_time >= TIMEOUT) {
-        spdlog::critical("We did not receive anything from server before timeout");
+        spdlog::critical("We did not receive anything from sequencer before timeout");
         return 1; // failure
     }
 
@@ -94,6 +94,8 @@ int dummy_client(std::string input_file) {
     spdlog::debug("append packet is of size: {}", allocated_packet_size);
     packet = std::make_unique<char[]>(allocated_packet_size);
     memcpy(packet.get(), append_packet->c_str(), allocated_packet_size);
+
+    spdlog::info("client {} is appending {}", cid, entry);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
@@ -117,7 +119,7 @@ int dummy_client(std::string input_file) {
         return 1; // failure
     }
 
-    // recv packet from the sequencer
+    // recv packet from storage server
     corfustorage::Payload stor_packet_contents = corfu_storage_deserialize_str_entry(std::make_unique<std::string>(msg));
 
     bool ack_code = stor_packet_contents.ack().ack_code();
@@ -128,7 +130,42 @@ int dummy_client(std::string input_file) {
         spdlog::info("cid {} did not receive an ack from storage", cid);
     }
 
-    return log_idx;
+    // CLIENT READ VALUE WRITTEN
+    std::unique_ptr<std::string> read_packet = corfu_client_serialize_str_entry("", CORFU_READ_PROTO_TYPE, cid, log_idx, 0);
+    allocated_packet_size = read_packet->length() + 1;
+    spdlog::debug("read packet is of size: {}", allocated_packet_size);
+    packet = std::make_unique<char[]>(allocated_packet_size);
+    memcpy(packet.get(), read_packet->c_str(), allocated_packet_size);
+    net->send_client_udp_packet(
+        std::move(packet), 
+        allocated_packet_size,
+        static_cast<int>(PacketType::readentry), 
+        ETH_CLI_SEQ, 
+        seq_ips.at(0),
+        "4952" // THIS IS HARDCODED, FIND A BETTER FIX TODO
+    );
+    msg = net->recv_packet();
+
+    // start timer
+    start_time = std::chrono::high_resolution_clock::now();
+    read_time = std::chrono::high_resolution_clock::duration::zero();
+    while (read_time < TIMEOUT && !msg) {
+        msg = net->recv_packet();
+        read_time = std::chrono::high_resolution_clock::now() - start_time;
+    }
+
+    if (!msg && read_time >= TIMEOUT) {
+        spdlog::critical("We did not receive anything from server before timeout");
+        return 1; // failure
+    }
+
+    // recv packet from storage server
+    corfustorage::Payload read_packet_contents = corfu_storage_deserialize_str_entry(std::make_unique<std::string>(msg));
+
+    std::string read_content = read_packet_contents.read().content();
+    spdlog::info("read request from client {} is: {}", cid, read_content);
+
+    return 0;
 }
 
 int main(int argc, char* argv[]) {

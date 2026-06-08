@@ -7,6 +7,8 @@
 
 // const uint64_t MAX_WAIT_TIME = 100;
 
+//overall TODO: remove redundancies (ex. cid, error checking dupes, etc.)
+
 CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
     : ssid(ssid), s_epoch(0), mark(0), storage_map(), terminate(false)
 {
@@ -56,7 +58,7 @@ void CorfuStorage::write(corfuclient::Payload msg) {
 
         int cid = msg.clientid();
 
-        spdlog::info("server {} returning err_sealed from cid {}'s append req", ssid, cid);
+        spdlog::info("storage {} returning err_sealed from cid {}'s append req", ssid, cid);
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
@@ -84,7 +86,7 @@ void CorfuStorage::write(corfuclient::Payload msg) {
 
             int cid = msg.clientid();
 
-            spdlog::info("server {} returning err_deleted from cid {}'s append req", ssid, cid);
+            spdlog::info("storage {} returning err_deleted from cid {}'s append req", ssid, cid);
             net->send_client_udp_packet(
                 std::move(packet), 
                 allocated_packet_size, 
@@ -103,7 +105,7 @@ void CorfuStorage::write(corfuclient::Payload msg) {
 
             int cid = msg.clientid();
 
-            spdlog::info("server {} returning err_written from cid {}'s append req", ssid, cid);
+            spdlog::info("storage {} returning err_written from cid {}'s append req", ssid, cid);
             net->send_client_udp_packet(
                 std::move(packet), 
                 allocated_packet_size, 
@@ -127,7 +129,7 @@ void CorfuStorage::write(corfuclient::Payload msg) {
     packet[ack_packet->length()] = '\0';
     int cid = msg.clientid();
 
-    spdlog::info("server {} returning ack from cid {}'s append req", ssid, cid);
+    spdlog::info("storage {} returning ack from cid {}'s append req", ssid, cid);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
@@ -150,7 +152,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
 
         int cid = msg.clientid();
 
-        spdlog::info("server {} returning err_sealed from cid {}'s read req", ssid, cid);
+        spdlog::info("storage {} returning err_sealed from cid {}'s read req", ssid, cid);
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
@@ -176,7 +178,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
 
         int cid = msg.clientid();
 
-        spdlog::info("server {} returning err_unwritten from cid {}'s read req", ssid, cid);
+        spdlog::info("storage {} returning err_unwritten from cid {}'s read req", ssid, cid);
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
@@ -199,7 +201,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
 
         int cid = msg.clientid();
         
-        spdlog::info("server {} returning err_deleted from cid {}'s read req", ssid, cid);
+        spdlog::info("storage {} returning err_deleted from cid {}'s read req", ssid, cid);
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
@@ -220,7 +222,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
 
     int cid = msg.clientid();
 
-    spdlog::info("server {} returning contents from cid {}'s read req", ssid, cid);
+    spdlog::info("storage {} returning contents from cid {}'s read req", ssid, cid);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
@@ -246,7 +248,7 @@ void CorfuStorage::storage_delete(corfuclient::Payload msg) {
     packet[ack_packet->length()] = '\0';
     int cid = msg.clientid();
 
-    spdlog::info("server {} returning ack from cid {}'s trim req", ssid, cid);
+    spdlog::info("storage {} returning ack from cid {}'s trim req", ssid, cid);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
@@ -271,7 +273,7 @@ void CorfuStorage::seal(corfuclient::Payload msg) {
     packet[sealed_packet->length()] = '\0';
     int cid = msg.clientid();
 
-    spdlog::info("server {} returning sealed from cid {}'s seal req", ssid, cid);
+    spdlog::info("storage {} returning sealed from cid {}'s seal req", ssid, cid);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
