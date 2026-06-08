@@ -14,7 +14,7 @@ packet_types:
   - type: "sequencer"
     ips: ["127.0.0.1"]
   - type: "client"
-    ips: ["127.0.0.1"]
+    ips: ["127.0.0.1", "127.0.0.1"]
 protocol_type: "CORFU"
 sequencer_type: 1
 storage_type: 1

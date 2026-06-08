@@ -15,22 +15,20 @@
 #include "corfu_sequencer.h"
 #include "utils.h"
 
-int dummy_client(std::string input_file) {
+int dummy_client(std::string input_file, uint64_t cid) {
    // Get packet types for sending/receiving
    YAML::Node config = YAML::LoadFile(input_file);
 
    uint64_t num_pkt_types = 0;
-   uint64_t cid;
 
    num_pkt_types = get_num_pkt_types(config);
-   cid = 0;
 
    std::vector<std::string> seq_ips = get_seq_ips(config);
   
    // Create network
    bool run_threads = false;
    std::string client_send_port = std::to_string(get_recv_port(config));
-   std::string client_recv_port = std::to_string(get_send_port(config));
+   std::string client_recv_port = std::to_string(get_send_port(config) + cid);
 
    std::unique_ptr<Network> net = std::make_unique<Network>(
     client_send_port, 
@@ -45,7 +43,7 @@ int dummy_client(std::string input_file) {
     num_pkt_types,
     run_threads
     );
-    spdlog::info("Corfu Client: net init");
+    spdlog::info("Corfu Client {}: net init", cid);
 
     std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
     
@@ -67,8 +65,8 @@ int dummy_client(std::string input_file) {
         allocated_packet_size, 
         static_cast<int>(PacketType::gettoken), 
         ETH_CLI_SEQ, 
-        seq_ips.at(0),
-        std::to_string(get_recv_port(config))
+        seq_ips[0],
+        client_send_port
     );
     char* msg = net->recv_packet();
 
@@ -99,19 +97,26 @@ int main(int argc, char* argv[]) {
         spdlog::critical("Not enough arguments provided! Need YAML file");
     }
     std::string cli_input_file = std::string(argv[1]);
-    // std::string seq_input_file = std::string(argv[2]);
-    // std::string stor_input_file = std::string(argv[3]);
     
     YAML::Node config = YAML::LoadFile(cli_input_file);
     std::unique_ptr<CorfuSequencer> seq = std::make_unique<CorfuSequencer>(cli_input_file);
 
     spdlog::info("creating dummy client thread");
-    std::thread cli_thread(dummy_client, cli_input_file);
-    //std::thread(storage, stor_input_file);
-    
+    std::vector<std::thread> client_threads;
+    client_threads.reserve(5);
 
-    /** join threads **/
-    cli_thread.join();
-    spdlog::info("joined on client thread, exiting");
+    for (int i = 0; i < 5; i++) {
+        client_threads.emplace_back(dummy_client, cli_input_file, i);
+    }
+
+    for (int i = 0; i < 5; i++) {
+        if (client_threads[i].joinable()) {
+            client_threads[i].join();
+            spdlog::info("joined on client thread {}", i);
+        }
+    }
+
+    spdlog::info("all client threads joined");
+
     return 0;
 }
