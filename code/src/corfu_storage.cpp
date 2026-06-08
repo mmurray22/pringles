@@ -56,12 +56,13 @@ void CorfuStorage::write(corfuclient::Payload msg) {
 
         int cid = msg.clientid();
 
+        spdlog::info("server {} returning err_sealed from cid {}'s append req", ssid, cid);
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
             static_cast<int>(StorageType::err_sealed),
             ETH_CLI_SEQ, 
-            cli_ips.at(cid),
+            cli_ips[cid],
             send_port
         );
         return;
@@ -83,12 +84,13 @@ void CorfuStorage::write(corfuclient::Payload msg) {
 
             int cid = msg.clientid();
 
+            spdlog::info("server {} returning err_deleted from cid {}'s append req", ssid, cid);
             net->send_client_udp_packet(
                 std::move(packet), 
                 allocated_packet_size, 
                 static_cast<int>(StorageType::err_deleted),
                 ETH_CLI_SEQ, 
-                cli_ips.at(cid),
+                cli_ips[cid],
                 send_port
             );
         } else { // if not marked deleted, then it must be written to already so we send back err + written contents
@@ -101,12 +103,13 @@ void CorfuStorage::write(corfuclient::Payload msg) {
 
             int cid = msg.clientid();
 
+            spdlog::info("server {} returning err_written from cid {}'s append req", ssid, cid);
             net->send_client_udp_packet(
                 std::move(packet), 
                 allocated_packet_size, 
                 static_cast<int>(StorageType::err_written),
                 ETH_CLI_SEQ, 
-                cli_ips.at(cid),
+                cli_ips[cid],
                 send_port
             );
         }
@@ -124,19 +127,20 @@ void CorfuStorage::write(corfuclient::Payload msg) {
     packet[ack_packet->length()] = '\0';
     int cid = msg.clientid();
 
+    spdlog::info("server {} returning ack from cid {}'s append req", ssid, cid);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
         static_cast<int>(StorageType::ack),
         ETH_CLI_SEQ, 
-        cli_ips.at(cid),
+        cli_ips[cid],
         send_port
     );
 }
 
 void CorfuStorage::read(corfuclient::Payload msg) {
     // if epoch != s_epoch, respond <err_sealed>
-    int curr_epoch = msg.append().currepoch();
+    int curr_epoch = msg.read().currepoch();
     if (curr_epoch != s_epoch) {
         auto err_packet = corfu_storage_serialize_str_entry("", CORFU_SEALED_PROTO_TYPE, 0);
         uint64_t allocated_packet_size = err_packet->length() + 1;
@@ -146,12 +150,13 @@ void CorfuStorage::read(corfuclient::Payload msg) {
 
         int cid = msg.clientid();
 
+        spdlog::info("server {} returning err_sealed from cid {}'s read req", ssid, cid);
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
             static_cast<int>(StorageType::err_sealed),
             ETH_CLI_SEQ, 
-            cli_ips.at(cid),
+            cli_ips[cid],
             send_port
         );
         return;
@@ -171,12 +176,13 @@ void CorfuStorage::read(corfuclient::Payload msg) {
 
         int cid = msg.clientid();
 
+        spdlog::info("server {} returning err_unwritten from cid {}'s read req", ssid, cid);
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
             static_cast<int>(StorageType::err_unwritten),
             ETH_CLI_SEQ, 
-            cli_ips.at(cid),
+            cli_ips[cid],
             send_port
         );
         return;
@@ -192,13 +198,14 @@ void CorfuStorage::read(corfuclient::Payload msg) {
         packet[err_packet->length()] = '\0';
 
         int cid = msg.clientid();
-
+        
+        spdlog::info("server {} returning err_deleted from cid {}'s read req", ssid, cid);
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
             static_cast<int>(StorageType::err_deleted),
             ETH_CLI_SEQ, 
-            cli_ips.at(cid),
+            cli_ips[cid],
             send_port
         );
         return;
@@ -213,12 +220,13 @@ void CorfuStorage::read(corfuclient::Payload msg) {
 
     int cid = msg.clientid();
 
+    spdlog::info("server {} returning contents from cid {}'s read req", ssid, cid);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
         static_cast<int>(StorageType::store_read),
         ETH_CLI_SEQ, 
-        cli_ips.at(cid),
+        cli_ips[cid],
         send_port
     );
 }
@@ -238,12 +246,13 @@ void CorfuStorage::storage_delete(corfuclient::Payload msg) {
     packet[ack_packet->length()] = '\0';
     int cid = msg.clientid();
 
+    spdlog::info("server {} returning ack from cid {}'s trim req", ssid, cid);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
         static_cast<int>(StorageType::ack),
         ETH_CLI_SEQ, 
-        cli_ips.at(cid),
+        cli_ips[cid],
         send_port
     );
 }
@@ -262,12 +271,13 @@ void CorfuStorage::seal(corfuclient::Payload msg) {
     packet[sealed_packet->length()] = '\0';
     int cid = msg.clientid();
 
+    spdlog::info("server {} returning sealed from cid {}'s seal req", ssid, cid);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
         static_cast<int>(StorageType::store_seal),
         ETH_CLI_SEQ, 
-        cli_ips.at(cid),
+        cli_ips[cid],
         send_port
     );
 }
@@ -286,10 +296,11 @@ void CorfuStorage::server() {
 
         auto rcv_str = std::make_unique<std::string>(recv_ptr);
         corfuclient::Payload msg = corfu_client_deserialize_str_entry(std::move(rcv_str));
+        int cid = msg.clientid();
 
         switch (msg.packet_type()) {
             case CORFU_APPEND_PROTO_TYPE:
-                spdlog::info("storage {} got an append req from client {}", ssid);
+                spdlog::info("storage {} got an append req from client {}", ssid, cid);
                 write(msg);
                 break;
             case CORFU_READ_PROTO_TYPE:

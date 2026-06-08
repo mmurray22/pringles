@@ -26,11 +26,11 @@ pringles_seq = executable('net_seq', 'net_seq.cpp',
                           include_directories : inc,
                           dependencies: [yaml_cpp, spdlog, tbb_dep],
                           link_with : pringleslib)
-corfu_seq = executable('test_sequencer', 'test_sequencer_new.cpp',
+corfu_seq = executable('test_sequencer', 'test_sequencer_new.cpp', generated,
                           include_directories : inc,
                           dependencies: [yaml_cpp, spdlog, tbb_dep],
                           link_with : pringleslib)
-corfu_simple = executable('test_corfu_simple', 'test_corfu_simple.cpp',
+corfu_simple = executable('test_corfu_simple', 'test_corfu_simple.cpp', generated,
                           include_directories : inc,
                           dependencies: [yaml_cpp, spdlog, tbb_dep],
                           link_with : pringleslib)
