@@ -18,5 +18,7 @@ packet_types:
 protocol_type: "CORFU"
 sequencer_type: 1
 storage_type: 1
+machines_per_extent: 2
+machines_per_replica_set: 1
 trace_file: "/root/pringles/experiments/traces/unit_test_datagram.txt"
 ...

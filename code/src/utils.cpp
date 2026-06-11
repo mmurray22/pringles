@@ -303,6 +303,18 @@ std::vector<std::string> get_storage_ips(const YAML::Node& config) {
     return std::vector<std::string>{};
 }
 
+uint64_t get_num_m_per_extent(const YAML::Node& config) {
+    return config["machines_per_extent"].as<uint64_t>();
+}
+
+uint64_t get_num_m_per_rep_set(const YAML::Node& config) {
+    return config["machines_per_replica_set"].as<uint64_t>();
+}
+
+uint64_t get_extent_size(const YAML::Node& config) {
+    return config["extent_range_size"].as<uint64_t>();
+}
+
 std::array<uint8_t,6> get_stor_mac(YAML::Node config) {
     unsigned int bytes[6];
     std::string mac = config["stor_macs"].as<std::vector<std::string>>()[0]; // TODO

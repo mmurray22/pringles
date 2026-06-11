@@ -61,7 +61,7 @@ int dummy_client(std::string input_file) {
         allocated_packet_size, 
         static_cast<int>(PacketType::gettoken), 
         ETH_CLI_SEQ, 
-        seq_ips.at(0),
+        seq_ips[0],
         "4951" // THIS IS HARDCODED, FIND A BETTER FIX TODO
     );
     char* msg = net->recv_packet();
@@ -97,11 +97,11 @@ int dummy_client(std::string input_file) {
 
     spdlog::info("client {} is appending {}", cid, entry);
     net->send_client_udp_packet(
-        std::move(packet), 
-        allocated_packet_size, 
-        static_cast<int>(PacketType::append), 
-        ETH_CLI_SEQ, 
-        seq_ips.at(0),
+        std::move(packet),
+        allocated_packet_size,
+        static_cast<int>(PacketType::append),
+        ETH_CLI_SEQ,
+        storage_ips[0],
         "4952" // THIS IS HARDCODED, FIND A BETTER FIX TODO
     );
     msg = net->recv_packet();

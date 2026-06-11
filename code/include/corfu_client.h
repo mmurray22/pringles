@@ -32,22 +32,19 @@ enum PacketType {
 
 class CorfuClient : public BaseClient {
 protected:
-        uint64_t cid;
+	uint64_t cid;
 
-        CorfuSequencer* sequencer;
-        uint64_t curr_epoch = 0;
+	CorfuSequencer* sequencer;
+	uint64_t curr_epoch = 0;
 
-        std::map<uint64_t, std::map<std::pair<uint64_t, uint64_t>, std::vector<std::shared_ptr<CorfuStorage>>>> auxiliary;
-        bool projection_sealed = false;
-
-        /**** Variables ****/
-	std::string switch_ip;
-	std::array<uint8_t,6> switch_mac;
+	// map from map[epoch --> map[ranges --> replica sets in that extent (by ssid)]]
+	std::map<uint64_t, std::map<std::pair<uint64_t, uint64_t>, std::vector<std::vector<uint64_t>>>> auxiliary;
+    bool projection_sealed = false;
 
 
 	uint64_t min_matching_acks = 0;
-	uint64_t num_pkt_types = 0; 
-	/* Receive queue which slots messages */
+	uint64_t num_pkt_types = 0;
+
 	std::mutex pkt_q_lock;
 	std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
 	std::vector<std::string> pkt_types;
@@ -71,13 +68,6 @@ protected:
 
 	std::mutex next_idx_lock;
 	bool message_available;
-	std::unordered_map<int64_t, int64_t> append_nonce_idx_map; // TODO revisit types
-	std::map<int64_t, std::mutex> append_nonce_lock_map; // TODO revisit types
-	std::map<int64_t, std::condition_variable> append_cond_map; // TODO revisit types
-	//std::map<int64_t, std::pair<uint64_t, std::map<uint64_t, uint64_t>>> append_ack_map;
-	//std::unordered_map<int64_t, std::unordered_map<uint64_t, uint64_t>> append_ack_map;
-	
-	std::unordered_map<uint32_t, uint64_t> append_ack_map;
 
 	/* Hash/ID of pending append entries */
         std::vector<uint64_t> pending_append_entries;
@@ -107,31 +97,34 @@ protected:
 
 	std::array<uint8_t,6> seq_mac;
 	std::string seq_ip;
-	
-	/**** Functions ****/
-
-        void run_append();
-        void wait_for_subscribe(uint64_t idx, uint64_t pkt_type);
-
-	void pringles_recv_queue();
-		
 
 	std::vector<int> get_pkt_eth_types();
 	int get_eth_type(uint64_t pkt_type);
 
+	std::pair<uint64_t, std::vector<std::vector<uint64_t>>> map(uint64_t log_idx);
+
+	std::vector<std::string> seq_ips;
+	std::vector<std::string> storage_ips;
+
+	uint64_t NUMBER_M_PER_EXTENT;
+	uint64_t NUMBER_M_PER_REP_SET;
+	uint64_t extent_size;
+
+	void setup_auxiliary(uint64_t num_m_per_extent, uint64_t num_m_per_rep_set);
+
 public:
-        CorfuClient(std::string input_file, uint64_t thread_id, CorfuSequencer& sequencer);
-        ~CorfuClient();
+	CorfuClient(std::string input_file, uint64_t thread_id, CorfuSequencer& sequencer);
+	~CorfuClient();
 
-        void reconfigure(uint64_t log_idx, CorfuStorage& failing_unit);
-        uint64_t append(std::unique_ptr<std::string> entry);
-        std::string read(uint64_t log_idx);
-        bool trim(uint64_t log_idx);
-        uint64_t fill(uint64_t idx);
+	void reconfigure(uint64_t log_idx, CorfuStorage& failing_unit);
+	uint32_t append(std::string entry);
+	std::string read(uint64_t log_idx);
+	bool trim(uint64_t log_idx);
+	uint64_t fill(uint64_t idx);
 
-        void wait_to_warmup();
-        void wait_to_cooldown();
-        void wait_to_finish();
+	void wait_to_warmup();
+	void wait_to_cooldown();
+	void wait_to_finish();
 	bool experiment_status();
-        void execute(uint64_t thread_id);
+	void execute(uint64_t thread_id);
 };

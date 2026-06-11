@@ -18,7 +18,9 @@ packet_types:
   - type: "storage"
     ips: ["127.0.0.1"]
 protocol_type: "CORFU"
-sequencer_type: 1
-storage_type: 1
+storage_type: 0
+machines_per_extent: 2
+machines_per_replica_set: 1
+extent_range_size: 10
 trace_file: "/root/pringles/experiments/traces/unit_test_datagram.txt"
 ...
