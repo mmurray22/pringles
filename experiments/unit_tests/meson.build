@@ -34,6 +34,10 @@ corfu_simple = executable('test_corfu_simple', 'test_corfu_simple.cpp', generate
                           include_directories : inc,
                           dependencies: [yaml_cpp, spdlog, tbb_dep],
                           link_with : pringleslib)
+corfu_impl = executable('test_corfu_impl', 'test_corfu_impl.cpp', generated,
+                          include_directories : inc,
+                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+                          link_with : pringleslib)
 #pringles_stor = executable('raw_cli', 'benchmark_raw_cli.cpp',
 #                          include_directories : inc,
 #                          dependencies: [yaml_cpp, spdlog, tbb_dep],
@@ -49,4 +53,5 @@ corfu_simple = executable('test_corfu_simple', 'test_corfu_simple.cpp', generate
 
 #test('pringleslib test', net_serv, args: ['/home/micahrocks/Programming/ringlog/experiments/yaml/unit_test_datagram.yaml'])
 #test('corfu sequencer test', corfu_seq, args: ['/root/name/pringles/experiments/yaml/test_sequencer.yaml'])
-test('corfu simple test', corfu_simple, args: ['/root/name/pringles/experiments/yaml/corfu_client_simple.yaml', '/root/name/pringles/experiments/yaml/corfu_seq_simple.yaml', '/root/name/pringles/experiments/yaml/corfu_storage_simple.yaml'])
+#test('corfu simple test', corfu_simple, args: ['/root/name/pringles/experiments/yaml/corfu_client_simple.yaml', '/root/name/pringles/experiments/yaml/corfu_seq_simple.yaml', '/root/name/pringles/experiments/yaml/corfu_storage_simple.yaml'])
+test('corfu implementation test', corfu_impl, args: ['/root/name/pringles/experiments/yaml/corfu_client_simple.yaml', '/root/name/pringles/experiments/yaml/corfu_seq_simple.yaml', '/root/name/pringles/experiments/yaml/corfu_storage_simple.yaml'])

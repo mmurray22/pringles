@@ -7,8 +7,6 @@
 
 // const uint64_t MAX_WAIT_TIME = 100;
 
-//overall TODO: remove redundancies (ex. cid, error checking dupes, etc.)
-
 CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
     : ssid(ssid), s_epoch(0), mark(0), terminate(false)
 {
@@ -20,8 +18,8 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
 
     bool run_threads = false;
     net = std::make_shared<Network>(
-        std::to_string(get_send_port(config)), 
-        std::to_string(get_recv_port(config)),
+        std::to_string(get_send_port(config) + ssid), 
+        std::to_string(get_recv_port(config) + ssid),
         get_socket_type(config),
         get_log_level(config),
         get_batch_size(config),
@@ -232,7 +230,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
     memcpy(packet.get(), read_packet->c_str(), allocated_packet_size);
     packet[read_packet->length()] = '\0';
 
-    spdlog::info("storage {} returning contents from cid {}'s read req", ssid, cid);
+    spdlog::info("storage {} returning contents from cid {}'s read req at idx {}", ssid, cid, idx);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 

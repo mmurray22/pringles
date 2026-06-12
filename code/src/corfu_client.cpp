@@ -31,9 +31,8 @@
 #include "corfustorage.pb.h"
 #include "corfusequencer.pb.h"
 
-CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id, CorfuSequencer& sequencer) {
+CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
    // Get packet types for sending/receiving
-   this->sequencer = &sequencer;
    this->cid = thread_id;
    YAML::Node config = YAML::LoadFile(input_file);
    num_pkt_types = get_num_pkt_types(config);
@@ -66,27 +65,69 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id, CorfuSequen
         this->pkt_q.insert(std::pair<PacketType, std::queue<std::unique_ptr<char[]>>>(PacketType(i), std::queue<std::unique_ptr<char[]>>()));
     }
 
-    this->NUMBER_M_PER_EXTENT = get_num_m_per_extent(config);
-    this->NUMBER_M_PER_REP_SET = get_num_m_per_rep_set(config);
+    this->num_m_per_extent = get_num_m_per_extent(config);
+    this->num_m_per_rep_set = get_num_m_per_rep_set(config);
     this->extent_size = get_extent_size(config); 
-    std::vector<std::string> seq_ips = get_seq_ips(config);
-    std::vector<std::string> storage_ips = get_storage_ips(config);
+    this->seq_ips = get_seq_ips(config);
+    this->storage_ips = get_storage_ips(config);
 
-    setup_auxiliary(NUMBER_M_PER_EXTENT, NUMBER_M_PER_REP_SET);
+    setup_auxiliary();
+
+    // FOR DEBUGGING AUXILIARY FORMAT
+    uint64_t epoch = 0;
+    const std::map<uint64_t, std::map<std::pair<uint64_t, uint64_t>, std::vector<std::vector<uint64_t>>>>& aux = auxiliary;
+    auto epoch_it = aux.find(epoch);
+    if (epoch_it == aux.end()) {
+        spdlog::debug("[]");
+        return;
+    }
+
+    const auto& epoch_ranges = epoch_it->second;
+    std::ostringstream oss;
+    bool first_extent = true;
+
+    for (const auto& [range, replica_sets] : epoch_ranges) {
+        if (!first_extent) {
+            oss << ", ";
+        }
+        first_extent = false;
+
+        // Construct the replica sets string for this extent
+        oss << "[";
+        for (size_t i = 0; i < replica_sets.size(); ++i) {
+            oss << "[";
+            for (size_t j = 0; j < replica_sets[i].size(); ++j) {
+                oss << replica_sets[i][j];
+                if (j + 1 < replica_sets[i].size()) {
+                    oss << ", ";
+                }
+            }
+            oss << "]";
+            if (i + 1 < replica_sets.size()) {
+                oss << ", ";
+            }
+        }
+        oss << "]";
+    }
+    
+    spdlog::debug("{}", oss.str());
+    // FOR DEBUGGING AUXILIARY ^
+
 
     // Protocol types
-    this->seq = SequencerType(get_sequencer_type(config));
+    // this->seq = SequencerType(get_sequencer_type(config));
 
     // Updating the log 
     this->started_append = false; 
 
-    this->payload_size = get_payload_size(config);
-    this->batch_size = num_work_threads * payload_size;
+    // this->payload_size = get_payload_size(config);
+    // this->batch_size = num_work_threads * payload_size;
+    this->batch_size = 100;
     spdlog::debug("Batch size: {}", batch_size);
     // this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id);
-    this->max_duration = get_experiment_duration(config);
-    this->warm_up = get_warm_up(config);
-    this->cool_down = get_cool_down(config);
+    // this->max_duration = get_experiment_duration(config);
+    // this->warm_up = get_warm_up(config);
+    // this->cool_down = get_cool_down(config);
     this->global_thread_id = thread_id;
    
     // this->switch_mac = get_switch_mac(config);
@@ -110,14 +151,12 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id, CorfuSequen
 }
 
 CorfuClient::~CorfuClient() {
-    spdlog::debug("Append thread joined!"); 
-    spdlog::debug("Received thread joined!");
     //TODO subscribe_thread.join();
     /*for (uint64_t i = 0; i < num_work_threads; i++) {
-        recv_threads[i].join();	
+        recv_threads[i].join();
     }*/
     //duration_thread.join(); 
-    execution_thread.join();
+    // execution_thread.join();
     spdlog::debug("Joined the client threads!");
     net->done();
 }
@@ -135,7 +174,7 @@ void CorfuClient::execute(uint64_t /*thread_id*/) {
     // spdlog::critical("Total number of sent appends (NOT necessarily successful): {} from thread {}", cnt, thread_id);
 }
 
-void CorfuClient::setup_auxiliary(uint64_t num_m_per_extent, uint64_t num_m_per_rep_set) {
+void CorfuClient::setup_auxiliary() {
     // NOTE: this seems like a maybe costly way to do this there must be a better way to organize things, maybe
     //       instead we can change the config file to be nested so you directly go for the ip of each replica?
     uint64_t total_machines_per_extent = num_m_per_extent * num_m_per_rep_set;
@@ -153,6 +192,7 @@ void CorfuClient::setup_auxiliary(uint64_t num_m_per_extent, uint64_t num_m_per_
     }
 
     uint64_t num_extents = storage_ips.size() / total_machines_per_extent;
+    spdlog::debug("num_storages = {}", storage_ips.size());
     uint64_t current_ssid = 0;
 
     std::map<std::pair<uint64_t, uint64_t>, std::vector<std::vector<uint64_t>>> epoch_ranges;
@@ -160,10 +200,6 @@ void CorfuClient::setup_auxiliary(uint64_t num_m_per_extent, uint64_t num_m_per_
     for (uint64_t i = 0; i < num_extents; i++) {
         uint64_t range_start = i * extent_size;
         uint64_t range_end = (i + 1) * extent_size;
-
-        if (i == num_extents - 1) {
-            range_end = std::numeric_limits<uint64_t>::max();
-        }
 
         std::vector<std::vector<uint64_t>> extent_replica_sets;
 
@@ -178,10 +214,8 @@ void CorfuClient::setup_auxiliary(uint64_t num_m_per_extent, uint64_t num_m_per_
         epoch_ranges[{range_start, range_end}] = extent_replica_sets;
     }
 
-    // Bind this entire generated layout configuration to your current active epoch
     this->auxiliary[this->curr_epoch] = epoch_ranges;
-    
-    spdlog::info("Setup Auxiliary: Configured layout for epoch {} containing {} extent(s).", this->curr_epoch, num_extents);
+    spdlog::info("Setup Auxiliary: Created layout for epoch {} containing {} extent(s) from range {} to {}", this->curr_epoch, num_extents, 0, num_extents * extent_size);
 }   
 
 void CorfuClient::reconfigure(uint64_t /*log_idx*/, CorfuStorage& /*failing_unit*/) {
@@ -209,6 +243,7 @@ std::pair<uint64_t, std::vector<std::vector<uint64_t>>> CorfuClient::map(uint64_
     return std::pair<uint64_t, std::vector<std::vector<uint64_t>>>(0, std::vector<std::vector<uint64_t>>{});
 }
 
+// error codes are lowk useless btw since this func returns the log_idx and the log_idx can be 1
 uint32_t CorfuClient::append(std::string entry) {
     // SEQUENCING PART
     std::unique_ptr<std::string> sequencing_packet = corfu_client_serialize_str_entry("", CORFU_GETTOKEN_PROTO_TYPE, cid, 0, 0);
@@ -222,7 +257,7 @@ uint32_t CorfuClient::append(std::string entry) {
         static_cast<int>(PacketType::gettoken), 
         ETH_CLI_SEQ, 
         seq_ips[0],
-        "4951" // THIS IS HARDCODED, FIND A BETTER FIX
+        "4951" // THIS IS HARDCODED, FIND A BETTER FIX TODO
     );
     char* msg = net->recv_packet();
 
@@ -261,7 +296,7 @@ uint32_t CorfuClient::append(std::string entry) {
     }
 
     // mod relative log pos, even = first machine, odd = second machine
-    uint64_t machine = relative_log_pos % NUMBER_M_PER_EXTENT;
+    uint64_t machine = relative_log_pos % num_m_per_extent;
 
     // for every replica in the set
     for (uint64_t sm : send_machines[machine]) {
@@ -271,14 +306,17 @@ uint32_t CorfuClient::append(std::string entry) {
         packet = std::make_unique<char[]>(allocated_packet_size);
         memcpy(packet.get(), append_packet->c_str(), allocated_packet_size);
 
-        spdlog::info("client {} is appending {}", cid, entry);
+        spdlog::info("client {} is appending {} to machine {}", cid, entry, sm);
+
+        uint64_t base_storage_port = 5000;
+
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
             static_cast<int>(PacketType::append), 
             ETH_CLI_SEQ, 
             storage_ips[sm],
-            "4952" // THIS IS HARDCODED, FIND A BETTER FIX TODO
+            std::to_string(base_storage_port + sm) // THIS IS HARDCODED, FIND A BETTER FIX TODO
         );
         msg = net->recv_packet();
 
@@ -344,69 +382,74 @@ std::string CorfuClient::read(uint64_t log_idx) {
     }
 
     // mod relative log pos, even = first machine, odd = second machine
-    uint64_t machine = relative_log_pos % NUMBER_M_PER_EXTENT;
+    uint64_t machine = relative_log_pos % num_m_per_extent;
+
+    spdlog::debug("reading from machine {}", machine);
 
     std::string content;
     // for every replica in the set
     // SEND READ REQ TO SERVER
-    for (uint64_t sm : send_machines[machine]) {
-        std::unique_ptr<std::string> read_packet = corfu_client_serialize_str_entry("", CORFU_READ_PROTO_TYPE, cid, relative_log_pos, 0);
-        uint64_t allocated_packet_size = read_packet->length() + 1;
-        spdlog::debug("Read: read packet is of size: {}", allocated_packet_size);
-        std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
-        memcpy(packet.get(), read_packet->c_str(), allocated_packet_size);
-        net->send_client_udp_packet(
-            std::move(packet), 
-            allocated_packet_size,
-            static_cast<int>(PacketType::readentry), 
-            ETH_CLI_SEQ, 
-            storage_ips[sm],
-            "4952" // THIS IS HARDCODED, FIND A BETTER FIX
-        );
-        char* msg = net->recv_packet();
+    // client must go to the last replica in the set because they're not sure if the full set was written to or not
+    // POSSIBLE OPTIMIZATION: can go to any replica in the set if client KNOWS this value has been written already (ex. via notification from writing client)
+    std::unique_ptr<std::string> read_packet = corfu_client_serialize_str_entry("", CORFU_READ_PROTO_TYPE, cid, relative_log_pos, 0);
+    uint64_t allocated_packet_size = read_packet->length() + 1;
+    spdlog::debug("Read: read packet is of size: {}", allocated_packet_size);
+    std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+    memcpy(packet.get(), read_packet->c_str(), allocated_packet_size);
 
-        // start timer
-        auto start_time = std::chrono::high_resolution_clock::now();
-        auto read_time = std::chrono::high_resolution_clock::duration::zero();
-        while (read_time < TIMEOUT && !msg) {
-            msg = net->recv_packet();
-            read_time = std::chrono::high_resolution_clock::now() - start_time;
-        }
+    uint64_t base_storage_port = 5000;
 
-        // must reconfigure if there's no response
-        if (!msg && read_time >= TIMEOUT) {
-            // TODO: THIS IS A BLACK BOX
-            spdlog::info("Read: Must reconfigure because there was no response from storage server");
-            // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
-            // reconfigure(log_idx, *failing_unit);
-            // spdlog::info("Append: Just reconfigured, you should attempt to append again");
-            return "reconfigured"; // return error
-        }
+    net->send_client_udp_packet(
+        std::move(packet), 
+        allocated_packet_size,
+        static_cast<int>(PacketType::readentry), 
+        ETH_CLI_SEQ, 
+        storage_ips[send_machines[machine].back()],
+        std::to_string(base_storage_port + machine) // THIS IS HARDCODED, FIND A BETTER FIX
+    );
+    char* msg = net->recv_packet();
 
-        corfustorage::Payload packet_contents = corfu_storage_deserialize_str_entry(std::make_unique<std::string>(msg));
+    // start timer
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto read_time = std::chrono::high_resolution_clock::duration::zero();
+    while (read_time < TIMEOUT && !msg) {
+        msg = net->recv_packet();
+        read_time = std::chrono::high_resolution_clock::now() - start_time;
+    }
 
-        if (packet_contents.packet_type() == CORFU_SEALED_PROTO_TYPE) {
-            spdlog::info("Read: Must reconfigure because the current epoch was sealed");
-            // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
-            // reconfigure(log_idx, *failing_unit);
-            // spdlog::info("Read: Just reconfigured, you should attempt to read again");
-            return "err_sealed";
-        } else if (packet_contents.packet_type() == CORFU_DELETED_PROTO_TYPE) {
-            spdlog::critical("Read: We got an err_deleted and now we're returning the error code");
-            return "err_deleted";
-        } else if (packet_contents.packet_type() == CORFU_UNWRITTEN_PROTO_TYPE) {
-            spdlog::critical("Read: We got an err_unwritten and now we're returning the error code");
-            return "err_unwritten";
-        }
+    // must reconfigure if there's no response
+    if (!msg && read_time >= TIMEOUT) {
+        // TODO: THIS IS A BLACK BOX
+        spdlog::info("Read: Must reconfigure because there was no response from storage server");
+        // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
+        // reconfigure(log_idx, *failing_unit);
+        // spdlog::info("Append: Just reconfigured, you should attempt to append again");
+        return "reconfigured"; // return error
+    }
 
-        // check to make sure that we've received an ack
-        if (packet_contents.packet_type() == CORFU_READ_PROTO_TYPE) {
-            spdlog::info("Read: got page contents");
-            content = packet_contents.read().content();
-            break;
-        } else {
-            spdlog::critical("Read: idk what we just received but it's not an error nor page contents :(");
-        }
+    corfustorage::Payload packet_contents = corfu_storage_deserialize_str_entry(std::make_unique<std::string>(msg));
+
+    if (packet_contents.packet_type() == CORFU_SEALED_PROTO_TYPE) {
+        spdlog::info("Read: Must reconfigure because the current epoch was sealed");
+        // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
+        // reconfigure(log_idx, *failing_unit);
+        // spdlog::info("Read: Just reconfigured, you should attempt to read again");
+        return "err_sealed";
+    } else if (packet_contents.packet_type() == CORFU_DELETED_PROTO_TYPE) {
+        spdlog::critical("Read: We got an err_deleted and now we're returning the error code");
+        return "err_deleted";
+    } else if (packet_contents.packet_type() == CORFU_UNWRITTEN_PROTO_TYPE) {
+        spdlog::critical("Read: We got an err_unwritten and now we're returning the error code");
+        // TODO: this needs to actually fill the holes in the replica set instead bc this means a client prolly failed when writing to the set
+        return "err_unwritten";
+    }
+
+    // check to make sure that we've received an ack
+    if (packet_contents.packet_type() == CORFU_STORE_READ_PROTO_TYPE) {
+        spdlog::info("Read: got page contents");
+        content = packet_contents.read().content();
+    } else {
+        spdlog::critical("Read: idk what we just received but it's not an error nor page contents :(");
     }
     spdlog::info("Read: end of read");
     return content;
@@ -517,4 +560,11 @@ int CorfuClient::get_eth_type(uint64_t pkt_type) {
     }
     spdlog::critical("No ethernet type found!");
     return -1; // no ethernet type found
+}
+
+uint64_t CorfuClient::getTail() {
+    return 0;
+}
+void CorfuClient::subscribe(uint64_t idx) {
+    idx++;
 }

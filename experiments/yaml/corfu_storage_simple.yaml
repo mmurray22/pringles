@@ -1,7 +1,7 @@
 ---
 log_level: 1
-send_port: "4953"
-recv_port: "4952"
+send_port: "6000"
+recv_port: "5000"
 send_threads: 1
 socket_type: "UDP"
 self_ip: "127.0.0.1"

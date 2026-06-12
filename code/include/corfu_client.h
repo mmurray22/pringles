@@ -33,8 +33,6 @@ enum PacketType {
 class CorfuClient : public BaseClient {
 protected:
 	uint64_t cid;
-
-	CorfuSequencer* sequencer;
 	uint64_t curr_epoch = 0;
 
 	// map from map[epoch --> map[ranges --> replica sets in that extent (by ssid)]]
@@ -106,14 +104,14 @@ protected:
 	std::vector<std::string> seq_ips;
 	std::vector<std::string> storage_ips;
 
-	uint64_t NUMBER_M_PER_EXTENT;
-	uint64_t NUMBER_M_PER_REP_SET;
+	uint64_t num_m_per_extent;
+	uint64_t num_m_per_rep_set;
 	uint64_t extent_size;
 
-	void setup_auxiliary(uint64_t num_m_per_extent, uint64_t num_m_per_rep_set);
+	void setup_auxiliary();
 
 public:
-	CorfuClient(std::string input_file, uint64_t thread_id, CorfuSequencer& sequencer);
+	CorfuClient(std::string input_file, uint64_t thread_id);
 	~CorfuClient();
 
 	void reconfigure(uint64_t log_idx, CorfuStorage& failing_unit);
@@ -127,4 +125,7 @@ public:
 	void wait_to_finish();
 	bool experiment_status();
 	void execute(uint64_t thread_id);
+
+	uint64_t getTail();
+    void subscribe(uint64_t idx);
 };

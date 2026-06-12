@@ -69,7 +69,7 @@ void CorfuSequencer::run_sequencer_thread() {
                 allocated_packet_size, 
                 static_cast<int>(SeqPacketType::sendtoken),
                 ETH_CLI_SEQ,
-                cli_ips[0], // NOTE: THIS IS CURRENTLY HARDCODED TO BE THE FIRST CLIENT FOR EASE OF MULTIPLE CLIENT TESTING
+                cli_ips[cid],
                 std::to_string(send_port + cid)
             );
             spdlog::debug("Sequencer gave index {} to cid {}", idx, packet_contents.clientid());
