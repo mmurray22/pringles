@@ -1,0 +1,70 @@
+# Scalog comparison experiment config.
+#
+# Cluster layout:
+#   seq_ips  = Scalog order layer nodes (discovery also runs on seq_ips[0])
+#   stor_ips = Scalog data layer nodes (storage shards)
+#   cli_ips  = Scalog benchmark client
+#
+# Build Scalog on each node before running (scalogctl is not pre-installed):
+#   git clone https://github.com/chn0318/scalog && cd scalog
+#   go build -mod=vendor .
+#
+# TODO: Confirm the path structure for compiled component binaries. The paths below
+# assume the standard Go cmd/ layout (cmd/discovery, cmd/order, cmd/data, cmd/client).
+# Adjust path_* fields if the repo uses a different layout.
+
+[system]
+name = "scalog"
+
+[network_setup]
+discovery_ip = "10.0.0.3"
+seq_ips     = ["10.0.0.4", "10.0.0.5", "10.0.0.6"]           # Scalog order layer node(s)
+stor_ips    = ["10.0.0.7", "10.0.0.8", "10.0.0.9"]           # Scalog data layer node(s)
+cli_ips     = ["10.0.0.3"]           # Scalog benchmark client
+cli_net_ifs = ["ens4"]
+order_port = 26733
+raft_port = 27238
+data_port = 23282
+disc_port = 23472
+ssh_key = "/proj/ove-PG0/murray/ssh/cloudlab"
+ssh_user = "murray22"
+
+[program_paths]
+# Local path where Scalog will be cloned and cross-compiled.
+# Binaries are then SCP'd to the appropriate remote nodes.
+scalog_bin = "pringles/scalog/scalog"
+data_yaml_path = "pringles/scalog"
+# Remote paths where each binary will be placed (directory must exist or will be created).
+config_path = "pringles/experiments/scripts/.scalog.yaml"
+# Set to "True" to clone/build on first run. Safe to leave "True" on repeat runs
+# (clone is skipped if the directory already exists).
+run_comparison_setup = "True"
+run_setup_script = "False"
+
+[experiment_parameters]
+json_name           = "default"
+experiment_duration = 30    # seconds (excluding warm_up and cool_down)
+warm_up             = 5     # seconds
+cool_down           = 5     # seconds
+message_size        = 4000  # bytes
+num_client_threads  = 1
+log_level           = 6
+num_failures        = 0
+#data_replication_factor  = 1   # Scalog replication factor set in .scalog.yaml TODO make 2
+order_replication_factor  = 3  # Scalog replication factor set in .scalog.yaml
+num_sequencer_nodes = 3   # number of order layer nodes; must equal len(seq_ips)
+#num_shards          = 1   # number of data layer nodes; must equal len(stor_ips)
+batching_interval   = "1ms"
+
+# --- Experiment sweep: 4 KB messages ---
+[[experiment]]
+num_client_threads  = 1
+
+#[[experiment]]
+#num_client_threads  = 5
+#
+#[[experiment]]
+#num_client_threads  = 10
+#
+#[[experiment]]
+#num_client_threads  = 15

@@ -6,11 +6,27 @@
 #                     include_directories : inc,
 #                     dependencies: [yaml_cpp, spdlog],
 #                     link_with : pringleslib)
-#pringles_cli = executable('cli', 'pringles_cli.cpp',
+pringles_cli = executable('cli', 'pringles_cli.cpp',
+                          include_directories : inc,
+                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+                          link_with : pringleslib,
+                          link_args: ['-static-libstdc++', '-static-libgcc'])
+pringles_switch = executable('switch', 'pringles_switch.cpp',
+                          include_directories : inc,
+                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+                          link_with : pringleslib,
+                          link_args: ['-static-libstdc++', '-static-libgcc'])
+pringles_stor = executable('stor', 'pringles_stor.cpp',
+                          include_directories : inc,
+                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+                          link_with : pringleslib,
+                          link_args: ['-static-libstdc++', '-static-libgcc'])
+#pringles_cli = executable('net_cli', 'net_cli.cpp',
 #                          include_directories : inc,
 #                          dependencies: [yaml_cpp, spdlog, tbb_dep],
-#                          link_with : pringleslib)
-#pringles_stor = executable('stor', 'pringles_stor.cpp',
+#                          link_with : pringleslib,
+#                          link_args: ['-static-libstdc++', '-static-libgcc'])
+#pringles_stor = executable('net_stor', 'net_stor.cpp',
 #                          include_directories : inc,
 #                          dependencies: [yaml_cpp, spdlog, tbb_dep],
 #                          link_with : pringleslib)
@@ -38,6 +54,13 @@ corfu_impl = executable('test_corfu_impl', 'test_corfu_impl.cpp', generated,
                           include_directories : inc,
                           dependencies: [yaml_cpp, spdlog, tbb_dep],
                           link_with : pringleslib)
+#                          link_with : pringleslib,
+#                          link_args: ['-static-libstdc++', '-static-libgcc'])
+#pringles_seq = executable('net_seq', 'net_seq.cpp',
+#                          include_directories : inc,
+#                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+#                          link_with : pringleslib,
+#                          link_args: ['-static-libstdc++', '-static-libgcc'])
 #pringles_stor = executable('raw_cli', 'benchmark_raw_cli.cpp',
 #                          include_directories : inc,
 #                          dependencies: [yaml_cpp, spdlog, tbb_dep],

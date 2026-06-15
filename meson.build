@@ -1,6 +1,6 @@
 project('pringles', 'cpp',
   version : '1.0.0',
-  default_options : ['warning_level=3', 'cpp_std=c++17', 'werror=true'])
+  default_options : ['warning_level=3', 'cpp_std=c++20', 'werror=true'])
 # flags + address sanitizers
 add_global_arguments('-DSOME_TOKEN=value', language : 'cpp')
 add_project_arguments(
@@ -11,12 +11,24 @@ add_project_arguments(
   '-fno-omit-frame-pointer',
   language: 'cpp'
 )
-yaml_cpp = dependency('yaml-cpp')
+yaml_cpp = dependency('yaml-cpp', static: true)
 protoc = find_program('protoc')
-protobuf = dependency('protobuf')
-spdlog = dependency('spdlog')
-tbb_dep = dependency('tbb', required: true) 
+protobuf = dependency('protobuf', static: true)
+# Meson will now download and compile these as static libraries automatically
+#spdlog = dependency('spdlog', fallback: ['spdlog', 'spdlog_dep'], static: true)
+spdlog = declare_dependency(
+    link_args: ['../spdlog/build/libspdlog.a'],
+    include_directories: include_directories('../spdlog/include')
+)
+fmt_dep = dependency('fmt', fallback: ['fmt', 'fmt_dep'], static: true)
+#spdlog = dependency('spdlog', fallback: ['spdlog', 'spdlog_dep'], static: true)
+#tbb_dep = dependency('tbb', required: true, static: true) 
+tbb_dep = declare_dependency(
+    link_args: ['../oneTBB/build/gnu_11.4_cxx11_64_release/libtbb.a'],
+    include_directories: include_directories('../oneTBB/include')
+)
 add_project_link_arguments(['-lprotobuf'], language: ['cpp'])
+add_project_link_arguments(['-static'], language: ['cpp'])
 
 # Generate protobuf library
 gen = generator(protoc,
@@ -28,6 +40,13 @@ inc = include_directories('code/include/')
 subdir('code/include')
 subdir('code/src')
 subdir('experiments/unit_tests')
+
+stats_lib = static_library('stats_measure', 
+  'code/src/measure.cpp',
+  'code/src/stats_wrapper.cpp',
+  include_directories : inc,
+  dependencies: [dependency('spdlog')]
+)
 
 pkg_mod = import('pkgconfig')
 pkg_mod.generate(libraries : pringleslib,

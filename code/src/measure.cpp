@@ -14,6 +14,7 @@ Stats::Stats(uint64_t batch_size, bool batch_on, std::string json_name, uint64_t
     this->thread_id = thread_id; //default
     this->latencies = {};
     this->numOps = 0;
+    this->subscribe_latency = 0;
     this->client_ip = client_ip;
 }
 
@@ -61,6 +62,11 @@ void Stats::getDuration(double start_time) {
     latencies.push_back(dur);
 }
 
+void Stats::addDuration(double dur) {
+    //spdlog::critical("Duration: {}", dur);
+    latencies.push_back(dur);
+}
+
 
 bool Stats::endLatTimer(uint64_t nonce) {
     if (lat_map.count(nonce) > 0) {
@@ -68,7 +74,7 @@ bool Stats::endLatTimer(uint64_t nonce) {
         double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
         std::unique_lock<std::mutex> lock(lat_map_lock);
         double dur = end_time_s - lat_map[nonce];
-	//spdlog::debug("For nonce {}, started {}, ended {}, for duration {}", nonce, lat_map[nonce], end_time_s, dur);
+	//spdlog::critical("For nonce {}, started {}, ended {}, for duration {}", nonce, lat_map[nonce], end_time_s, dur);
 	latencies.push_back(dur);
 	lat_map.erase(nonce);
 	return true;
@@ -79,7 +85,7 @@ bool Stats::endLatTimer(uint64_t nonce) {
 double Stats::getAvgLatency() {
     final_avg_latency = std::accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
     final_avg_latency *= 1000;
-    //spdlog::critical("Average latency: {}ms", final_avg_latency);
+    spdlog::critical("Average latency: {}ms", final_avg_latency);
     return final_avg_latency;
 }
 
@@ -100,9 +106,13 @@ double Stats::getThroughput(uint64_t elapsed) {
     return final_throughput;
 }
 
+void Stats::putSubLatency(double sub_lat) {
+    subscribe_latency = sub_lat;
+}
+
 // Written with the help of LLMs
 void Stats::exportResultsToJson() {
-    std::string filename = json_name + std::to_string(thread_id) + "_" + client_ip + ".json";
+    std::string filename = json_name + "_" + std::to_string(thread_id) + "_" + client_ip + ".json";
 
     // NOTE: In a robust C++ project, you MUST use a dedicated JSON library
     // (like nlohmann/json.hpp) to ensure proper formatting and handle complex
@@ -117,7 +127,7 @@ void Stats::exportResultsToJson() {
     json_stream << "{\n";
     json_stream << "  \"avg_latency\": " << final_avg_latency << ",\n";
     json_stream << "  \"throughput\": " << final_throughput << ",\n";
-    //json_stream << "  \"goodput\": " << goodput << ",\n";
+    json_stream << "  \"sub_lat\": " << subscribe_latency << ",\n";
     json_stream << "  \"batch_size\": " << batch_size << ",\n";
     json_stream << "  \"batch_on\": " << batch_on << ",\n";
     json_stream << "  \"num_ops\": " << numOps << "\n";

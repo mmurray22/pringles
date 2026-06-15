@@ -6,6 +6,7 @@
 #include "utils.h"
 
 #include <errno.h>
+#include <numeric>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -29,170 +30,103 @@
 #include <sched.h>
 
 LogStorage::LogStorage(std::string input_file, uint64_t storage_id) {
-   YAML::Node config = YAML::LoadFile(input_file);
-   num_pkt_types = get_num_pkt_types(config);
-   std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
-   if (mac_addrs.size() < 1) {
-       spdlog::critical("Unable to parse mac address!");
-       throw;
-   }
+    spdlog::critical("Pringles Storage is starting!");
+    YAML::Node config = YAML::LoadFile(input_file);
+    
+    // Shards
+    this->shard_id = get_shard_id(config);
+    this->use_shards = get_use_shards(config);
 
-   // Create network
-   net = std::make_unique<Network>(get_send_port(config), 
-                                   get_recv_port(config),
+    // Streams
+    this->use_streams = get_use_streams(config);
+
+    // Create network
+    /*this->net = std::make_shared<Network>(std::to_string(get_send_port(config)), 
+                                   get_stor_receive_port(config),
 				   get_socket_type(config),
                                    get_log_level(config),
-				   get_batch_size(config),
+				   get_batch_size(config), 
 				   get_batch_on(config),
+				   get_batch_timeout(config),
 				   get_interface(config),
 				   get_self_ip(config),
-				   get_num_pkt_types(config),
-				   false);
-    set_spdlog_level(get_log_level(config));
-    spdlog::info("Pringles Client: Only Append being tested");
-    this->shard_id = get_shard_id(config);
+				   get_multicast_addr(config),
+				   use_shards,
+				   false); */
+    
+    this->num_append_stor_threads = 20; //get_append_stor_threads(config);
+    for (uint64_t i = 0; i < num_append_stor_threads; i++) {
+	std::unique_ptr<Network> append_net = std::make_unique<Network>( 
+				   get_socket_type(config),
+                                   get_log_level(config),
+				   get_batch_size(config), 
+				   get_batch_on(config),
+				   get_batch_timeout(config),
+				   get_interface(config),
+				   get_self_ip(config));
+        append_stor_threads.emplace_back(std::thread(&LogStorage::append_server, this, std::stoi(get_stor_receive_port(config)), std::move(append_net)));
+    }
+
+    // Initialize storage server identity variables
+
     this->shard_switch_id = get_shard_switch_id(config);
     this->view_num = 1;
     this->max_duration = get_experiment_duration(config);
- 
-    this->stor = StorageType(get_storage_type(config));
     this->ssid = storage_id;
+    this->use_switch = get_use_switch(config);
+    set_spdlog_level(get_log_level(config));
 
+    // Routing
+    this->use_switch = get_use_switch(config);
     this->switch_mac = get_switch_mac(config);
     this->switch_ip = get_switch_ip(config);
-   
-    // TODO ERROR NOT THREAD SAFE FOR MULTIPLE THREADS 
-    for (uint64_t i = 0; i < 1; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
-        recv_threads.emplace_back(std::thread(&LogStorage::pringles_recv_queue, this));	
+    this->switch_recv_port = get_switch_receive_port(config);
 
-	pthread_t native_handle = recv_threads.back().native_handle();
-
-        // Create a CPU set and add the desired core
-        cpu_set_t cpuset;
-        CPU_ZERO(&cpuset);
-        CPU_SET(i, &cpuset); // Pin to core 'i'
-
-        // Set thread affinity
-        int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
-        if (result != 0) {
-            std::cerr << "Error setting thread affinity for thread " << recv_threads.back().get_id() << ": " << result << std::endl;
-        } else {
-            std::cout << "Thread " << recv_threads.back().get_id() << " pinned to core " << i << std::endl;
-        } 
-    }
+    // Thread
+    //recv_thread = std::thread(&LogStorage::receiver, this);
+    //append_thread = std::thread(&LogStorage::append_server, this);
+    //read_thread = std::thread(&LogStorage::read_server, this);
+    this->append_cntr = 0;
+    spdlog::critical("Done with the constructor!");
 }
 
 LogStorage::~LogStorage() {
-    for (uint64_t i = 0; i < 1; i++) { // TODO TODO TODO THIS CANNOT BE A CONSTANT
-        recv_threads[i].join();	
+    for (uint64_t i = 0; i < append_stor_threads.size(); i++) {
+        append_stor_threads[i].join();
     }
 
-    //this->recv_thread.join();
-    net->done();
-}
-
-bool LogStorage::recover_storage_server() { // TODO
-    return false;
+    /*recv_thread.join();
+    append_req_cv.notify_all();
+    read_req_cv.notify_all();
+    append_thread.join();
+    read_thread.join();
+    net->done();*/
 }
 
 bool LogStorage::store(uint64_t idx, std::string entry) {
-    switch (stor)
-    {
-	case StorageType::MEM_KV: 
-	{
-	    std::unique_lock<std::mutex> lock(kv_store_lock);
-	    kv_store.insert(std::pair<uint64_t, std::string>(idx, entry));
-	    return true;
-	};	    
-	default:
-	{
-	    spdlog::critical("Storage type is not supported!");
-	};
+    tbb::concurrent_hash_map<uint64_t, std::string>::accessor accessor;
+    bool insert_succ = concurrent_stor.insert(accessor, idx);
+    if (insert_succ) {
+        accessor->second = entry;
     }
-    return false;
+    accessor.release();
+    return insert_succ;
 }
 
 std::string LogStorage::get(uint64_t idx) {
-    std::string default_str = "";
-    switch (stor)
-    {
-	case StorageType::MEM_KV: 
-	{
-	    return kv_store[idx]; // TODO error checking
-	};	    
-	default:
-	{
-	    spdlog::critical("Storage type is not supported!");
-	};
+    std::string entry = "";
+    tbb::concurrent_hash_map<uint64_t, std::string>::accessor accessor;
+    // 2. Attempt to find the key
+    if (concurrent_stor.find(accessor, idx)) {
+	entry = accessor->second;
+    } else {
+	spdlog::warn("Key {} not found!!!", idx);
     }
-    return default_str;
+    return entry;
 }
 
 void LogStorage::change_view(uint64_t new_view_num) {
     view_num = new_view_num;
-}
-
-void LogStorage::pringles_recv_queue() {
-    // initialize - for each packet type, receive queue
-    spdlog::critical("Recv Storage Thread starting with TID = {}", gettid());
-    uint64_t cnt = 0;
-    uint64_t total_cnt = 0;
-    size_t size_of_hdr = get_size_of_hdr(PacketType::append);
-    while (true) {
-	if (end_thread) {
-	    break;
-	}
-        char* recv_ptr = net->recv_packet();
-	if (!recv_ptr) {
-	    continue;
-	}
-	//char* recv_ptr = net->read_from_recv_queue(); // will receive the full packet, including Eth header
-
-	
-        struct ethhdr* eth = (struct ethhdr*)recv_ptr;
-	//spdlog::debug("The ethernet type is {}", ntohs(eth->h_proto));
-	
-	if (ntohs(eth->h_proto) == ETH_APPEND_REQ) {
-	    total_cnt += 1;
-
-            //spdlog::debug("Ethernet protocol with size {}", size_of_hdr);
-            struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ethhdr) + sizeof(struct iphdr));
-	    if (append_entry->g_idx == 0 && append_entry->num_entries == 0) {
-	        spdlog::debug("INVALID PACKET WITH g_idx 0 or no entries - dropping");
-    	        continue;		
-	    } 
-	    //spdlog::debug("Payload size: {} and index {} and cid {} and nonce {} and num_entries {}", append_entry->payload_size, append_entry->g_idx, append_entry->cid, append_entry->nonce, append_entry->num_entries);
-	    size_t offset = sizeof(struct ethhdr) + sizeof(struct iphdr) + size_of_hdr;
-	    size_t reply_pkt_size = size_of_hdr + append_entry->payload_size * append_entry->num_entries;
-	    size_t reply_pkt_offset = size_of_hdr;
-     	    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
-            memcpy(reply_packet.get(), reinterpret_cast<const char*>(append_entry), size_of_hdr);
-	    for (size_t i = 0; i < append_entry->num_entries; i++) {
-		char* inner_pkt = (char*)(recv_ptr + offset);
-	        ringclient::Payload payload;
-	    	payload.ParseFromArray(inner_pkt, append_entry->payload_size);
-		uint64_t idx = append_entry->g_idx + i;
-	        store(idx, payload.mutable_append()->entry());
-
-		ringclient::Payload reply;
-		std::string output;
-     		reply.set_packet_type(static_cast<int>(PacketType::append));
-     		reply.set_nonce(payload.nonce());
-     		reply.SerializeToString(&output);
-		memcpy(reply_packet.get() + reply_pkt_offset, output.data(), output.length());
-		spdlog::debug("Sending packet back with nonce {} and reply nonce {} and index of this entry is {} and the entry length is {}", payload.nonce(), reply.nonce(), idx, payload.mutable_append()->entry().length());
-		offset += append_entry->payload_size;
-		reply_pkt_offset += append_entry->payload_size;
-		cnt += 1;
-	    }
-
-	    //spdlog::debug("For nonce {}, we got idx {}, which got {} matching acks and {} acks overall", append_entry->nonce, append_entry->g_idx, min_matching_acks, append_ack_map[append_entry->nonce].first);
-            net->send_packet(std::move(reply_packet), reply_pkt_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append], switch_mac, switch_ip);
-	    //net->add_to_send_queue(std::move(reply_packet), static_cast<uint64_t>(PacketType::append), reply_pkt_size);
-	}
-        // DUMMY: net->send_packet(std::move(reply_packet), reply_pkt_size, static_cast<int>(PacketType::append), get_pkt_eth_types()[PacketType::append]);
-    }
-    spdlog::critical("RECEIVED {} append packets and REPLIED to {} append packets on storage server {}", total_cnt, cnt, gettid());
 }
 
 void LogStorage::wait_to_finish() {
@@ -201,25 +135,285 @@ void LogStorage::wait_to_finish() {
     end_thread = true;
 }
 
-/* Header functions */
-std::vector<int> LogStorage::get_pkt_eth_types() {
-    std::vector<int> eth_types = {};
-    for(uint64_t i = 0; i < num_pkt_types; i++) {
-        eth_types.push_back(get_eth_type(i));
+void LogStorage::receiver() {
+    spdlog::critical("Storage receiver thread starting with tid = {}", gettid());
+    pin_current_thread_linux(0);
+    while (!end_thread) {
+        char* recv_ptr = net->recv_packet();
+	if (!recv_ptr) {
+	    continue;
+	}
+	spdlog::debug("Received a packet in the storage!");
+	struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
+	if (ntohs(type_hdr->type) == ETH_APPEND_REQ) {
+	    spdlog::debug("ETH_APPEND_REQ");
+            struct ring_append_entry* ring = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
+	    uint64_t pkt_size = ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(ring->payload_size) + 1);
+            char* pkt = (char*)std::malloc(pkt_size);
+            memcpy(pkt, recv_ptr, pkt_size); 
+	    append_req_q.push(pkt);
+            {
+	        std::unique_lock<std::mutex> lock(append_req_q_mutex);
+            }
+	    append_req_cv.notify_all();
+	} else if (ntohs(type_hdr->type) == ETH_READ_REQ) {
+	    spdlog::debug("ETH_READ_REQ");
+            struct ring_read_entry* ring = (struct ring_read_entry*)(recv_ptr + sizeof(struct ring_type));
+	    uint64_t pkt_size = ntohs(type_hdr->num_entries)*(sizeof(struct ring_type) + sizeof(struct ring_read_entry) + ntohl(ring->payload_size) + 1);
+            char* pkt = (char*)std::malloc(pkt_size);
+            memcpy(pkt, recv_ptr, pkt_size); 
+	    read_req_q.push(pkt);
+            {
+	        std::unique_lock<std::mutex> lock(read_req_q_mutex);
+            }
+	    read_req_cv.notify_all();
+	} else {
+	    spdlog::debug("TYPE UNKNOWN: {}!!!", ntohs(type_hdr->type));
+	    continue;
+	}
     }
-    return eth_types;
 }
 
-size_t LogStorage::get_size_of_hdr(uint64_t pkt_type) {
-    if (PacketType(pkt_type) == PacketType::append) {
-        return sizeof(struct ring_append_entry);
+void LogStorage::append_server(int append_port, std::unique_ptr<Network> append_net) {
+    spdlog::critical("APPEND REQUEST thread starting with tid = {}", gettid());
+    int batch_socket = append_net->setup_batch_socket(append_port);
+    if (batch_socket < 0) {
+        append_net->stop_batch_threads();
+	return;
     }
-    return 0;
+    uint64_t append_cntr = 0;
+    spdlog::debug("Created batch socket {}!", batch_socket);
+    while (!end_thread) {
+	int num_received = append_net->recv_many_packets(batch_socket);
+	if (num_received < 0) {
+	    continue;
+	}
+	spdlog::debug("Received {} packets!", num_received);
+        for (int i = 0; i < num_received; i++) {
+	    char* buf = append_net->get_buf(i);
+	    struct mmsghdr msg = append_net->get_msg(i);
+
+	    if (buf != NULL) {
+	        struct ring_append_entry* append_entry = (struct ring_append_entry*)(buf + sizeof(struct ring_type));
+	        struct ring_type* type_hdr = (struct ring_type*)(buf);
+         	// Update the type of the type header
+         	type_hdr->type = htons(ETH_APPEND_RESP);
+     	        // Get append payload
+ 	        uint64_t sequence_no = ntohl(append_entry->g_idx);
+                char* entry = (char*)(buf + sizeof(struct ring_type) + sizeof(struct ring_append_entry));
+           
+     	        // Actually store the entry
+                std::string string_to_store(entry); 
+                store(sequence_no, string_to_store);
+     	        max_append_idx = sequence_no;
+                spdlog::debug("The updated index is: {}, Entry: {}, Recv port: {}", max_append_idx, string_to_store, ntohs(append_entry->recv_port));
+
+		std::string dest_ip = "";
+		uint16_t recv_port = 0;
+                if (use_switch) {
+	            std::string send_switch_port  = "60009"; // TODO TODO
+		    int tmp_port = std::stoi(send_switch_port);
+		    recv_port = static_cast<uint16_t>(tmp_port);
+		    dest_ip = switch_ip;
+		    spdlog::debug("Sending to the switch! IP: {} and Port: {}", switch_ip, send_switch_port);
+                } else {
+		    dest_ip = get_quad_ip(append_entry->client_ip);
+		    recv_port = ntohs(append_entry->recv_port);
+                }
+
+		if (dest_ip.length() == 0) {
+	            continue;
+	        }
+
+		(void) recv_port;
+                /*struct sockaddr_in server_addr;
+                memset(&server_addr, 0, sizeof(server_addr));
+                server_addr.sin_family = AF_INET;
+                server_addr.sin_port = htons(recv_port);
+                server_addr.sin_addr.s_addr = inet_addr(dest_ip.c_str());*/
+		if (msg.msg_len > 0) {
+		    struct iovec* iovecs = append_net->get_iovecs();
+                    iovecs[i].iov_len = msg.msg_len;
+                }
+		//memcpy(msg.msg_hdr.msg_name, &server_addr, sizeof(server_addr));
+     	        append_cntr += 1;
+	    }
+	}
+
+	struct mmsghdr* msgs = append_net->get_msgs();
+	struct iovec* iovecs = append_net->get_iovecs();
+	spdlog::debug("Sending the batch of processed messages out!");
+        sendmmsg(batch_socket, msgs, num_received, 0);
+        for (int i = 0; i < num_received; i++) {
+            msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
+            iovecs[i].iov_len = MAX_PACKET_SIZE;
+        }
+    }
+    append_net->stop_batch_threads();
+    close(batch_socket);
+    spdlog::critical("Storage server counter: {}", append_cntr);
 }
 
-int LogStorage::get_eth_type(uint64_t pkt_type) {
-    if (pkt_type == PacketType::append) {
-        return ETH_APPEND_REQ;
+// TODO: Make into an append server threadpool with recvmmsg & sendmmsg
+/*void LogStorage::append_server() {
+    spdlog::critical("Network Storage Thread starting with TID = {}", gettid());
+    spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
+    pin_current_thread_linux(1);
+    size_t size_of_hdr = get_ring_append_size();
+    size_t size_of_type_hdr = get_ring_type_size();
+    std::vector<double> lats;
+
+     while (!end_thread) {
+         char* recv_ptr;
+         {
+     	     std::unique_lock<std::mutex> lock(append_req_q_mutex);
+     	     append_req_cv.wait(lock, [this] {return end_thread || !append_req_q.empty();});
+     	     if (!append_req_q.try_pop(recv_ptr) || !recv_ptr) {
+                 net->send_udp_packet(NULL, 0, switch_ip, switch_recv_port, false); // TODO is this needed?
+                 continue;
+             }
+         }
+
+	 spdlog::debug("RECEIVED APPEND PACKET!!!");
+         auto duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	 double start_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+         uint64_t recv_offset = 0;
+         struct ring_type* type_hdr = (struct ring_type*)(recv_ptr);
+         // Update the type of the type header
+         type_hdr->type = htons(ETH_APPEND_RESP);
+         uint64_t num_entries = ntohs(type_hdr->num_entries);
+         spdlog::debug("Num entries {}", ntohs(type_hdr->num_entries));
+         for (uint64_t i = 0; i < num_entries; i++) {
+             // Get the append entry header
+             struct ring_append_entry* batch_append_entry = (struct ring_append_entry*)(recv_ptr + recv_offset + size_of_type_hdr);
+     	     // Get append payload
+ 	     uint64_t sequence_no = ntohl(batch_append_entry->g_idx);
+             char* entry = (char*)(recv_ptr + recv_offset + size_of_type_hdr + size_of_hdr);
+           
+	      
+     	     // Actually store the entry
+             std::string string_to_store(entry); 
+             store(sequence_no, string_to_store);
+     	     max_append_idx = sequence_no;
+             spdlog::debug("The updated index is: {}, Entry: {}, Recv port: {}", max_append_idx, string_to_store, ntohs(batch_append_entry->recv_port));
+ 
+     	     // Create reply packet
+             uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr + ntohl(batch_append_entry->payload_size) + 1;
+             std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
+
+
+             // Copy both the type header and the append entry header into the reply packet buffer
+             memcpy(reply_packet.get(), recv_ptr + recv_offset, reply_pkt_size);
+             
+             if (use_switch) {
+		 std::string send_switch_port  = "60009"; // TODO TODO
+     	         spdlog::debug("Sending to the switch! IP: {} and Port: {}", switch_ip, send_switch_port);
+                 net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, send_switch_port, false);
+             } else {
+     	         char buffer[INET_ADDRSTRLEN];
+     	         if (inet_ntop(AF_INET, &batch_append_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
+     	             spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
+     	             memset(buffer, 0, INET_ADDRSTRLEN);
+     		     throw;
+     	         }
+     	         std::string client_ip(buffer);
+                 net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, client_ip, std::to_string(ntohs(batch_append_entry->recv_port)));
+             }
+
+	     duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
+	     double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
+	     double dur = end_time_s - start_time_s;
+	     lats.push_back(dur);
+     	     append_cntr += 1;
+             recv_offset += reply_pkt_size;
+         }
+     }
+     double final_avg_latency = std::accumulate(lats.begin(), lats.end(), 0.0) / lats.size();
+     final_avg_latency *= 1000;
+     spdlog::critical("=============== Number of append packets processed is {} with max append sequence number {} and avg latency {} ===========================", append_cntr, max_append_idx, final_avg_latency);
+}*/
+
+void LogStorage::read_server() {
+    spdlog::critical("Network Storage Thread starting with TID = {}", gettid());
+    spdlog::info("Simple Net Server, about to start with {}!", !end_thread);
+
+    pin_current_thread_linux(2);
+    size_t size_of_hdr = get_ring_append_size();
+    size_t size_of_type_hdr = get_ring_type_size();
+
+    while (!end_thread) {
+     	bool got_quorum = false;
+
+        while (!got_quorum) {
+	    if (end_thread) {
+	        break;
+	    }
+
+	    // Receive new packet
+	    char* recv_ptr;
+	    {
+		std::unique_lock<std::mutex> lock(read_req_q_mutex);
+		read_req_cv.wait(lock, [this] {return end_thread || !read_req_q.empty();});
+		if (!read_req_q.try_pop(recv_ptr) || !recv_ptr) {
+            	    net->send_udp_packet(NULL, 0, switch_ip, switch_recv_port, false); // TODO is this needed?
+	            continue;
+	        }
+	    }
+
+	    spdlog::debug("RECEIVED READ PACKET!!!");
+	    // Read entry
+	    struct ring_type* type_hdr = (struct ring_type*)(recv_ptr);
+	    struct ring_read_entry* read_entry = (struct ring_read_entry*)(recv_ptr + sizeof(struct ring_type));
+	    
+	    // Update the type of the type header
+	    type_hdr->type = htons(ETH_READ_RESP);
+
+	    // Get the next append entry header to process and its payload
+	    std::string entry = get(ntohl(read_entry->g_idx));
+	    read_entry->payload_size = htonl(entry.length());
+	    spdlog::debug("Index is: {}, Entry: {}, Recv port: {}", ntohl(read_entry->g_idx), entry, ntohs(read_entry->recv_port));
+	    
+
+	    // Create reply packet
+ 	    uint64_t reply_pkt_size = size_of_type_hdr + size_of_hdr + ntohl(read_entry->payload_size) + 1;
+     	    std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(reply_pkt_size);
+	    // Copy both the type header, read entry header, and payload into the reply packet buffer
+            memcpy(reply_packet.get(), recv_ptr, size_of_type_hdr);
+            memcpy(reply_packet.get() + size_of_type_hdr, recv_ptr + size_of_type_hdr, size_of_hdr);
+            memcpy(reply_packet.get() + size_of_type_hdr + size_of_hdr, entry.c_str(), ntohl(read_entry->payload_size) + 1);
+	    
+	    if (use_switch) {
+     	         net->send_udp_packet(std::move(reply_packet), reply_pkt_size, switch_ip, switch_recv_port, false);
+	    } else {
+	        char buffer[INET_ADDRSTRLEN];
+    	        if (inet_ntop(AF_INET, &read_entry->client_ip, buffer, INET_ADDRSTRLEN) == nullptr) {
+	             spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
+	             memset(buffer, 0, INET_ADDRSTRLEN);
+    	        }
+	        std::string client_ip(buffer);
+     	        net->send_client_udp_packet(std::move(reply_packet), reply_pkt_size, client_ip, std::to_string(ntohs(read_entry->recv_port)));
+	    }
+	    read_cntr += 1;
+	}
+	
+	// Create packet buffer which will be sent  
+	if (end_thread) {
+	    break;
+	}
     }
-    return -1; // no ethernet type found
+
+    spdlog::critical("=============== Number of read requests seen: {} ===========================", read_cntr);
+}
+
+std::string LogStorage::get_quad_ip(uint32_t ip_addr) { // TODO DEDUPLICAT
+    // INET_ADDRSTRLEN is a standard constant (usually 16)
+    char buffer[INET_ADDRSTRLEN];
+ 
+    // Convert the 4 bytes into a dotted-quad string
+    if (inet_ntop(AF_INET, &ip_addr, buffer, INET_ADDRSTRLEN) == nullptr) {
+         spdlog::critical("UH OH UNABLE TO GET DOTTED_QUAD STRING");
+         return "";
+    }	
+    std::string client_ip(buffer);
+    return client_ip;
 }

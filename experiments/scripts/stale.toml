@@ -1,0 +1,161 @@
+[network_setup]
+# Storage server information
+stor_ips = ["10.0.0.6", "10.0.0.7", "10.0.0.8"]
+stor_recv_port = "30003"
+stor_macs = ["42:01:0a:00:00:06", "42:01:0a:00:00:07", "42:01:0a:00:00:08"]
+stor_net_ifs = ["ens4", "ens4", "ens4"] 
+# Client information
+cli_ips = ["10.0.0.4"]
+cli_net_ifs = ["ens4"]
+cli_macs = ["42:01:0a:00:00:04"] #, "40:a6:b7:c3:51:58"] # TODO: Deprecated
+# Switch information
+switch_ip = "10.0.0.5"
+switch_recv_port = "30002"
+switch_net_if = "ens4"
+switch_mac = "42:01:0a:00:00:05" # TODO: Deprecated
+ssh_key = "/home/mathwiz23pi/.ssh/gcloud"
+ssh_user = "mathwiz23pi" # Added for complete SSH command
+
+[program_paths]
+path_client = "/home/mathwiz23pi/pringles/build/experiments/unit_tests/cli"
+path_server = "/home/mathwiz23pi/pringles/build/experiments/unit_tests/stor"
+path_switch = "/home/mathwiz23pi/pringles/build/experiments/unit_tests/switch"
+run_setup_script = "False"
+
+[experiment_parameters]
+log_level = 1
+warm_up = 5 # seconds
+cool_down = 5 # seconds
+experiment_duration = 30 # seconds
+socket_type = "UDP" # "RAW"
+message_size = 4000 # 100 # bytes
+num_client_threads = 1
+num_storage_threads = 1
+json_name = "gcp_client"
+experiment_name = "4KB_shard_exp"
+num_failures = 0 # NEW
+git_hash = "1b0aec5ee4e12df008d835842cafe794b9e77615" # TODO
+use_switch = 1
+use_store = 1
+batch_size = 1 # Number of packets
+batch_usec_timeout = 460
+
+[protocol_batching]
+batch_on = true
+num_packet_types = 1
+sequencer_type = 0 
+storage_server_type = 0 
+
+[routing]
+list_client_dest_ips = ["10.0.0.4"]
+switch_ip = "10.0.0.5"
+list_storage_server_dest_ips = ["10.0.0.6", "10.0.0.7", "10.0.0.8"]
+client_dest_macs = ["42:01:0a:00:00:04"]
+server_dest_macs = ["42:01:0a:00:00:06", "42:01:0a:00:00:07", "42:01:0a:00:00:08"]
+
+#[[experiment]]
+#num_client_threads = 1
+#batch_size = 1 # Number of packets
+#json_name = "one_client"
+#
+#[[experiment]]
+#num_client_threads = 2
+#batch_size = 2 # Numbeyyr of packets
+#json_name = "two_client"
+#
+#[[experiment]]
+#num_client_threads = 4
+#batch_size = 1 # Number of packets
+#json_name = "four_client"
+
+#[[experiment]]
+#num_client_threads = 6
+#json_name = "six_client"
+
+#$[[experiment]]
+#$num_client_threads = 8
+#$batch_size = 2 # Number of packets
+#$json_name = "eight_client"
+
+[[experiment]]
+num_client_threads = 1
+batch_size = 2 # Number of packets
+json_name = "gcp_one_client"
+
+#[[experiment]]
+#num_client_threads = 15
+#batch_size = 2 # Numbeyyr of packets
+#json_name = "fifteen_client"
+
+#[[experiment]]
+#num_client_threads = 16
+#batch_size = 2 # Number of packets
+#json_name = "sixteen_client"
+
+#[[experiment]]
+#num_client_threads = 18
+#json_name = "eighteen_client"
+#
+#[[experiment]]
+#num_client_threads = 25
+#num_storage_threads = 1
+#batch_size = 5 # Number of packets
+#json_name = "twofive_client"
+#[[experiment]]
+#num_client_threads = 35
+#num_storage_threads = 1
+#batch_size = 7 # Number of packets
+#json_name = "threefive_client"
+##
+#num_client_threads = 60
+#num_storage_threads = 1
+#batch_size = 5 # Numbeyyr of packets
+#json_name = "sixty_client"
+#
+#[[experiment]]
+#num_client_threads = 80
+#num_storage_threads = 1
+#batch_size = 12 # Numbeyyr of packets
+#json_name = "eighty_client"
+#
+#[[experiment]]
+#num_client_threads = 90
+#num_storage_threads = 1
+#batch_size = 10 # Numbeyyr of packets
+#json_name = "ninety_client"
+###
+#[[experiment]]
+#num_client_threads = 100
+#num_storage_threads = 1
+#batch_size = 12 # Numbeyyr of packets
+#json_name = "hundred_client"
+#
+#[[experiment]]
+#num_client_threads = 120
+#num_storage_threads = 1
+#batch_size = 12 # Numbeyyr of packets
+#json_name = "hundredtwenty_client"
+#
+#[[experiment]]
+#num_client_threads = 140
+#num_storage_threads = 1
+#batch_size = 12 # Numbeyyr of packets
+#json_name = "hundredforty_client"
+#
+#[[experiment]]
+#num_client_threads = 150
+#num_storage_threads = 1
+#batch_size = 12 # Numbeyyr of packets
+#json_name = "hundredfifty_client"
+#
+#[[experiment]]
+#num_client_threads = 175
+#num_storage_threads = 1
+#batch_size = 12 # Numbeyyr of packets
+#json_name = "hundredsevenfive_client"
+#
+#[[experiment]]
+#num_client_threads = 200
+#num_storage_threads = 1
+#batch_size = 15 # Numbeyyr of packets
+#json_name = "twohundred_client"

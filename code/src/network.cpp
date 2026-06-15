@@ -15,28 +15,20 @@
 #include <fcntl.h>
 #include <stdexcept>
 #include <unordered_map>
-
 #include "ring_headers.h"
 #include "network.h"
 #include "yaml-cpp/yaml.h"
 #include "utils.h"
 #include "spdlog/spdlog.h"
 
-Network::Network(std::string send_port, 
-                 std::string recv_port,
-                 std::string socket_type,
+Network::Network(std::string socket_type,
                  uint64_t log_level,
                  uint64_t batch_size,
                  bool batch_on,
 		 uint64_t batch_timeout,
                  std::string send_interface,
-                 std::string self_ip,
-		 uint64_t num_pkt_type,
-		 bool run_threads) :  rcv_pkt(1000000)
+                 std::string self_ip)
 { 
-    if (geteuid() != 0) { // Check if we are running as root
-        throw std::runtime_error("Not running as root!");
-    }
     if(!check_socket_type(socket_type)) { 
         throw std::runtime_error("Invalid socket type!");
     }
@@ -47,7 +39,61 @@ Network::Network(std::string send_port,
     this->batch_size = batch_size;
     this->self_ip = self_ip;
     this->batch_on = batch_on;
-    this->num_pkt_type = num_pkt_type;
+
+    this->running_pkt_size = 0;
+    this->num_pkts = 0;
+    this->batch_timeout = static_cast<double>(batch_timeout) / 1000000; //.000460
+    auto start_time = (std::chrono::steady_clock::now()).time_since_epoch();
+    this->batch_timer = std::chrono::duration_cast<std::chrono::duration<double>>(start_time).count();
+
+    this->send_ip_hdr = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
+    this->norm_buf = (char*)std::malloc(MAX_PACKET_SIZE);
+    this->final_send_packet = (char*)std::malloc(MAX_PACKET_SIZE);
+
+    this->sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
+    this->sin.sll_halen = ETH_ALEN;
+
+    memset(msgs, 0, sizeof(msgs)); 
+    for (uint64_t i = 0; i < BATCH_SIZE; i++) {
+        iovecs[i].iov_base = buffers[i];
+        iovecs[i].iov_len = MAX_PACKET_SIZE;
+
+        msgs[i].msg_hdr.msg_name = &client_addrs[i];
+        msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
+        msgs[i].msg_hdr.msg_iov = &iovecs[i];
+        msgs[i].msg_hdr.msg_iovlen = 1;
+    }
+
+    spdlog::critical("DONE with the network setup!");
+    /* End of new initializing socket */
+}
+
+
+Network::Network(std::string send_port, 
+                 std::string recv_port,
+                 std::string socket_type,
+                 uint64_t log_level,
+                 uint64_t batch_size,
+                 bool batch_on,
+		 uint64_t batch_timeout,
+                 std::string send_interface,
+                 std::string self_ip,
+		 std::string multicast_ip,
+		 bool is_in_shard,
+		 bool run_threads) :  rcv_pkt(1000000)
+{
+    (void) is_in_shard;	
+    if(!check_socket_type(socket_type)) { 
+        throw std::runtime_error("Invalid socket type!");
+    }
+    set_spdlog_level(log_level);
+    this->run_threads = run_threads;
+    this->socket_type = socket_type;
+    this->send_interface = send_interface;
+    this->batch_size = batch_size;
+    this->self_ip = self_ip;
+    this->multicast_ip = multicast_ip;
+    this->batch_on = batch_on;
     SEND_PORT = send_port;
     RECV_PORT = recv_port;
     spdlog::critical("Send port: {}, Receive port: {}", SEND_PORT, RECV_PORT);
@@ -55,19 +101,51 @@ Network::Network(std::string send_port,
     this->running_pkt_size = 0;
     this->num_pkts = 0;
     this->batch_timeout = static_cast<double>(batch_timeout) / 1000000; //.000460
-    auto start_time = (std::chrono::steady_clock::now()).time_since_epoch();
-    this->batch_timer = std::chrono::duration_cast<std::chrono::duration<double>>(start_time).count();
+    //this->batch_timer = std::chrono::duration_cast<std::chrono::duration<double>>(start_time).count();
     /*send_socket = setup_raw_talker_socket();
     if (send_socket < 0) {
         spdlog::critical("SENDER Socket creation unsuccessful. Aborting");
         throw std::runtime_error("Can't create sending socket");
     }
     spdlog::debug("The socket fd is {}", send_socket);*/
-    recv_socket = setup_listener_socket(self_ip);
-    if (recv_socket < 0) {
-        spdlog::critical("RECEIVER Socket creation unsuccessful. Aborting");
-        throw std::runtime_error("Can't create receiving socket");
+    struct sockaddr_in client_addr;
+
+    if ((recv_socket = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        throw;
     }
+
+    // Optional: Add a timeout to recvfrom so threads don't hang forever if a packet drops
+    // Because we are blasting multiple threads, a single dropped packet shouldn't freeze a thread.
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(recv_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    setsockopt(recv_socket, SOL_SOCKET, SO_BINDTODEVICE, send_interface.c_str(), strlen(send_interface.c_str()));
+
+    memset(&client_addr, 0, sizeof(client_addr));
+    client_addr.sin_family = AF_INET;
+    client_addr.sin_port = htons(std::stoi(recv_port)); // Port 0 lets the OS assign a unique ephemeral port
+    client_addr.sin_addr.s_addr = inet_addr(self_ip.c_str());
+
+    if (bind(recv_socket, (const struct sockaddr *)&client_addr, sizeof(client_addr)) < 0) {
+        close(recv_socket);
+        return;
+    }
+
+    /*if (is_in_shard) {
+	recv_socket = setup_multicast_receiver(self_ip);
+        if (recv_socket < 0) {
+            spdlog::critical("MULTICAST RECEIVER Socket creation unsuccessful. Aborting");
+            throw std::runtime_error("Can't create multicast receiving socket");
+        }
+    } else {
+       recv_socket = setup_listener_socket(self_ip);
+       if (recv_socket < 0) {
+           spdlog::critical("RECEIVER Socket creation unsuccessful. Aborting");
+           throw std::runtime_error("Can't create receiving socket");
+       }
+
+    }*/
     spdlog::debug("The socket fd is {}", recv_socket);
 
     this->send_ip_hdr = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
@@ -75,139 +153,68 @@ Network::Network(std::string send_port,
     this->final_send_packet = (char*)std::malloc(MAX_PACKET_SIZE);
     //this->send_eth_hdr = create_eth_hdr(send_socket);
 
-
     this->sin.sll_ifindex = if_nametoindex((const char*)send_interface.c_str());//ifr.get()->ifr_ifindex;
     this->sin.sll_halen = ETH_ALEN;
     if (run_threads) {
-   	 this->send_thread = std::thread(&Network::run_send, this);	
+   	 //this->send_thread = std::thread(&Network::run_send, this);	
    	 this->recv_thread = std::thread(&Network::run_recv, this, recv_socket);
+    }
+
+
+    memset(msgs, 0, sizeof(msgs)); 
+    for (uint64_t i = 0; i < BATCH_SIZE; i++) {
+        iovecs[i].iov_base = buffers[i];
+        iovecs[i].iov_len = MAX_PACKET_SIZE;
+
+        msgs[i].msg_hdr.msg_name = &client_addrs[i];
+        msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
+        msgs[i].msg_hdr.msg_iov = &iovecs[i];
+        msgs[i].msg_hdr.msg_iovlen = 1;
     }
     /* End of new initializing socket */
 }
     
 Network::~Network() {
-	// TODO cleanup???
+    // TODO cleanup???
 }
 
 std::string Network::get_recv_port() {
     return RECV_PORT;
 }
 
+// Creates a UDP socket bound to a random OS-assigned ephemeral port
+int Network::create_random_port_socket() {
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    struct sockaddr_in local_addr;
+    memset(&local_addr, 0, sizeof(local_addr));
+    
+    local_addr.sin_family = AF_INET;
+    local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    local_addr.sin_port = htons(0); // The magic zero: OS assigns a random port
+
+    // Bind the socket to apply the random port assignment
+    if (bind(sockfd, (const struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
+        perror("Bind to port 0 failed");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+
+    return sockfd;
+}
+
 unsigned short Network::checksum(unsigned short *buf, int nwords) {
     unsigned long sum;
-    for(sum=0; nwords>0; nwords--) {
+    for(sum = 0; nwords > 0; nwords--) {
         sum += *buf++;
     }
     sum = (sum >> 16) + (sum &0xffff);
     sum += (sum >> 16);
     return (unsigned short)(~sum);
-}
-
-// Threadpool send thread function
-// Send packets as they are queued
-void Network::run_send() {
-    /*spdlog::critical("Network Send Thread starting with TID = {}", gettid());
-    uint64_t cnt = 0;
-    
-    std::unique_ptr<struct iphdr> ip = create_ip_hdr(); //ip_addr, pkt_len, (unsigned short *)packet.get()); 
-
-    char* send_packet = (char*)std::malloc(MAX_PACKET_SIZE);
-    while (!terminate) {
-
-        uint64_t pkt_len = 0;
-        {
-            std::unique_lock<std::mutex> lock(send_pkt_qs_mutex); // TODO: PER QUEUE LOCK
-            mutex_condition.wait(lock, [&, this] {
-                return !send_pkt_qs[pkt_type].empty() || terminate;        
-            });
-
-	    if (terminate && send_pkt_qs[pkt_type].empty()) {
-		    break;
-	    }
-            
-	    pkt_len = send_pkt_qs[pkt_type].front().first;
-	    memcpy(send_packet, send_pkt_qs[pkt_type].front().second.get(), pkt_len);//std::move(send_pkt_qs[pkt_type].front().second);
-	    if (send_packet == NULL) { // TODO should this ever be NUL?
-		spdlog::debug("The received packet is NULL?");
-	    	return;
-	    }
-	    //spdlog::debug("The number of queued packets is: {}", send_pkt_qs[pkt_type].size());
-	    //spdlog::debug("Packet has been found! {}", send_packet.get());
-
-	    //spdlog::debug("Debug: {}", pkt_len);
-            send_pkt_qs[pkt_type].pop();
-        }
-        //spdlog::debug("Past preprocessing! The packet value is still: {}", send_packet.get()); 
-*/
-
-	// If socket_type UDP
-        /*if (socket_type == "UDP") {
-	    spdlog::debug("Sending a UDP packet!");
-	    for (size_t i = 0; i < pkt_type_to_ip[pkt_type].size(); i++) {
-	    	//std::shared_ptr<struct addrinfo> it = std::make_shared<struct addrinfo>();
-            	int s_fd = pkt_type_to_fd[pkt_type][i]; //setup_talker_socket(pkt_type_to_ip[pkt_type][0], it); // TODO: Send to all entries!
-            	if (s_fd < 0) {
-                    spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", pkt_type);
-                    throw std::runtime_error("Can't create sending socket");
-                } 
-            	ssize_t num_bytes = sendto(s_fd, send_packet, pkt_len, 0, fd_to_it[s_fd]->ai_addr, fd_to_it[s_fd]->ai_addrlen);
-            	if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
-                    spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-		    {
-            		std::unique_lock<std::mutex> lock(send_pkt_qs_mutex); // TODO: PER QUEUE LOCK         
-	    		send_pkt_qs[pkt_type].pop();
-	    	    }
-                    continue;
-            	}
-            	spdlog::info("Successfully sent {} bytes to the receiver with packet value {}", std::to_string(num_bytes), send_packet);
-	    }
-            continue;
-        }
-
-        // If the packet type is a descriptive string to indicate header type
-	std::vector<int> send_fds = pkt_type_to_fd[pkt_type];
-	for (size_t i = 0; i < send_fds.size(); i++) {
-	    int s_fd = send_fds[i];
-            if (s_fd < 0) {
-                spdlog::critical("No socket found, dropping buffers");
-                continue;
-            }
-            
-            std::string ip_addr = pkt_type_to_ip[pkt_type][i];
-            //spdlog::critical("IP Address: {}", ip_addr);
-            size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + pkt_len;
-            spdlog::debug("Eth hdr: {}, IP hdr: {}, Size hdr + payload: {}", sizeof(struct ethhdr), sizeof(struct iphdr), pkt_len);
-
-            std::unique_ptr<char[]> packet = std::make_unique<char[]>(packet_size); // TODO phase this out eventually
-       
-            memcpy(packet.get(), eth_hdr_vecs[i].get(), sizeof(struct ethhdr));
-            
-	    ip.get()->tot_len  = htons(sizeof(struct iphdr) + pkt_len);
-            ip.get()->daddr = inet_addr(ip_addr.c_str()); // destination address
-            ip.get()->check = checksum((unsigned short *)packet.get(), sizeof(struct iphdr)); // checksum ONLY for the IPv4 header^
-
-            memcpy(packet.get() + sizeof(struct ethhdr), ip.get(), sizeof(struct iphdr));
-
-            //spdlog::debug("Total packet size is {}", packet_size);
-
-            memcpy(packet.get() + sizeof(struct ethhdr) + sizeof(struct iphdr), reinterpret_cast<const char*>(send_packet), pkt_len);
-            ssize_t num_bytes = 0;
-   	    for (int j = 0; j < 6; j++) { // 48 bit mac address - local broadcast
-       		sin.sll_addr[j] = eth_hdr_vecs[i].get()->h_dest[j];
-   	    }
-            
-            if ((num_bytes = sendto(s_fd, packet.get(), packet_size, 0, (struct sockaddr*)(&sin), sizeof(sin))) < 0 || 
-                    ((uint64_t)num_bytes != packet_size)) {
-                spdlog::warn("Error {} occurred: {}", std::to_string(errno), strerror(errno));
-                spdlog::debug("Num bytes sent: {} vs. expected: {}", num_bytes, packet_size);
-                continue;
-            }
-            spdlog::debug("Successfully sent {} bytes to the receiver", num_bytes);
-	    cnt += final_send_packetmemset(send_packet, 0, MAX_PACKET_SIZE);*/
-    //}
-    //free(send_packet);
-    //spdlog::debug("Done with the send thread focused on {}", pkt_type);
-    //spdlog::critical("Network send this many packets: {} for thread {}", cnt, gettid());
 }
 
 std::string Network::get_ip(uint64_t pkt_type, int idx) {
@@ -295,51 +302,9 @@ void Network::run_recv(int s_fd) {
     spdlog::critical("Network received this many GENERIC packets: {} for thread {}", cnt, gettid());
 }
 
-// this is the compiled pointer to protobuf string
-void Network::add_to_send_queue(std::unique_ptr<char[]> buf, uint64_t packet_type, uint64_t packet_size) {
-    std::unique_lock<std::mutex> lock(send_pkt_qs_mutex);
-    if (terminate) {
-        spdlog::info("No more packets accepted!");
-        return;
-    }
-    spdlog::debug("Going to send packet type: {}, with content: {} of size {}.", packet_type, buf.get(), packet_size);
-    send_pkt_qs[packet_type].push(std::pair<uint64_t, std::unique_ptr<char[]>>(packet_size, std::move(buf)));
-    mutex_condition.notify_one();
-    return;
-}
-
-char* Network::read_from_recv_queue() {
-    /*if (rcv_pkt.empty()) {
-	return NULL;
-    }
-    std::unique_lock<std::mutex> lock(rcv_queue_mutex);
-    //spdlog::debug("Number of packets received: {}", rcv_pkt.size());
-    char* receive_pkt = rcv_pkt.front();
-    rcv_pkt.pop();
-    return receive_pkt;*/
-    char* receive_pkt = NULL;
-    bool succeeded = rcv_pkt.try_dequeue(receive_pkt);
-    if (!succeeded) {
-        return NULL;
-    }
-    return receive_pkt;
-}
-
 // To only be called by the sender
 void Network::done() {
     stop_threads();
-}
-
-bool Network::pkts_in_queue() {
-    {
-        std::unique_lock<std::mutex> lock(send_pkt_qs_mutex);
-        for (const auto& [pkt_type, q] : send_pkt_qs) {
-            if (!q.empty()) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 /*Sets up a datagram receiver socket for chosen_ip_addr*/  
@@ -361,7 +326,6 @@ int Network::setup_listener_socket(std::string curr_ip) {
     
     if ((s_fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
         spdlog::critical("Cannot get socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        //continue;
         return -1;
     }
     
@@ -407,36 +371,112 @@ int Network::setup_listener_socket(std::string curr_ip) {
 }
 
 /*Sets up a datagram UDP socket for destination IP */  
-int Network::setup_talker_socket(std::string dst_ip, std::string dst_port) {
-    struct addrinfo hints, *servinfo, *temp;
+int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, bool use_multicast) {
     int s_fd;
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_DGRAM; // Normal UDP Datagram Socket
-    int64_t status = getaddrinfo(dst_ip.c_str(), dst_port.c_str(), &hints, &servinfo);
-    if (status != 0) {
-        spdlog::debug("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", dst_ip.c_str(), status, gai_strerror(status));
-        return -1;
-    }
-    for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
-        if ((s_fd = socket(temp->ai_family, temp->ai_socktype, temp->ai_protocol)) == -1) {
-            spdlog::debug("No socket created! Error {} occurred: {}. Still searching...", std::to_string(errno), strerror(errno));
-            continue;
-        }
-        if (connect(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
+    if (use_multicast) { 
+        s_fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (s_fd < 0) {
+            perror("Socket creation failed");
+            return -1;
+        }       
+
+        struct ip_mreqn mreqn;
+        memset(&mreqn, 0, sizeof(mreqn));
+        
+        // Get the index of the interface you WANT to send from (e.g., "enp1s0d1")
+        mreqn.imr_ifindex = if_nametoindex(send_interface.c_str());
+        if (mreqn.imr_ifindex == 0) {
+            spdlog::error("Interface {} not found", send_interface);
             close(s_fd);
-            spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
-            continue;
+            return -1;
         }
-        //memcpy(it.get(), temp, sizeof (struct addrinfo));
-        break;
+
+        // Tell the kernel: "Send all multicast traffic from this socket via this interface"
+        if (setsockopt(s_fd, IPPROTO_IP, IP_MULTICAST_IF, (char *)&mreqn, sizeof(mreqn)) < 0) {
+            spdlog::critical("Setting outgoing multicast interface error: {}", strerror(errno));
+            close(s_fd);
+            return -1;
+        }
+
+        // Optional: Set TTL if you need to cross routers (default is usually 1)
+        int ttl = 64;
+        setsockopt(s_fd, IPPROTO_IP, IP_MULTICAST_TTL, (char *)&ttl, sizeof(ttl));
+
+        // 1. Define the Multicast Destination
+        struct sockaddr_in dest_addr;
+        memset(&dest_addr, 0, sizeof(dest_addr));
+        dest_addr.sin_family = AF_INET;
+        dest_addr.sin_addr.s_addr = inet_addr(dst_ip.c_str());
+        dest_addr.sin_port = htons(std::stoi(dst_port));
+        
+        // 2. "Connect" the UDP socket to the multicast group
+        if (connect(s_fd, (struct sockaddr*)&dest_addr, sizeof(dest_addr)) < 0) {
+            spdlog::critical("Connect to multicast group failed: {}", strerror(errno));
+            close(s_fd);
+            return -1;
+        }
+    } else {
+        struct addrinfo hints, *servinfo, *temp;
+        memset(&hints, 0, sizeof hints);
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_DGRAM; // Normal UDP Datagram Socket
+        int64_t status = getaddrinfo(dst_ip.c_str(), dst_port.c_str(), &hints, &servinfo);
+        if (status != 0) {
+            spdlog::debug("Cannot get getaddrinfo for IP {}, Error {} occurred: {}", dst_ip.c_str(), status, gai_strerror(status));
+            return -1;
+        }
+        for (temp = servinfo; temp != NULL; temp = temp->ai_next) {
+            if ((s_fd = socket(temp->ai_family, temp->ai_socktype, temp->ai_protocol)) == -1) {
+                spdlog::debug("No socket created! Error {} occurred: {}. Still searching...", std::to_string(errno), strerror(errno));
+                continue;
+            }
+            if (connect(s_fd, temp->ai_addr, temp->ai_addrlen) == -1) { // TODO abstract error handling into function
+                close(s_fd);
+                spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+                continue;
+            }
+            //memcpy(it.get(), temp, sizeof (struct addrinfo));
+            break;
+        }
+        if (temp == NULL) {
+            spdlog::critical("Failed to create socket!");
+            return -1;
+        }
+        freeaddrinfo(servinfo);
     }
-    if (temp == NULL) {
-        spdlog::critical("Failed to create socket!");
-        return -1;
-    }
-    freeaddrinfo(servinfo);
     return s_fd;
+}
+
+int Network::setup_multicast_receiver(std::string self_ip) {
+    (void) self_ip;
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+    // 1. Bind the socket to the PORT
+    struct sockaddr_in localAddr;
+    memset(&localAddr, 0, sizeof(localAddr));
+    localAddr.sin_family = AF_INET;
+    localAddr.sin_port = htons(std::stoi(RECV_PORT));
+    // Still bind to INADDR_ANY to accept the packets at the OS level
+    localAddr.sin_addr.s_addr = htonl(INADDR_ANY); 
+
+    bind(sockfd, (struct sockaddr*)&localAddr, sizeof(localAddr)); 
+
+    struct ip_mreqn mreq;
+    mreq.imr_multiaddr.s_addr = inet_addr(multicast_ip.c_str());
+    mreq.imr_address.s_addr = htonl(INADDR_ANY); //self_ip.c_str()); // Use default interface // TODO TODO
+    mreq.imr_ifindex = if_nametoindex(send_interface.c_str()); //"enp1s0d1");
+
+    if (setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq, sizeof(mreq)) < 0) {
+	spdlog::critical("Adding multicast group error");
+        close(sockfd);
+        return -1;
+    } 
+    int reuse = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
+        spdlog::error("SO_REUSEADDR failed");
+    }
+    spdlog::debug("Multicast receiver created! Multicast IP is {}", multicast_ip);
+    return sockfd;
 }
 
 bool Network::send_packet(std::unique_ptr<char[]> send_packet, 
@@ -486,75 +526,117 @@ bool Network::send_packet(std::unique_ptr<char[]> send_packet,
 
 bool Network::send_client_udp_packet(std::unique_ptr<char[]> send_packet,  // TODO get rid of this
 		          uint64_t pkt_len, 
-			  uint64_t pkt_type, 
-			  int eth_type,
 			  std::string dst_ip,
 			  std::string dst_port) {
-    bool sent_all = true;
-    (void) pkt_type;
-    (void) eth_type;
+    bool sent_all = false;
     
     // If socket_type is not UDP
     if (socket_type != "UDP") {
         return false;
     }
     
-    //spdlog::debug("Sending a UDP packet!");
+    spdlog::debug("Sending a UDP packet!");
     int s_fd;
-    //spdlog::debug("SINGLE CLIENT Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
+    spdlog::debug("SINGLE CLIENT Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
     std::string combined_addr = dst_ip + ":" + dst_port;
-    if (port_to_fd.count(combined_addr) > 0) {
-        s_fd = port_to_fd[combined_addr];
+    
+    tbb::concurrent_hash_map<std::string, int>::accessor acc;
+    if (concurrent_port_to_fd.find(acc, combined_addr)) {
+        s_fd = acc->second; //port_to_fd[combined_addr];
 	if (s_fd < 0) {
             spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
             throw std::runtime_error("Can't create sending socket");
 	}
     } else {
-        s_fd = setup_talker_socket(dst_ip, dst_port);
+        s_fd = setup_talker_socket(dst_ip, dst_port, false);
         if (s_fd < 0) {
             spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
             throw std::runtime_error("Can't create sending socket");
         } 
-        port_to_fd.insert({combined_addr, s_fd});
+        concurrent_port_to_fd.insert(acc, combined_addr);
+	acc->second = s_fd;
+	//port_to_fd.insert({combined_addr, s_fd});
     }
+    while (!terminate && !sent_all) {
+        ssize_t num_bytes = send(s_fd, send_packet.get(), pkt_len, 0);
+        if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
+            //spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        } else {
+             spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+	     sent_all = true;
+        }
+    }
+    return sent_all;
+}
 
-    ssize_t num_bytes = send(s_fd, send_packet.get(), pkt_len, 0);
-    if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
-        spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        sent_all = false;
+bool Network::raw_send_client_udp_packet(char* send_packet,  // TODO get rid of this
+		          uint64_t pkt_len, 
+			  std::string dst_ip,
+			  std::string dst_port) {
+    bool sent_all = false;
+    
+    // If socket_type is not UDP
+    if (socket_type != "UDP") {
+        return false;
+    }
+    
+    spdlog::debug("Sending a UDP packet!");
+    int s_fd;
+    spdlog::debug("SINGLE CLIENT Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
+    std::string combined_addr = dst_ip + ":" + dst_port;
+    
+    tbb::concurrent_hash_map<std::string, int>::accessor acc;
+    if (concurrent_port_to_fd.find(acc, combined_addr)) {
+        s_fd = acc->second; //port_to_fd[combined_addr];
+	if (s_fd < 0) {
+            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
+            throw std::runtime_error("Can't create sending socket");
+	}
     } else {
-         //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+        s_fd = setup_talker_socket(dst_ip, dst_port, false);
+        if (s_fd < 0) {
+            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
+            throw std::runtime_error("Can't create sending socket");
+        } 
+        concurrent_port_to_fd.insert(acc, combined_addr);
+	acc->second = s_fd;
+	//port_to_fd.insert({combined_addr, s_fd});
+    }
+    while (!terminate && !sent_all) {
+        ssize_t num_bytes = send(s_fd, send_packet, pkt_len, 0);
+        if (num_bytes < 0 || ((uint64_t)num_bytes != pkt_len)) {
+            //spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        } else {
+             spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+	     sent_all = true;
+        }
     }
     return sent_all;
 }
 
 
+
 bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet, 
 		          uint64_t pkt_len, 
-			  uint64_t pkt_type, 
-			  int eth_type,
 			  std::string dst_ip,
-			  std::string dst_port) {
-    bool sent_all = true;
-    (void) pkt_type;
-    (void) eth_type;
-    
+			  std::string dst_port,
+			  bool use_multicast) {
+    bool sent_all = false;
     // If socket_type is not UDP
     if (socket_type != "UDP") {
         return false;
     }
     
     int s_fd;
-    //spdlog::debug("Dst ip: {} with Dst Port: {}", dst_ip, dst_port);
     std::string combined_addr = dst_ip + ":" + dst_port;
     if (port_to_fd.count(combined_addr) > 0) {
         s_fd = port_to_fd[combined_addr];
 	if (s_fd < 0) {
-            spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
-            throw std::runtime_error("Can't create sending socket");
+            spdlog::critical("SENDER Socket from the port_to_fd chat for IP {} unsuccessful. Aborting", dst_ip);
+            throw std::runtime_error("Can't get sending socket");
 	}
     } else {
-        s_fd = setup_talker_socket(dst_ip, dst_port);
+        s_fd = setup_talker_socket(dst_ip, dst_port, use_multicast);
         if (s_fd < 0) {
             spdlog::critical("SENDER Socket creation for IP {} unsuccessful. Aborting", dst_ip);
             throw std::runtime_error("Can't create sending socket");
@@ -563,41 +645,39 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     }
 
     if (batch_on && pkt_len > 0) {
-	//spdlog::debug("Packet length: {}, Num pkts: {}", running_pkt_size, num_pkts);
         memcpy(final_send_packet + running_pkt_size, send_packet.get(), pkt_len);
         running_pkt_size += pkt_len; 
 	num_pkts += 1;
     } else if (!batch_on && pkt_len > 0) {
         memcpy(final_send_packet, send_packet.get(), pkt_len);
 	running_pkt_size = pkt_len;
+	num_pkts = 1;
     }
 
     auto curr_time = (std::chrono::steady_clock::now()).time_since_epoch();
     double curr_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(curr_time).count();
     double dur = curr_time_s - batch_timer;
-    //spdlog::debug("Packet length: {}, Packet length: {}, Num pkts: {}, Batch size: {}, Batch timeout: {}, Duration: {}, Batch on: {}", running_pkt_size, pkt_len, num_pkts, batch_size, batch_timeout, dur, batch_on);
     if (batch_on && num_pkts < batch_size && (running_pkt_size + pkt_len) < MAX_PACKET_SIZE && dur < batch_timeout) {
         // Copy new packet into the batch and update the running packet size for the append request batch
+        spdlog::info("Waiting to fill the batch!");
 	return false;
     }
     if (running_pkt_size == 0 || num_pkts == 0) {
+        spdlog::info("No packets or the packet size is zero");
         return false;
     }
   
-    // TODO TODO TODO SPECIALIZED HEADER REFERENCE
-    ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries = num_pkts; 
-    //spdlog::debug("The number of entries in this send are: {} with number of packets {}", ((struct ring_append_entry*)(final_send_packet + sizeof(struct ring_type)))->num_entries, num_pkts); 
+    ((struct ring_type*)(final_send_packet))->num_entries = htons(num_pkts); 
     char* actual_test_send = (char*)std::malloc(running_pkt_size);    
     memcpy(actual_test_send, final_send_packet, running_pkt_size);
-    spdlog::debug("The number of entries in this send are: {} with total number of packets received {}", ((struct ring_append_entry*)(actual_test_send + sizeof(struct ring_type)))->num_entries, num_pkts); 
-    ssize_t num_bytes = send(s_fd, actual_test_send, running_pkt_size, 0);
-    
-    if (num_bytes < 0 || ((uint64_t)num_bytes != running_pkt_size)) {
-        spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
-        sent_all = false;
-    } else {
-        //spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
-	//memset(final_send_packet, 0, MAX_PACKET_SIZE);
+    while (!terminate && !sent_all) {
+        ssize_t num_bytes = send(s_fd, actual_test_send, running_pkt_size, 0);
+        if (num_bytes < 0 || ((uint64_t)num_bytes != running_pkt_size)) {
+            spdlog::warn("Send Error {} occurred: {}", std::to_string(errno), strerror(errno));
+        } else {
+            spdlog::info("Successfully sent {} bytes to the receiver!", std::to_string(num_bytes));
+	    sent_all = true;
+        }
     }
     free(actual_test_send);
     running_pkt_size = 0;
@@ -621,16 +701,110 @@ char* Network::recv_packet() { // do you need to memset? TODO
     return norm_buf;
 }
 
+/****** Function supporting the recvmmsg/sendmmsg programming paradigm *******/
+int Network::setup_batch_socket(int port) {
+    int sockfd;
+    struct sockaddr_in server_addr;
+    // 1. Every thread creates its own independent socket
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        //std::cerr << "Thread " << thread_id << ": Socket creation failed" << std::endl;
+        return -1;
+    }
+
+    // 2. CRITICAL: Enable SO_REUSEPORT
+    // This tells the kernel "Let me bind to 8888, even if other threads are already bound to it, 
+    // and please load-balance incoming packets among us."
+    int opt = 1;
+
+    spdlog::debug("Second!");
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+        //std::cerr << "Thread " << thread_id << ": SO_REUSEPORT failed" << std::endl;
+        close(sockfd);
+        return -1;
+    }
+    struct timeval timeout;      
+    timeout.tv_sec = 2;  // 5 seconds
+    timeout.tv_usec = 0; // 0 microseconds
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        close(sockfd);
+	return -1;
+    }
+
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, (this->send_interface).c_str(), strlen((this->send_interface).c_str())) < 0) {
+        // Silent failure here just in case interface doesn't match testing env
+    }
+
+    spdlog::debug("Third!");
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    server_addr.sin_addr.s_addr = inet_addr(this->self_ip.c_str());
+
+    spdlog::debug("Fourth!");
+    // 3. Bind the socket
+    if (bind(sockfd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        //std::cerr << "Thread " << thread_id << ": Bind failed." << std::endl;
+        close(sockfd);
+        return -1;
+    }
+
+    spdlog::debug("Fifth!");
+    return sockfd;
+}
+
+char* Network::get_buf(int i) {
+    return buffers[i];
+}
+
+struct mmsghdr Network::get_msg(int i) {
+    return msgs[i];
+}
+
+struct mmsghdr* Network::get_msgs() {
+    return msgs;
+}
+
+struct iovec* Network::get_iovecs() {
+    return iovecs;
+}
+
+struct iovec Network::get_iovec(int i) {
+    return iovecs[i];
+}
+
+int Network::recv_many_packets(int batch_socket) { // do you need to memset? TODO
+    int num_received = recvmmsg(batch_socket, msgs, BATCH_SIZE, MSG_WAITFORONE, NULL);
+    return num_received;
+}
+
+
+void Network::send_many_packets(int num_received, int batch_socket) { // do you need to memset? TODO
+    for (int i = 0; i < num_received; i++) {
+        if (msgs[i].msg_len > 0) {
+            iovecs[i].iov_len = msgs[i].msg_len;
+        }
+    }
+
+    sendmmsg(batch_socket, msgs, num_received, 0);
+    for (int i = 0; i < num_received; i++) {
+        msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
+        iovecs[i].iov_len = MAX_PACKET_SIZE;
+    }
+}
+
+/**** End of functions supporting batching *****/
+
 int Network::get_recv_socket() {
     return recv_socket;
 }
 
 char* Network::recv_packet(int udp_recv_socket) { // do you need to memset? TODO
+    (void) udp_recv_socket;
     int numbytes = 0;
     struct sockaddr_storage src_addr;
     socklen_t addr_len = sizeof src_addr;
 
-    while ((numbytes = recvfrom(udp_recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
+    while ((numbytes = recvfrom(recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
         return NULL;
     }
     return norm_buf;
@@ -650,6 +824,29 @@ void Network::destroy_socket(int s_fd) {
     if (s_fd > -1) {
         close(s_fd);
     }
+}
+
+void Network::stop_batch_threads() {
+    spdlog::debug("Starting to clean up threads!");
+    {
+        std::unique_lock<std::mutex> lock(lock_terminate);
+        terminate = true;
+    }
+    
+    spdlog::debug("The threads are being cleaned up!");
+    mutex_condition.notify_all();
+    for (auto it = port_to_fd.begin(); it != port_to_fd.end(); ++it) {
+        close(it->second);
+    }
+
+    for (uint64_t i = 0; i < send_threads.size(); i++) {
+        send_threads[i].join();
+    }
+    send_threads.clear();
+    for (uint64_t i = 0; i < recv_threads.size(); i++) {
+        recv_threads[i].join();
+    }
+    recv_threads.clear();
 }
 
 void Network::stop_threads() {
@@ -688,17 +885,12 @@ bool Network::validate_ip_address(const std::string &ip_addr) {
     return result != 0;
 }
 
-void Network::add_pkt_type(uint64_t pkt_type) {
-    //send_pkt_qs.insert(std::pair<uint64_t, std::queue<std::unique_ptr<char[]>>>(pkt_type, std::queue<std::unique_ptr<char[]>>()));
-    (void) pkt_type;
-}
-
-bool Network::remove_pkt_type(uint64_t pkt_type) {
-    for (auto it = send_pkt_qs.begin(); it != send_pkt_qs.end(); it++) {
-        if (it->first == pkt_type) {
-            send_pkt_qs.erase(it);
-            return true;
-        }
+uint16_t Network::string_to_u16(const std::string& str) {
+    unsigned long value = std::stoul(str);
+    
+    if (value > 65535) {
+        throw std::out_of_range("Value too large for uint16_t");
     }
-    return false;
+    
+    return static_cast<uint16_t>(value);
 }

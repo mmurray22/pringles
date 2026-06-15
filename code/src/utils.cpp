@@ -32,6 +32,22 @@ uint64_t get_log_level(YAML::Node config) {
     return config["log_level"].as<uint64_t>();
 }
 
+void pin_current_thread_linux(int core_id) {
+    // Create a CPU set structure and clear it
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    // Add the desired core to the CPU set
+    CPU_SET(core_id, &cpuset);
+
+    // Get the native handle of the current C++ thread
+    pthread_t current_thread = pthread_self();
+
+    // Set the affinity of the thread
+    if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0) {
+        spdlog::critical("Failed to set thread affinity");
+    }
+}
+
 /* Nonce generation function */
 uint32_t generate_nonce() {
     std::random_device rd;
@@ -42,6 +58,10 @@ uint32_t generate_nonce() {
 /* YAML processing functions */
 uint64_t get_threads(YAML::Node config) {
     return config["send_threads"].as<uint64_t>();
+}
+
+uint64_t get_append_req_threads(YAML::Node config) {
+    return config["append_req_threads"].as<uint64_t>();
 }
 
 /*Protocol type*/
@@ -93,9 +113,9 @@ uint64_t get_send_port(YAML::Node config) {
     return config["send_port"].as<uint64_t>();
 }
 
-uint64_t get_recv_port(YAML::Node config) {
-    spdlog::debug("Port: {}", config["recv_port"].as<uint64_t>());
-    return config["recv_port"].as<uint64_t>();
+uint16_t get_recv_port(YAML::Node config) {
+    spdlog::debug("Port: {}", config["recv_port"].as<uint16_t>());
+    return config["recv_port"].as<uint16_t>();
 }
 
 /* Socket type */
@@ -389,4 +409,28 @@ uint64_t get_storage_server(YAML::Node config) {
 
 uint64_t get_cli_idx(YAML::Node config) {
     return config["cli_idx"].as<uint64_t>();
+}
+
+bool get_use_streams(YAML::Node config) {
+    return config["use_streams"].as<uint64_t>();
+}
+
+bool get_use_shards(YAML::Node config) {
+    return config["use_shard"].as<uint64_t>() == 1;
+}
+
+std::string get_multicast_addr(YAML::Node config) {
+    return config["shard_multicast_addr"].as<std::string>();
+}
+
+std::vector<std::vector<std::string>> get_all_shards(YAML::Node config) {
+    return config["all_shards"].as<std::vector<std::vector<std::string>>>();
+}
+
+std::vector<std::string> get_all_shards_multicast(YAML::Node config) {
+    return config["all_shards"].as<std::vector<std::string>>();
+}
+
+uint64_t get_ack_threshold(YAML::Node config) {
+    return config["ack_threshold"].as<uint64_t>();
 }
