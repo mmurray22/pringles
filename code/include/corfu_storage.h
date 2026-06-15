@@ -61,7 +61,7 @@ class CorfuStorage : public BaseStorage {
         std::thread server_thread;
         std::atomic<bool> terminate{false};
 
-        std::string send_port;
+        uint64_t send_port;
         uint64_t num_pkt_types;
 
         // In-memory Key-Value Store

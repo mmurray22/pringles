@@ -19,15 +19,15 @@ void run_client(std::string input_file, uint64_t i) {
     CorfuClient client = CorfuClient(input_file, i);
     spdlog::debug("Corfu client created and started!");
     
-    for (int j = 0; j < 11; j++) {
-        std::string payload = fmt::format("hello{}", j);
+    for (int j = 0; j < 5; j++) {
+        std::string payload = fmt::format("client {} writing {}", i, j);
         client.append(payload);
     }
 
-    for (int j = 0; j < 11; j++) {
-        std::string contents = client.read(j);
-        spdlog::debug("Corfu client received contents: {}", contents);
-    }
+    // for (int j = 0; j < 11; j++) {
+    //     std::string contents = client.read(j);
+    //     spdlog::debug("Corfu client received contents: {}", contents);
+    // }
 }
 
 int main(int argc, char* argv[]) {
@@ -45,8 +45,9 @@ int main(int argc, char* argv[]) {
     CorfuSequencer seq = CorfuSequencer(seq_input_file);
 
     spdlog::info("creating storage servers");
-    uint64_t num_storage_machines = get_num_m_per_extent(config) * get_num_m_per_rep_set(config);
+    uint64_t num_storage_machines = get_storage_ips(config).size();
     std::vector<std::unique_ptr<CorfuStorage>> storage_servers;
+
     for (uint64_t ssid = 0; ssid < num_storage_machines; ssid++) {
         storage_servers.push_back(std::make_unique<CorfuStorage>(ssid, storage_input_file));
     }

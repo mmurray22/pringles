@@ -31,7 +31,7 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
         run_threads
     );
 
-    this->send_port = std::to_string(get_send_port(config));
+    this->send_port = get_send_port(config);
 
     terminate = false;
     storage_thread = std::thread(&CorfuStorage::server, this);
@@ -59,7 +59,7 @@ void CorfuStorage::error_sealed(int cid, std::string req_type) {
         static_cast<int>(StoragePacketType::err_sealed),
         ETH_CLI_SEQ,
         cli_ips[cid],
-        send_port
+        std::to_string(send_port + cid)
     );
 }
 
@@ -77,7 +77,7 @@ void CorfuStorage::error_deleted(int cid, std::string req_type) {
         static_cast<int>(StoragePacketType::err_deleted),
         ETH_CLI_SEQ, 
         cli_ips[cid],
-        send_port
+        std::to_string(send_port + cid)
     );
 }
 
@@ -95,7 +95,7 @@ void CorfuStorage::send_ack(int cid, std::string req_type) {
         static_cast<int>(StoragePacketType::ack),
         ETH_CLI_SEQ,
         cli_ips[cid],
-        send_port
+        std::to_string(send_port + cid)
     );
 }
 
@@ -168,7 +168,7 @@ void CorfuStorage::write(corfuclient::Payload msg) {
                 static_cast<int>(StoragePacketType::err_written),
                 ETH_CLI_SEQ, 
                 cli_ips[cid],
-                send_port
+                std::to_string(send_port + cid)
             );
         }
         return;
@@ -211,7 +211,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
             static_cast<int>(StoragePacketType::err_unwritten),
             ETH_CLI_SEQ, 
             cli_ips[cid],
-            send_port
+            std::to_string(send_port + cid)
         );
         return;
     }
@@ -237,20 +237,23 @@ void CorfuStorage::read(corfuclient::Payload msg) {
         static_cast<int>(StoragePacketType::store_read),
         ETH_CLI_SEQ, 
         cli_ips[cid],
-        send_port
+        std::to_string(send_port + cid)
     );
 }
 
-void CorfuStorage::storage_delete(corfuclient::Payload /*msg*/) {
-    // mark addr deleted
-    // uint64_t idx = msg.trim().idx();
-    // auto &entry = storage_map[idx];
-    // entry.deleted = true;
-    // entry.contents.clear();
+void CorfuStorage::storage_delete(corfuclient::Payload msg) {
+    int cid = msg.clientid();
+    
+    uint64_t idx = msg.trim().idx();
+    auto it = kv_store.find(idx);
 
-    // // reply with ack
-    // int cid = msg.clientid();
-    // send_ack(cid, "trim");
+    if (it != kv_store.end()) { // is the entry already in the map?
+        it->second.second = true;
+        send_ack(cid, "trim");
+        return;
+    }
+
+    // Corfu Spec does not add anything for error checking this function
 }
 
 void CorfuStorage::seal(corfuclient::Payload msg) {
@@ -274,7 +277,7 @@ void CorfuStorage::seal(corfuclient::Payload msg) {
     //     static_cast<int>(StoragePacketType::store_seal),
     //     ETH_CLI_SEQ, 
     //     cli_ips[cid],
-    //     send_port
+    //     std::to_string(send_port + cid)
     // );
 }
 
