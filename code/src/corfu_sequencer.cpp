@@ -6,20 +6,21 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
 
     this->cli_ips = get_cli_ips(config);
 
-    bool run_threads = false;
+   std::string multicast_ip = "";
+
     net = std::make_shared<Network>(
         std::to_string(get_send_port(config)), 
         std::to_string(get_recv_port(config)),
-        get_socket_type(config),
+		get_socket_type(config),
         get_log_level(config),
-        get_batch_size(config),
-        get_batch_on(config),
-        get_batch_timeout(config),
-        get_interface(config),
-        get_self_ip(config),
-        num_pkt_types,
-        run_threads
-    );
+		get_batch_size(config),
+		get_batch_on(config),
+		get_batch_timeout(config),
+	    get_interface(config),
+		get_self_ip(config),
+		multicast_ip,
+		false,
+		false);
 
     this->send_port = get_send_port(config);
 
@@ -67,8 +68,6 @@ void CorfuSequencer::run_sequencer_thread() {
             net->send_client_udp_packet(
                 std::move(packet), 
                 allocated_packet_size, 
-                static_cast<int>(SeqPacketType::sendtoken),
-                ETH_CLI_SEQ,
                 cli_ips[cid],
                 std::to_string(send_port + cid)
             );

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "base_client.h"
 #include "corfu_storage.h"
 #include "corfu_sequencer.h"
 #include "network.h"
@@ -30,7 +29,7 @@ enum PacketType {
         gettoken
 };
 
-class CorfuClient : public BaseClient {
+class CorfuClient {
 protected:
 	uint64_t cid;
 	uint64_t curr_epoch = 0;
@@ -39,6 +38,7 @@ protected:
 	std::map<uint64_t, std::map<std::pair<uint64_t, uint64_t>, std::vector<std::vector<uint64_t>>>> auxiliary;
     bool projection_sealed = false;
 
+	std::shared_ptr<Network> net;
 
 	uint64_t min_matching_acks = 0;
 	uint64_t num_pkt_types = 0;

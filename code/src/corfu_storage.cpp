@@ -16,20 +16,21 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
     this->cli_ips = get_cli_ips(config);
     this->stor = StorageType(get_storage_type(config));
 
-    bool run_threads = false;
+    std::string multicast_ip = "";
+
     net = std::make_shared<Network>(
         std::to_string(get_send_port(config) + ssid), 
         std::to_string(get_recv_port(config) + ssid),
-        get_socket_type(config),
+		get_socket_type(config),
         get_log_level(config),
-        get_batch_size(config),
-        get_batch_on(config),
-        get_batch_timeout(config),
-        get_interface(config),
-        get_self_ip(config),
-        num_pkt_types,
-        run_threads
-    );
+		get_batch_size(config),
+		get_batch_on(config),
+		get_batch_timeout(config),
+	    get_interface(config),
+		get_self_ip(config),
+		multicast_ip,
+		false,
+		false);
 
     this->send_port = get_send_port(config);
 
@@ -56,8 +57,6 @@ void CorfuStorage::error_sealed(int cid, std::string req_type) {
     net->send_client_udp_packet(
         std::move(packet),
         allocated_packet_size,
-        static_cast<int>(StoragePacketType::err_sealed),
-        ETH_CLI_SEQ,
         cli_ips[cid],
         std::to_string(send_port + cid)
     );
@@ -74,8 +73,6 @@ void CorfuStorage::error_deleted(int cid, std::string req_type) {
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
-        static_cast<int>(StoragePacketType::err_deleted),
-        ETH_CLI_SEQ, 
         cli_ips[cid],
         std::to_string(send_port + cid)
     );
@@ -92,8 +89,6 @@ void CorfuStorage::send_ack(int cid, std::string req_type) {
     net->send_client_udp_packet(
         std::move(packet),
         allocated_packet_size,
-        static_cast<int>(StoragePacketType::ack),
-        ETH_CLI_SEQ,
         cli_ips[cid],
         std::to_string(send_port + cid)
     );
@@ -165,8 +160,6 @@ void CorfuStorage::write(corfuclient::Payload msg) {
             net->send_client_udp_packet(
                 std::move(packet), 
                 allocated_packet_size, 
-                static_cast<int>(StoragePacketType::err_written),
-                ETH_CLI_SEQ, 
                 cli_ips[cid],
                 std::to_string(send_port + cid)
             );
@@ -208,8 +201,6 @@ void CorfuStorage::read(corfuclient::Payload msg) {
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
-            static_cast<int>(StoragePacketType::err_unwritten),
-            ETH_CLI_SEQ, 
             cli_ips[cid],
             std::to_string(send_port + cid)
         );
@@ -234,8 +225,6 @@ void CorfuStorage::read(corfuclient::Payload msg) {
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
-        static_cast<int>(StoragePacketType::store_read),
-        ETH_CLI_SEQ, 
         cli_ips[cid],
         std::to_string(send_port + cid)
     );

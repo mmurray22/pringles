@@ -53,20 +53,22 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
   
    this->num_work_threads = get_num_client_threads(config);
    // Create network
-   bool run_threads = false;
-   net = std::make_unique<Network>(
-    unique_send_port,
-    unique_recv_port,
-    get_socket_type(config),
-    get_log_level(config),
-    get_batch_size(config),
-    get_batch_on(config),
-    get_batch_timeout(config), 
-    get_interface(config),
-    get_self_ip(config),
-    num_pkt_types,
-    run_threads
-    );
+   std::string multicast_ip = "";
+
+    net = std::make_shared<Network>(
+        unique_send_port, 
+        unique_recv_port,
+		get_socket_type(config),
+        get_log_level(config),
+		get_batch_size(config),
+		get_batch_on(config),
+		get_batch_timeout(config),
+	    get_interface(config),
+		get_self_ip(config),
+		multicast_ip,
+		false,
+		false);
+        
     spdlog::info("Corfu Client: net init");
     
     // Start receiving thread 
@@ -263,8 +265,6 @@ uint32_t CorfuClient::append(std::string entry) {
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size,
-        static_cast<int>(PacketType::gettoken), 
-        ETH_CLI_SEQ, 
         seq_ips[0],
         seq_port // THIS IS HARDCODED, FIND A BETTER FIX TODO
     );
@@ -320,8 +320,6 @@ uint32_t CorfuClient::append(std::string entry) {
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
-            static_cast<int>(PacketType::append),
-            ETH_CLI_SEQ, 
             storage_ips[sm],
             std::to_string(base_storage_port + sm) // THIS IS HARDCODED, FIND A BETTER FIX TODO
         );
@@ -407,8 +405,6 @@ std::string CorfuClient::read(uint64_t log_idx) {
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size,
-        static_cast<int>(PacketType::readentry), 
-        ETH_CLI_SEQ, 
         storage_ips[send_machines[machine].back()],
         std::to_string(base_storage_port + machine) // THIS IS HARDCODED, FIND A BETTER FIX
     );
@@ -490,8 +486,6 @@ uint64_t CorfuClient::fill(uint64_t idx) {
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
-            static_cast<int>(PacketType::append),
-            ETH_CLI_SEQ, 
             storage_ips[sm],
             std::to_string(base_storage_port + sm) // THIS IS HARDCODED, FIND A BETTER FIX TODO
         );
@@ -570,8 +564,6 @@ bool CorfuClient::trim(uint64_t log_idx) {
         net->send_client_udp_packet(
             std::move(packet), 
             allocated_packet_size, 
-            static_cast<int>(PacketType::trim),
-            ETH_CLI_SEQ, 
             storage_ips[sm],
             std::to_string(base_storage_port + sm) // THIS IS HARDCODED, FIND A BETTER FIX TODO
         );

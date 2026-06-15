@@ -19,30 +19,29 @@ int dummy_client(std::string input_file, uint64_t cid) {
    // Get packet types for sending/receiving
    YAML::Node config = YAML::LoadFile(input_file);
 
-   uint64_t num_pkt_types = 0;
-
-   num_pkt_types = get_num_pkt_types(config);
+   uint64_t num_pkt_types = get_num_pkt_types(config);
 
    std::vector<std::string> seq_ips = get_seq_ips(config);
   
    // Create network
-   bool run_threads = false;
    std::string client_send_port = std::to_string(get_recv_port(config));
    std::string client_recv_port = std::to_string(get_send_port(config) + cid);
 
-   std::unique_ptr<Network> net = std::make_unique<Network>(
-    client_send_port, 
-    client_recv_port,
-    get_socket_type(config),
-    get_log_level(config),
-    get_batch_size(config),
-    get_batch_on(config),
-    get_batch_timeout(config), 
-    get_interface(config),
-    get_self_ip(config),
-    num_pkt_types,
-    run_threads
-    );
+    std::string multicast_ip = "";
+
+    std::shared_ptr<Network> net = std::make_shared<Network>(
+        client_send_port, 
+        client_recv_port,
+		get_socket_type(config),
+        get_log_level(config),
+		get_batch_size(config),
+		get_batch_on(config),
+		get_batch_timeout(config),
+	    get_interface(config),
+		get_self_ip(config),
+		multicast_ip,
+		false,
+		false);
     spdlog::info("Corfu Client {}: net init", cid);
 
     std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
@@ -63,8 +62,6 @@ int dummy_client(std::string input_file, uint64_t cid) {
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
-        static_cast<int>(PacketType::gettoken), 
-        ETH_CLI_SEQ, 
         seq_ips[0],
         client_send_port
     );

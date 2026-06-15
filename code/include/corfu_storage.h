@@ -3,7 +3,6 @@
 #include <atomic>
 #include <memory>
 #include <thread>
-#include "base_storage.h"
 #include "network.h"
 #include "trace.h"
 
@@ -25,7 +24,7 @@ enum StoragePacketType {
     store_seal
 };
 
-class CorfuStorage : public BaseStorage {
+class CorfuStorage {
     public:
         CorfuStorage(uint64_t ssid, std::string input_file);
         ~CorfuStorage();
@@ -41,8 +40,8 @@ class CorfuStorage : public BaseStorage {
         int64_t s_epoch = 0;  // current epoch
         uint64_t mark = 0;  // highest written address
 
-        bool store(uint64_t idx, std::string entry) override;
-        std::string get(uint64_t idx) override;
+        bool store(uint64_t idx, std::string entry);
+        std::string get(uint64_t idx);
 
     private:
         void error_sealed(int cid, std::string req_type);
