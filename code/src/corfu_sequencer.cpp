@@ -4,7 +4,7 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
     YAML::Node config = YAML::LoadFile(input_file);
     this->num_pkt_types = get_num_pkt_types(config);
 
-    this->cli_ips = get_cli_ips(config);
+    this->cli_ips = get_cli_ip(config);
 
    std::string multicast_ip = "";
 
@@ -23,6 +23,7 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
 		false);
 
     this->send_port = get_send_port(config);
+    this->max_duration = get_experiment_duration(config);
 
     terminate = false;
     curr_idx.store(0);
@@ -84,4 +85,11 @@ uint64_t CorfuSequencer::assign_next_idx() {
 
 uint64_t CorfuSequencer::get_current_idx() {
     return curr_idx.load();
+}
+
+void CorfuSequencer::wait_to_finish() {
+    std::chrono::seconds sleep_duration(max_duration);
+    std::this_thread::sleep_for(sleep_duration);
+    end_thread = true;
+    spdlog::critical("End thread is bool: {}", end_thread);
 }

@@ -13,7 +13,7 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
     YAML::Node config = YAML::LoadFile(input_file);
     this->num_pkt_types = get_num_pkt_types(config);
 
-    this->cli_ips = get_cli_ips(config);
+    this->cli_ips = get_cli_ip(config);
     this->stor = StorageType(get_storage_type(config));
 
     std::string multicast_ip = "";
@@ -33,6 +33,7 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
 		false);
 
     this->send_port = get_send_port(config);
+    this->max_duration = get_experiment_duration(config);
 
     terminate = false;
     storage_thread = std::thread(&CorfuStorage::server, this);
@@ -311,4 +312,10 @@ void CorfuStorage::server() {
 
 std::string CorfuStorage::get(uint64_t /*idx*/) {
     return "";
+}
+
+void CorfuStorage::wait_to_finish() {
+    std::chrono::seconds sleep_duration(max_duration);
+    std::this_thread::sleep_for(sleep_duration);
+    end_thread = true;
 }

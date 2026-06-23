@@ -16,18 +16,37 @@
 #include "utils.h"
 
 void run_client(std::string input_file, uint64_t i) {
-    CorfuClient client = CorfuClient(input_file, i);
+    CorfuClient corfu_cli = CorfuClient(input_file, i);
     spdlog::debug("Corfu client created and started!");
-    
-    for (int j = 0; j < 1; j++) {
-        std::string payload = fmt::format("client {} writing {}", i, j);
-        client.append(payload);
-    }
 
-    // for (int j = 0; j < 11; j++) {
-    //     std::string contents = client.read(j);
-    //     spdlog::debug("Corfu client received contents: {}", contents);
-    // }
+    uint64_t idx = 0;
+    std::string entry = "";
+
+    std::string payload_x = "X";
+    idx = corfu_cli.append(payload_x);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 1);
+    entry = corfu_cli.read(idx);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_x);
+
+    std::string payload_y = "Y";
+    idx = corfu_cli.append(payload_y);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 2);
+    entry = corfu_cli.read(idx);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_y);
+
+    std::string payload_z = "Z";
+    idx = corfu_cli.append(payload_z);
+    spdlog::critical("APPEND idx {}", idx);
+    assert(idx == 3);
+    entry = corfu_cli.read(idx);
+    spdlog::critical("READ entry {}", entry);
+    assert(entry == payload_z);
+
+    corfu_cli.wait_to_cooldown();
 }
 
 int main(int argc, char* argv[]) {
@@ -35,29 +54,14 @@ int main(int argc, char* argv[]) {
         spdlog::critical("Not enough arguments provided! Need YAML file");
     }
     std::string input_file = std::string(argv[1]);
-    std::string seq_input_file = std::string(argv[2]);
-    std::string storage_input_file = std::string(argv[3]);
-
     YAML::Node config = YAML::LoadFile(input_file);
     set_spdlog_level(get_log_level(config));
-
-    spdlog::info("creating sequencer");
-    CorfuSequencer seq = CorfuSequencer(seq_input_file);
-
-    spdlog::info("creating storage servers");
-    uint64_t num_storage_machines = get_stor_ips(config).size();
-    std::vector<std::unique_ptr<CorfuStorage>> storage_servers;
-
-    for (uint64_t ssid = 0; ssid < num_storage_machines; ssid++) {
-        storage_servers.push_back(std::make_unique<CorfuStorage>(ssid, storage_input_file));
-    }
 
     std::vector<std::thread> cli_threads = {};
     uint64_t num_work_threads = get_num_client_threads(config);
     for (uint64_t i = 0; i < num_work_threads; i++) {
         cli_threads.emplace_back(std::thread(&run_client, input_file, i));	
     }
-
     for (uint64_t i = 0; i < cli_threads.size(); i++) {
         cli_threads[i].join();
     }

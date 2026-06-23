@@ -21,7 +21,7 @@ int dummy_client(std::string input_file) {
    uint64_t cid = 0;
 
    std::vector<std::string> seq_ips = get_seq_ips(config);
-   std::vector<std::string> storage_ips = get_storage_ips(config);
+   std::vector<std::string> storage_ips = get_stor_ips(config);
   
    // Create network
    std::string client_send_port = std::to_string(get_send_port(config));

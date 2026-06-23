@@ -1,0 +1,93 @@
+###### THIS IS WHERE WE DEFINE EXPERIMENT VARIABLES USED FOR ALL EXPERIMENTS ########
+
+###### Should have all the network information for the components of the system which are run on servers #######
+[network_setup]
+
+###### Storage server Network Information #####
+# This is the port the storage server(s) will be receiving info on
+# There is one receive port per machine, current assumption is each machine has one storage server
+stor_recv_port = "30003"
+# This is the IP address of every storage server being used
+stor_ips = ["10.10.1.3"]
+stor_macs = ["0c:42:a1:dd:59:bc"]
+# This is the network interface the storage servers use to send/receive
+stor_net_ifs = ["ens1f1np1"]
+
+######## Client Network Info #######
+# This is the IP address of every client machine
+cli_ips = ["10.10.1.1"]
+# This is the receive port of the client
+cli_recv_port = "30001"
+cli_macs = ["0c:42:a1:dd:5a:45"]
+# This is the network interface the client machines use to send/receive
+cli_net_ifs = ["ens1f1np1"]
+
+####### Sequencer Network information ########
+# This is the IP address of the sequencer
+seq_ips = ["10.10.1.2"]
+# This is the receive port of the sequencer
+seq_recv_port = "30002"
+seq_macs = ["0c:42:a1:dd:61:2c"]
+# This is the network interface the software switch uses to send/receive
+seq_net_if = "ens1f1np1"
+
+####### Dummy Switch Info (Required to bypass shared generator keys) #######
+switch_ip = "10.10.1.99"
+switch_mac = "00:00:00:00:00:00"
+switch_recv_port = "30000"
+
+######## Should contain the necessary information to figure out what programs are being run where (and also the setup script?) #######
+[program_paths]
+# This is the full path to the client binary that will be run on all clients
+path_client = "/proj/ove-PG0/colang/pringles/build/experiments/unit_tests/corfu_cli"
+# Name of the actual client binary 
+client_binary = "corfu_cli"
+# This is the full path to the storage server binary that will be run on all storage servers
+path_server = "/proj/ove-PG0/colang/pringles/build/experiments/unit_tests/corfu_stor"
+# Name of the actual storage binary 
+server_binary = "corfu_stor"
+# This is the full path to the sequencer binary that will be run on the sequencer
+path_sequencer = "/proj/ove-PG0/colang/pringles/build/experiments/unit_tests/corfu_seq"
+sequencer_binary = "corfu_seq"
+# Boolean indicating whether the install script should be run to install packages on all machines
+# Generally safe to set to "False"
+
+[setup]
+run_setup_script = "False"
+
+######## Defines variables necessary for experiments #######
+[experiment_parameters]
+experiment_name = "corfu_basic_test"
+json_name = "default"
+# Indicates whether we send raw or UDP sockets. Should always be UDP as of now
+socket_type = "UDP"
+# How many storage threads there should be handling appends/reads
+# NOTE: This is a bit ill-defined at the moment, I would leave at 1 for now TODO
+num_storage_threads = 1
+num_client_threads = 1
+# Number of packets in a batch
+batch_size = 1 # Number of packets
+# Whether batching will be used or not...
+batch_on = true
+# How long to wait until sending a batch off
+batch_usec_timeout = 460
+
+log_level = 5
+experiment_duration = 10
+warm_up = 5
+cool_down = 5
+message_size = 64
+protocol_name = "corfu"
+
+# Boolean indicates whether the current experiments use the switch or not (if not then cli <-> storage servers)
+use_switch = 0
+# Boolean indicates whether the current experiments use the storage server or not (if not then cli <-> switches)
+use_store = 1
+# Boolean indicates whether the current experiments do sharding or not (if not then cli sends to all storage servers)
+use_shard = 0
+#  Boolean indicating that the streaming interface is being used
+use_streams = 0
+# Number of acks needed before replying to the client
+ack_threshold = 1
+# Boolean indicating whether ack counting is done in the switch or the client
+use_client_count_acks = 0

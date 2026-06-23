@@ -43,6 +43,8 @@ class CorfuStorage {
         bool store(uint64_t idx, std::string entry);
         std::string get(uint64_t idx);
 
+        void wait_to_finish();
+
     private:
         void error_sealed(int cid, std::string req_type);
         void error_deleted(int cid, std::string req_type);
@@ -53,6 +55,9 @@ class CorfuStorage {
         
         std::thread storage_thread;
         StorageType stor;
+
+        uint64_t max_duration;
+	    bool end_thread = false;
 
         std::vector<std::string> cli_ips;
 

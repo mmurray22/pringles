@@ -34,7 +34,7 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # ---------------------------------------
 
 # --- Configuration Constants ---
-pringles_base = os.environ.get("PRINGLES_PATH", "/home/mathwiz23pi/")
+pringles_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/colang")
 BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
@@ -233,46 +233,39 @@ def kill_process(process_name, ssh_key, ssh_user, ip):
     subprocess.Popen(command, stdout=subprocess.PIPE)
 
 
-def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index, prefix):
+def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index, prefix, background=True):
     """
     Executes a program on a remote machine asynchronously using SSH, 
-    redirecting stdout/stderr to a log file. Returns the Popen object and the log filename.
+    redirecting BOTH stdout and stderr to a log file.
     """
-    # NEW/MODIFIED: Log file is named after the IP address
     log_filename = prefix + f"_{ip}_{exp_index}.txt" 
 
-    # NEW/MODIFIED: redirect all output (&>) to the log file, and run in background (&)
-    command = []
-    remote_command = f'{program_path} ~/{config_filename} > ~/{log_filename} &'
-    full_remote_command = f'/bin/bash -c "{remote_command} ; sleep 1"'
+    # Redirect both stdout and stderr (2>&1) to ensure crashes/asserts are caught
+    if background:
+        remote_command = f'{program_path} ~/{config_filename} > ~/{log_filename} 2>&1 &'
+    else:
+        remote_command = f'{program_path} ~/{config_filename} > ~/{log_filename} 2>&1'
+
     command = [
         'ssh',
         '-i', ssh_key,
-        '-o', 'StrictHostKeyChecking=no', # Bypass host key check
-        '-o', 'UserKnownHostsFile=/dev/null', # Prevent known_hosts interference
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'UserKnownHostsFile=/dev/null',
         f'{ssh_user}@{ip}',
-        remote_command # Use the command that includes logging/backgrounding
+        remote_command
     ]
 
-    # UPDATED PRINT: Reflects the logging change
-    print(f"Starting program on {ip} (as root): {' '.join(command)}, logging to ~/{log_filename}...")
+    print(f"Starting program on {ip}: {' '.join(command)}")
 
     try:
-        # Popen executes the command asynchronously (non-blocking)
-        # We redirect the local Popen stdout/stderr to /dev/null since the remote program's 
-        # output is already being redirected to the remote log file.
         process = subprocess.Popen(command, 
-                                   stdout=subprocess.DEVNULL, # Change from PIPE to DEVNULL
-                                   stderr=subprocess.DEVNULL, # Change from PIPE to DEVNULL
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL, 
                                    bufsize=1)
-        # NEW RETURN: Return the log filename
         return process, log_filename
-    except FileNotFoundError:
-        print(f"ERROR: Could not find 'ssh'. Ensure SSH is installed and in your PATH.")
-        return None, log_filename # Return log_filename even on error
     except Exception as e:
         print(f"ERROR starting remote process on {ip}: {e}")
-        return None, log_filename # Return log_filename even on error
+        return None, log_filename
 
 def transfer_file(local_path, remote_ip, remote_user, ssh_key, remote_filename=None, remote_filepath=None):
     """
@@ -1744,6 +1737,165 @@ def run_experiment_cycle_kafka(config, kafka_config_file, exp_index, local_resul
         for ip, log_filename in broker_log_files.items():
             copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
 
+def run_experiment_cycle_corfu(base_config, protocol_config, run_id, local_results_dir, system_name):
+    """
+    Executes a complete Corfu lifecycle matching the signature expected by main().
+    """
+    # Extract structural configs from base_config just like the main loop does
+    net_setup = base_config.get('network_setup', {})
+    prog_paths = base_config.get('program_paths', {})
+    exp_params = base_config.get('experiment_parameters', {})
+
+    ssh_user = net_setup.get('ssh_user', 'colang')
+    ssh_key = net_setup.get('ssh_key', '/proj/ove-PG0/colang/ssh/cloudlab')
+
+    remote_processes = []
+    client_processes = []
+    server_processes = []
+    client_log_files = []
+    server_log_files = {}
+    seq_processes = []
+    seq_log_files = {}
+
+    try:
+        # =========================================================
+        # 1. LAUNCH CORFU SEQUENCER
+        # =========================================================
+        print("--- Launching Dedicated Corfu Sequencer Node(s) ---")
+        for seq_idx, ip in enumerate(net_setup.get('seq_ips', [])):
+            yaml_dict = generate_yaml_config(
+                base_config=base_config, 
+                pringles_config=base_config, 
+                entity_type='sequencer', 
+                entity_ip=ip, 
+                port_offset=0,  
+                server_ips=net_setup.get('stor_ips', []),
+                entity_id=seq_idx
+            )
+            yaml_filename = f"seq_{seq_idx}.yaml"
+            with open(yaml_filename, 'w') as f:
+                yaml.dump(yaml_dict, f, default_flow_style=False)
+            transfer_file(yaml_filename, ip, ssh_user, ssh_key)
+
+            binary_path = prog_paths.get('path_sequencer', 'pringles/build/experiments/unit_tests/corfu_seq')
+            process, log_name = execute_remote_command(ip, binary_path, yaml_filename, ssh_key, ssh_user, seq_idx, "seq")
+            remote_processes.append((ip, process, log_name))
+        
+        print(f"Waiting {SWITCH_START_DELAY} seconds for Sequencer to initialize...")
+        time.sleep(SWITCH_START_DELAY)
+
+        # =========================================================
+        # 2. LAUNCH CORFU STORAGE SERVERS
+        # =========================================================
+        print(f"--- Launching Corfu Storage Server Node(s) ---")
+        for stor_idx, ip in enumerate(net_setup.get('stor_ips', [])):
+            yaml_dict = generate_yaml_config(
+                base_config=base_config, 
+                pringles_config=base_config, 
+                entity_type='server', 
+                entity_ip=ip, 
+                port_offset=100 + stor_idx, 
+                server_ips=net_setup.get('stor_ips', []),
+                entity_id=stor_idx
+            )
+            yaml_filename = f"stor_{stor_idx}.yaml"
+            with open(yaml_filename, 'w') as f:
+                yaml.dump(yaml_dict, f, default_flow_style=False)
+            transfer_file(yaml_filename, ip, ssh_user, ssh_key)
+
+            binary_path = prog_paths.get('path_server', 'pringles/build/experiments/unit_tests/corfu_stor')
+            process, log_name = execute_remote_command(ip, binary_path, yaml_filename, ssh_key, ssh_user, stor_idx, "stor")
+            remote_processes.append((ip, process, log_name))
+            
+        print(f"Waiting {SERVER_START_DELAY} seconds for Storage layer to initialize...")
+        time.sleep(SERVER_START_DELAY)
+
+        # =========================================================
+        # 3. LAUNCH CORFU CLIENT WORKLOAD
+        # =========================================================
+        print(f"--- Launching Corfu Client Node(s) ---")
+        for cli_idx, ip in enumerate(net_setup.get('cli_ips', [])):
+            yaml_dict = generate_yaml_config(
+                base_config=base_config, 
+                pringles_config=base_config, 
+                entity_type='client', 
+                entity_ip=ip, 
+                port_offset=200 + cli_idx,
+                server_ips=net_setup.get('stor_ips', []),
+                entity_id=cli_idx,
+                json_name=exp_params.get('json_name', 'default')
+            )
+            yaml_filename = f"cli_{cli_idx}.yaml"
+            with open(yaml_filename, 'w') as f:
+                yaml.dump(yaml_dict, f, default_flow_style=False)
+            transfer_file(yaml_filename, ip, ssh_user, ssh_key)
+
+            binary_path = prog_paths.get('path_client', 'pringles/build/experiments/unit_tests/corfu_cli')
+            
+            # NOTICE: background=False here so proc.wait() actually tracks runtime progress!
+            process, log_name = execute_remote_command(ip, binary_path, yaml_filename, ssh_key, ssh_user, cli_idx, "cli", background=False)
+            client_processes.append((ip, process, log_name))
+
+        # =========================================================
+        # 4. MONITOR EXECUTION RUNTIME
+        # =========================================================
+        print("Experiment tracking active...")
+        for ip, proc, log_name in client_processes:
+            if proc:
+                proc.wait()  # Block until the client C++ binary completes its asserts
+        print("Corfu client assertions completed and exited.")
+
+    except Exception as e:
+        print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
+
+    finally:
+        # --- 10. Kill all server processes and retrieve logs ---
+        print("\n--- Experiment finished. Retrieving server logs and cleaning up ---")
+
+        # MODIFIED: Copy Server Log Files Back (for all servers)
+        for ip, log_filename in server_log_files.items():
+            copy_log_file_back(
+                ip,
+                ssh_user,
+                ssh_key,
+                log_filename,
+                local_results_dir
+            )
+
+        for ip, log_filename in seq_log_files.items():
+            copy_log_file_back(
+                switch_ip,
+                ssh_user,
+                ssh_key,
+                log_filename,
+                local_results_dir
+            )
+
+        for proc in server_processes:
+            try:
+                if proc.poll() is None:
+                    print(f"Terminating server process (PID: {proc.pid})...")
+                    proc.kill()
+                # The nohup process is difficult to kill via Popen.terminate(). 
+                # Relying on the server timeout is safer.
+                #pass 
+            except Exception as e:
+                print(f"Could not check on server process: {e}")
+
+        print("Server processes are assumed to exit on their own after the client terminates.")
+        for proc in seq_processes:
+            try:
+                if proc.poll() is None:
+                    print(f"Terminating server process (PID: {proc.pid})...")
+                    proc.kill()
+                # The nohup process is difficult to kill via Popen.terminate(). 
+                # Relying on the server timeout is safer.
+                #pass 
+            except Exception as e:
+                print(f"Could not check on switch process: {e}")
+
+        print("Switch processes are assumed to exit on their own after the client terminates.") # TODO
+        process_and_aggregate_results(local_results_dir, json_output_name, system_name, base_config, config)
 
 def generate_scalog_config(discovery_ip, order_ips, data_ips, order_replication_factor, data_replication_factor,
                            batching_interval,
@@ -2083,6 +2235,7 @@ EXPERIMENT_CYCLE_FNS = {
     'scalog':   run_experiment_cycle_scalog,
     'speclog':  run_experiment_cycle_speclog,
     'kafka':    run_experiment_cycle_kafka,
+    'corfu':    run_experiment_cycle_corfu,
 }
 
 
@@ -2164,6 +2317,8 @@ def main(config_file="general.toml"):
             protocol_config = "speclog.toml"
         elif system_name == "kakfa":
             protocol_config = "kafka.toml"
+        elif system_name == "corfu":
+            protocol_config = "corfu.toml"
 
         cycle_fn = EXPERIMENT_CYCLE_FNS.get(system_name)
         if cycle_fn is None:

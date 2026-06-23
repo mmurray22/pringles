@@ -48,8 +48,8 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     uint64_t base_send_port = get_send_port(config);
     uint64_t base_recv_port = get_recv_port(config);
 
-    std::string unique_send_port = std::to_string(base_send_port + thread_id);
-    std::string unique_recv_port = std::to_string(base_recv_port + thread_id);
+    std::string unique_send_port = std::to_string(base_send_port + cid);
+    std::string unique_recv_port = std::to_string(base_recv_port + cid);
   
    this->num_work_threads = get_num_client_threads(config);
    // Create network
@@ -80,7 +80,7 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     this->num_m_per_rep_set = get_num_m_per_rep_set(config);
     this->extent_size = get_extent_size(config);
     this->seq_ips = get_seq_ips(config);
-    this->storage_ips = get_storage_ips(config);
+    this->storage_ips = get_stor_ips(config);
 
     setup_auxiliary();
 
@@ -133,12 +133,11 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
 
     // this->payload_size = get_payload_size(config);
     // this->batch_size = num_work_threads * payload_size;
-    this->batch_size = 100;
-    spdlog::debug("Batch size: {}", batch_size);
-    // this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id);
-    // this->max_duration = get_experiment_duration(config);
-    // this->warm_up = get_warm_up(config);
-    // this->cool_down = get_cool_down(config);
+    // this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id)
+
+    this->warm_up = get_warm_up(config);
+    this->cool_down = get_cool_down(config);
+    this->max_duration = get_experiment_duration(config) - warm_up - cool_down; // Duration of the actual experiment
     this->global_thread_id = thread_id;
    
     // this->switch_mac = get_switch_mac(config);
@@ -262,6 +261,7 @@ uint32_t CorfuClient::append(std::string entry) {
     spdlog::debug("Append: gettoken packet is of size: {}", allocated_packet_size);
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
     memcpy(packet.get(), sequencing_packet->c_str(), allocated_packet_size);
+    spdlog::debug("sending to {}:{}", seq_ips[0], seq_port);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size,

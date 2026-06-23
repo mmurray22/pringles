@@ -27,6 +27,8 @@ class CorfuSequencer {
 
         std::string IP;
 
+        void wait_to_finish();
+
     protected:
         void run_sequencer_thread();
 
@@ -41,4 +43,7 @@ class CorfuSequencer {
         int send_port;
 
         uint64_t num_pkt_types;
+
+        uint64_t max_duration;
+	    bool end_thread = false;
 };
