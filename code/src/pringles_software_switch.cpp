@@ -8,6 +8,9 @@
 #include <fstream>
 #include <semaphore>
 
+#include <linux/perf_event.h>   
+#include <linux/hw_breakpoint.h>
+#include <sys/syscall.h> 
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -36,9 +39,6 @@
 #include "utils.h"
 #include "ring_headers.h"
 #include "pringles_software_switch.h"
-
-std::counting_semaphore signalAppendReq{0};
-std::counting_semaphore signalClientNet{0};
 
 LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id) {
     spdlog::critical("Pringles Software Switch is starting!");
@@ -94,6 +94,8 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
     set_spdlog_level(get_log_level(config));
     this->max_idx = 0;
     this->stor_ips = get_stor_ips(config);
+     
+
 
     // Routing
     this->switch_mac = get_switch_mac(config);
@@ -103,8 +105,16 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
 
     // Thread
     //recv_thread = std::thread(&LogSoftwareSwitch::receiver, this);
+     struct in_addr addr;
+     if (inet_pton(AF_INET, stor_ips[0].c_str(), &addr) != 1) {
+         throw std::runtime_error("Invalid IP address format");
+     }
+     uint32_t stor_ip_int = addr.s_addr;
+     int tmp_port = std::stoi(stor_receive_port);
+     int stor_recv_port = static_cast<uint16_t>(tmp_port);
+		        
 
-    int append_req_port = 60008;
+    int append_req_port = 60008; // get_switch_append_req_port(config);
     this->num_append_req_threads = get_append_req_threads(config);
     for (uint64_t i = 0; i < num_append_req_threads; i++) {
 	std::unique_ptr<Network> append_net = std::make_unique<Network>( 
@@ -121,11 +131,11 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
             return;
         }
 	append_socket.push_back(random_socket);
-        append_req_threads.emplace_back(std::thread(&LogSoftwareSwitch::append_request, this, append_req_port, std::move(append_net), i));
+        append_req_threads.emplace_back(std::thread(&LogSoftwareSwitch::append_request, this, append_req_port, std::move(append_net), i, stor_ip_int, stor_recv_port));
     }
     
     int append_resp_port = 60009;
-    this->num_append_resp_threads = 15; // get_append_resp_threads(config);
+    this->num_append_resp_threads = get_append_resp_threads(config);
     for (uint64_t j = 0; j < num_append_resp_threads; j++) {
 	std::unique_ptr<Network> append_net = std::make_unique<Network>( 
 				   get_socket_type(config),
@@ -137,6 +147,8 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
 				   get_self_ip(config));
         append_resp_threads.emplace_back(std::thread(&LogSoftwareSwitch::append_response, this, append_resp_port, std::move(append_net), j));
     }
+
+    this->use_performance = true;
     /*read_req_thread = std::thread(&LogSoftwareSwitch::read_request, this);
     read_resp_thread = std::thread(&LogSoftwareSwitch::read_response, this);
     tail_req_thread = std::thread(&LogSoftwareSwitch::tail_request, this);
@@ -144,8 +156,6 @@ LogSoftwareSwitch::LogSoftwareSwitch(std::string input_file, uint64_t switch_id)
 }
 
 LogSoftwareSwitch::~LogSoftwareSwitch() {
-    //append_req_cv.notify_all();
-    append_resp_cv.notify_all();
     read_req_cv.notify_all();
     read_resp_cv.notify_all();
     tail_req_cv.notify_all();
@@ -168,7 +178,7 @@ LogSoftwareSwitch::~LogSoftwareSwitch() {
 
 void LogSoftwareSwitch::receiver() {
     spdlog::critical("UNIVERSAL RECEIVER thread starting with tid = {}", gettid());
-    pin_current_thread_linux(0);
+    //pin_current_thread_linux(0);
     while (!end_thread) {
         char* recv_ptr = net->recv_packet();
 	if (!recv_ptr) {
@@ -247,9 +257,115 @@ void LogSoftwareSwitch::receiver() {
     }
 }
 
-
-void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id) {
+void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id, uint32_t stor_ip_int, uint16_t stor_recv_port) {
     spdlog::critical("APPEND REQUEST thread starting with tid = {}", gettid());
+    /*int perf_fd;
+    if (use_performance) {
+	perf_fd = setup_perf(gettid());
+ 	if (perf_fd < 0) {
+	    perror("Error opening perf event");
+	    exit(EXIT_FAILURE);
+	}
+    }*/
+    pin_current_thread_linux(thread_id);
+
+    int comms_socket = append_net->setup_batch_socket(append_port);
+    if (comms_socket < 0) {
+        append_net->stop_batch_threads();
+	return;
+    }
+    int send_socket = append_socket[thread_id];
+    spdlog::debug("Created communication socket {}!", comms_socket);
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    int num_received = 0;
+
+    while (!end_thread) {
+	char* buf = append_net->recv_packet(comms_socket);
+	if (!buf) {
+	    continue;
+	}
+	spdlog::debug("Received {} packets!", num_received);
+
+	// Sequencer packet
+	struct ring_append_entry* append_entry = (struct ring_append_entry*)(buf + sizeof(struct ring_type));
+	struct ring_type* type_hdr = (struct ring_type*)(buf);
+	max_idx += 1;
+	append_entry->g_idx = htonl(max_idx);
+	spdlog::debug("Global sequence number is now: {}", ntohl(append_entry->g_idx));
+
+	uint64_t pkt_size = (sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(append_entry->payload_size) + 1);
+	uint32_t dest_ip = 0;
+	uint16_t recv_port = 0;
+	if (use_store) {
+	    if (use_shards) {
+		std::string multicast_addr;
+	        uint64_t key_id = 0;
+	        if (use_streams) {
+	    	    key_id = ntohl(append_entry->stream_id);
+	    	    spdlog::debug("Stream, yes shard Key ID for which shard to send to: {}", key_id);
+	            tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
+	            if (stream_id_to_shard_id.find(acc, key_id)) { // If stream ID already has a shard
+	                multicast_addr = all_shards_multicast[acc->second];
+	            } else { // If stream ID doesn't have a shard assigned (assigned in RR)
+	                multicast_addr = all_shards_multicast[next_available_shard];
+	                tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
+	                bool insert_succ = stream_id_to_shard_id.insert(put_acc, key_id);
+	    	        if (insert_succ) {
+	    	            put_acc->second = next_available_shard;
+	    	        }
+	    	        put_acc.release();
+	                next_available_shard = (next_available_shard + 1) % all_shards.size();
+	            }
+	        } else { // If streams aren't used, then sequence number will be used
+	            key_id = ntohl(append_entry->g_idx) % all_shards.size(); // TODO bit shift?
+	    	    spdlog::debug("No stream, yes shard Key ID for which shard to send to: {}", key_id);
+	    	    tbb::concurrent_hash_map<uint64_t, uint64_t>::const_accessor acc;
+	            if (seq_idx_to_shard_id.find(acc, key_id)) { // If sequence no key ID already has shard
+	                multicast_addr = all_shards_multicast[acc->second];
+	            } else { // If seuqence no key ID does not have shard yet
+	                multicast_addr = all_shards_multicast[next_available_shard];
+	                tbb::concurrent_hash_map<uint64_t, uint64_t>::accessor put_acc;
+	                bool insert_succ = seq_idx_to_shard_id.insert(put_acc, key_id);
+	    	        if (insert_succ) {
+	    	            put_acc->second = next_available_shard;
+	    	        }
+	    	        put_acc.release();
+	                next_available_shard = (next_available_shard + 1) % all_shards.size();
+	            }
+	        }
+		dest_ip = inet_addr(multicast_addr.c_str());
+	    } else {
+	        //spdlog::debug("Req payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}",  ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
+	        dest_ip = stor_ip_int;
+	    }
+	    recv_port = stor_recv_port;
+	    spdlog::debug("Store IP addrs: {}, Receive port: {}", dest_ip, recv_port);
+    	} else {
+	    type_hdr->type = ntohs(ETH_APPEND_RESP);
+	    dest_ip = append_entry->client_ip;
+	    recv_port = ntohs(append_entry->recv_port);
+	}
+
+        server_addr.sin_port = htons(recv_port);
+        server_addr.sin_addr.s_addr = dest_ip;
+	/*ssize_t sent_bytes = */sendto(send_socket, buf, pkt_size, 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+	/*if (sent_bytes < 0) {
+	    break;
+	}*/
+	num_received += 1;
+    }
+    append_net->stop_batch_threads();
+    close(comms_socket);
+    spdlog::critical("Total num received: {}", num_received);
+}
+
+/*void LogSoftwareSwitch::batch_append_request(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id, uint32_t stor_ip_int, uint16_t stor_recv_port) {
+    spdlog::critical("APPEND REQUEST thread starting with tid = {}", gettid());
+    (void) stor_ip_int;
+    (void) stor_recv_port;
+    pin_current_thread_linux(thread_id);
     int batch_socket = append_net->setup_batch_socket(append_port);
     if (batch_socket < 0) {
         append_net->stop_batch_threads();
@@ -259,16 +375,32 @@ void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network>
     int send_socket = append_socket[thread_id];
 
     uint64_t pkt_req_cntr = 0;
+    uint64_t num_batches = 0;
+    uint64_t avg_num_received = 0;
     spdlog::debug("Created batch socket {}!", batch_socket);
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+
     while (!end_thread) {
-	int num_received = append_net->recv_many_packets(batch_socket);
-	if (num_received < 0) {
+	//1int num_received = append_net->recv_many_packets(batch_socket);
+	char* buf = append_net->recv_packet(batch_socket);
+	if (!buf) {
 	    continue;
 	}
+
+        if (num_received < 0) {
+	    continue;
+	}
+
+
+	int num_received = 1;
+	num_batches += 1;
+	avg_num_received += num_received;
 	spdlog::debug("Received {} packets!", num_received);
         for (int i = 0; i < num_received; i++) {
-	    char* buf = append_net->get_buf(i);
-	    struct mmsghdr msg = append_net->get_msg(i);
+	    //char* buf = append_net->get_buf(i);
+	    //struct mmsghdr msg = append_net->get_msg(i);
 
 	    if (buf != NULL) {
 	        struct ring_append_entry* append_entry = (struct ring_append_entry*)(buf + sizeof(struct ring_type));
@@ -276,7 +408,9 @@ void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network>
 		max_idx += 1;
 		append_entry->g_idx = htonl(max_idx);
 		spdlog::debug("Global sequence number is now: {}", ntohl(append_entry->g_idx));
-		std::string dest_ip = "";
+
+	        uint64_t pkt_size = (sizeof(struct ring_type) + sizeof(struct ring_append_entry) + ntohl(append_entry->payload_size) + 1);
+		uint32_t dest_ip = 0;
 		uint16_t recv_port = 0;
 	        if (use_store) {
 	            if (use_shards) {
@@ -320,32 +454,32 @@ void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network>
 	                        next_available_shard = (next_available_shard + 1) % all_shards.size();
 	                    }
 	                }
-			dest_ip = multicast_addr;
+			//dest_ip = multicast_addr;
 	            } else {
 	                //spdlog::debug("Req payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}",  ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
-		        dest_ip = stor_ips[0];
+		        dest_ip = stor_ip_int;
 	            }
-		    int tmp_port = std::stoi(stor_receive_port);
-		    recv_port = static_cast<uint16_t>(tmp_port);
+		    recv_port = stor_recv_port;
 		    spdlog::debug("Store IP addrs: {}, Receive port: {}", dest_ip, recv_port);
     	        } else {
 	    	    type_hdr->type = ntohs(ETH_APPEND_RESP);
-		    dest_ip = get_quad_ip(append_entry->client_ip);
+		    dest_ip = append_entry->client_ip;
 		    recv_port = ntohs(append_entry->recv_port);
-		}
+		//}
 	        if (dest_ip.length() == 0) {
 	            continue;
 	        }
-                struct sockaddr_in server_addr;
-                memset(&server_addr, 0, sizeof(server_addr));
-                server_addr.sin_family = AF_INET;
                 server_addr.sin_port = htons(recv_port);
-                server_addr.sin_addr.s_addr = inet_addr(dest_ip.c_str());
+                server_addr.sin_addr.s_addr = dest_ip; //inet_addr(dest_ip.c_str());
 		if (msg.msg_len > 0) {
 		    struct iovec* iovecs = append_net->get_iovecs();
                     iovecs[i].iov_len = msg.msg_len;
                 }
 		memcpy(msg.msg_hdr.msg_name, &server_addr, sizeof(server_addr));
+		ssize_t sent_bytes = sendto(send_socket, buf, pkt_size, 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+		if (sent_bytes < 0) {
+		    break;
+		}
 	    	pkt_req_cntr += 1;
 	    }
 	}
@@ -362,17 +496,26 @@ void LogSoftwareSwitch::append_request(int append_port, std::unique_ptr<Network>
     append_net->stop_batch_threads();
     close(batch_socket);
     spdlog::critical("Packet request counter: {}", pkt_req_cntr);
-}
+    uint64_t avg_batch_size = avg_num_received / num_batches;
+    spdlog::critical("Average batch size append request: {} ,total num received: {} and num batches {} ", avg_batch_size, avg_num_received, num_batches);
+}*/
 
 void LogSoftwareSwitch::append_response(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id) {
     spdlog::critical("APPEND RESPONSE Thread starting with TID = {}", gettid());
-    pin_current_thread_linux(2);
-    
-    int batch_socket = append_net->setup_batch_socket(append_port);
+    //pin_current_thread_linux(2);
+    (void) append_port; 
+    /*int batch_socket = append_net->setup_batch_socket(append_port);
     if (batch_socket < 0) {
         append_net->stop_batch_threads();
 	return;
+    }*/
+
+    int batch_socket = append_net->create_random_port_socket();
+    if (batch_socket < 0) {
+        append_net->stop_batch_threads();
+        return;
     }
+
     uint64_t pkt_resp_cntr = 0;
     int recv_socket = append_socket[thread_id];
     
@@ -430,16 +573,11 @@ void LogSoftwareSwitch::append_response(int append_port, std::unique_ptr<Network
 	            //send_subscriber_pkts(subscribe_stor, subscribe_stor.size(), reply_pkt_size + recv_offset, recv_ptr); TODO TODO NEED TO DO THIS
 	        }
 
-		std::string dest_ip = get_quad_ip(append_entry->client_ip);
-		uint16_t recv_port = ntohs(append_entry->recv_port);
-	        if (dest_ip.length() == 0) {
-	            continue;
-	        }
                 struct sockaddr_in server_addr;
                 memset(&server_addr, 0, sizeof(server_addr));
                 server_addr.sin_family = AF_INET;
-                server_addr.sin_port = htons(recv_port);
-                server_addr.sin_addr.s_addr = inet_addr(dest_ip.c_str());
+                server_addr.sin_port = append_entry->recv_port;
+                server_addr.sin_addr.s_addr = append_entry->client_ip;
 		if (msg.msg_len > 0) {
 		    struct iovec* iovecs = append_net->get_iovecs();
                     iovecs[i].iov_len = msg.msg_len;
@@ -787,61 +925,6 @@ void LogSoftwareSwitch::change_view(uint64_t new_view_num) {
 // Threadpool send thread function
 // Send packets as they are queued
 // cli_send_q_mutex, cli_send_cv, cli_send_q
-void LogSoftwareSwitch::run_client_send() {
-    spdlog::critical("Send-to-Client Thread with TID = {}", gettid());
-    //uint64_t pkt_req_cntr = 0;
-    size_t size_of_hdr = get_ring_append_size();
-    size_t size_of_type_hdr = get_ring_type_size();
-    std::vector<double> lats;
-
-
-    while (!end_thread) {
-        // Wait to receive the packet 
-	/*char* recv_ptr;
-	if (cli_send_q.empty()) {
-	    signalClientNet.acquire();
-	}
-	if (!cli_send_q.try_pop(recv_ptr) || !recv_ptr) {
-	    continue;
-	}*/
-
-    	char* recv_ptr;
-       	if (!cli_send_q.try_pop(recv_ptr)) {
-           std::unique_lock<std::mutex> lock(cli_send_q_mutex);
-    	   cli_send_cv.wait(lock, [this] {return end_thread || !cli_send_q.empty();});
-    	   if (!cli_send_q.try_pop(recv_ptr) || !recv_ptr) {
-               continue;
-           }
-        }
-        	
-        struct ring_type* append_type = (struct ring_type*)(recv_ptr);
-        struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
-        uint64_t pkt_size = size_of_type_hdr + size_of_hdr + ntohl(append_entry->payload_size) + 1;
-	spdlog::debug("Final # entry: {}, Payload sz: {}, Nonce: {}, Port: {}, Pkt size: {}", ntohs(append_type->num_entries), ntohl(append_entry->payload_size), ntohl(append_entry->nonce), ntohs(append_entry->recv_port), pkt_size);
-
-    	// Copy batch header into the reply packet, and the batch content 
-        //std::unique_ptr<char[]> reply_packet = std::make_unique<char[]>(MAX_PACKET_SIZE); //pkt_size);
-        //memcpy(reply_packet.get(), recv_ptr, pkt_size); // TODO necessary?
-    	((struct ring_type*)recv_ptr)->type = htons(ETH_APPEND_RESP);
-	std::string client_ip = get_quad_ip(append_entry->client_ip);
-
-        bool res = net->raw_send_client_udp_packet(recv_ptr, pkt_size, client_ip, std::to_string(ntohs(append_entry->recv_port)));
-
-        if (!res) {
-               continue;
-    	}
-	free(recv_ptr);
-	/*duration_since_epoch = (std::chrono::steady_clock::now()).time_since_epoch();
-	double end_time_s = std::chrono::duration_cast<std::chrono::duration<double>>(duration_since_epoch).count();
-	double dur = end_time_s - start_time_s;
-	lats.push_back(dur);*/
-    }
-    /*double final_avg_latency = std::accumulate(lats.begin(), lats.end(), 0.0) / lats.size();
-    final_avg_latency *= 1000;
-    spdlog::critical("Done here! Req cntr: {} and Latencies: {}", pkt_req_cntr, final_avg_latency); */
-    spdlog::critical("Done with this sender thread!");
-}
-
 void LogSoftwareSwitch::wait_to_finish() {
     std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);

@@ -1,16 +1,16 @@
 CXX = g++
-CXXFLAGS = -Wall -O2
+CXXFLAGS = -Wall -O2 -std=c++20
 
-all: server client storage
+all: bench_switch bench_client bench_storage
 
-storage: bench_net_storage.cpp
-	$(CXX) $(CXXFLAGS) -o storage bench_net_storage.cpp
+bench_storage: bench_net_multithread_basic_server.cpp
+	$(CXX) $(CXXFLAGS) -o bench_storage bench_net_multithread_basic_server.cpp
 
-server: bench_net_server.cpp
-	$(CXX) $(CXXFLAGS) -o server bench_net_server.cpp
+bench_switch: bench_net_server.cpp
+	$(CXX) $(CXXFLAGS) -o bench_switch bench_net_server.cpp
 
-client: bench_net_client.cpp
-	$(CXX) $(CXXFLAGS) -o client bench_net_client.cpp
+bench_client: bench_net_client.cpp
+	$(CXX) $(CXXFLAGS) -o bench_client bench_net_client.cpp
 
 clean:
-	rm -f server client storage
+	rm -f bench_switch bench_client bench_storage

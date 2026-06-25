@@ -14,6 +14,7 @@
 #include <cassert>
 #include <fstream>
 
+
 #include "spdlog/spdlog.h"
 #include "utils.h"
 #include "trace.h"
@@ -21,6 +22,7 @@
 
 // Performance test of append
 void run_append_client(std::string input_file, uint64_t i, uint64_t num_threads) {
+    pin_current_thread_linux(i);
     LogClient pringles_cli = LogClient(input_file, i, num_threads);
     //pringles_cli.subscribe(1);
     pringles_cli.launch_append_execute();

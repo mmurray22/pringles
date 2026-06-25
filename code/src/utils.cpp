@@ -5,6 +5,14 @@
 #include <cstdint>
 #include <cstdio>
 
+#include <err.h>
+#include <linux/perf_event.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/syscall.h>
+
 /*Log Level*/
 void set_spdlog_level(uint64_t log_level) {
     if (log_level == 1) { // Prints all log levels except trace
@@ -37,7 +45,8 @@ void pin_current_thread_linux(int core_id) {
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     // Add the desired core to the CPU set
-    CPU_SET(core_id, &cpuset);
+    int final_core_id = core_id % 32;
+    CPU_SET(final_core_id, &cpuset);
 
     // Get the native handle of the current C++ thread
     pthread_t current_thread = pthread_self();
@@ -62,6 +71,14 @@ uint64_t get_threads(YAML::Node config) {
 
 uint64_t get_append_req_threads(YAML::Node config) {
     return config["append_req_threads"].as<uint64_t>();
+}
+
+uint64_t get_append_resp_threads(YAML::Node config) {
+    return config["append_resp_threads"].as<uint64_t>();
+}
+
+uint64_t get_append_store_threads(YAML::Node config) {
+    return config["append_store_threads"].as<uint64_t>();
 }
 
 /*Protocol type*/
@@ -344,6 +361,14 @@ std::string get_switch_receive_port(YAML::Node config) {
     return config["switch_recv_port"].as<std::string>();
 }
 
+uint64_t get_switch_append_req_port(YAML::Node config) {
+    return config["switch_append_req_port"].as<uint64_t>();
+}
+
+uint64_t get_switch_append_resp_port(YAML::Node config) {
+    return config["switch_append_resp_port"].as<uint64_t>();
+}
+
 uint64_t get_use_switch(YAML::Node config) {
     return config["use_switch"].as<uint64_t>();
 }
@@ -382,4 +407,35 @@ std::vector<std::string> get_all_shards_multicast(YAML::Node config) {
 
 uint64_t get_ack_threshold(YAML::Node config) {
     return config["ack_threshold"].as<uint64_t>();
+}
+
+void configure_event(struct perf_event_attr *pe, uint32_t type, uint64_t config){
+    memset(pe, 0, sizeof(struct perf_event_attr));
+    pe->type = type;
+    pe->size = sizeof(struct perf_event_attr);
+    pe->config = config;
+    pe->read_format = PERF_FORMAT_GROUP | PERF_FORMAT_ID;
+    pe->sample_freq = 1000;
+    pe->freq = 1;
+    pe->disabled = 1;
+    pe->sample_type = PERF_SAMPLE_IP | PERF_SAMPLE_CALLCHAIN;
+    pe->exclude_kernel = 0;
+    pe->exclude_user = 0;
+    pe->exclude_hv = 1;
+    pe->wakeup_events = 1; // TODO: wake us up for every 1 sample event?
+}
+
+int setup_perf(pid_t tid) {
+     (void) tid;
+    //int flags = 0;
+    int fd;
+    //long long count;
+    struct perf_event_attr pe;
+    configure_event(&pe, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK);
+
+    int cpu = -1; // We want to measure perf for this tid on any CPU
+    int group_fd = -1;
+
+    fd = syscall(SYS_perf_event_open, &pe, 0, cpu, group_fd, 0);
+    return fd;
 }

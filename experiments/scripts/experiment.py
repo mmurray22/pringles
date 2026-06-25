@@ -34,7 +34,7 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # ---------------------------------------
 
 # --- Configuration Constants ---
-pringles_base = os.environ.get("PRINGLES_PATH", "/home/mathwiz23pi/")
+pringles_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/murray/")
 BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
@@ -137,6 +137,8 @@ def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, p
         'recv_port': QuotedString(recv_port),
         'stor_recv_port': QuotedString(net_params['stor_recv_port']),
         'switch_recv_port': QuotedString(net_params['switch_recv_port']),
+        'switch_append_req_port': QuotedString(net_params['switch_append_req_port']),
+        'switch_append_resp_port': QuotedString(net_params['switch_append_resp_port']),
         # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
         'socket_type': QuotedString(exp_params['socket_type']),
         # WRAPPED: Ensures self_ip is quoted
@@ -193,6 +195,7 @@ def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, p
             'use_switch': exp_params['use_switch'],
             'num_storage_threads': exp_params['num_storage_threads'],
             'interface': QuotedString(network_interface),
+            'append_store_threads': general_exp_params['append_store_threads'],
             'shard_multicast_addr': QuotedString(shard_multicast)
         })
     
@@ -204,6 +207,7 @@ def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, p
             'all_shards': total_shards,
             'all_shards_multicast': total_shards_multicast,
             'append_req_threads': general_exp_params['append_req_threads'],
+            'append_resp_threads': general_exp_params['append_resp_threads'],
             'shard_multicast_addr': QuotedString(dummy)
         })
 
@@ -231,6 +235,41 @@ def kill_process(process_name, ssh_key, ssh_user, ip):
     print(f"KILLING program on {ip} (as root): {' '.join(command)}...")
 
     subprocess.Popen(command, stdout=subprocess.PIPE)
+
+def execute_arbitrary_remote_command(ip, ssh_user, ssh_key, remote_command):
+    """
+    Executes a program on a remote machine asynchronously using SSH, 
+    redirecting stdout/stderr to a log file. Returns the Popen object and the log filename.
+    """
+    command = [
+        'ssh',
+        '-i', ssh_key,
+        '-o', 'StrictHostKeyChecking=no', # Bypass host key check
+        '-o', 'UserKnownHostsFile=/dev/null', # Prevent known_hosts interference
+        f'{ssh_user}@{ip}',
+        remote_command # Use the command that includes logging/backgrounding
+    ]
+    print(command)
+
+    # UPDATED PRINT: Reflects the logging change
+    print(f"Starting program on {ip} (as root): {remote_command}...")
+
+    try:
+        # Popen executes the command asynchronously (non-blocking)
+        # We redirect the local Popen stdout/stderr to /dev/null since the remote program's 
+        # output is already being redirected to the remote log file.
+        process = subprocess.Popen(command, 
+                                   stdout=subprocess.DEVNULL, # Change from PIPE to DEVNULL
+                                   stderr=subprocess.DEVNULL, # Change from PIPE to DEVNULL
+                                   bufsize=1)
+        # NEW RETURN: Return the log filename
+        return process
+    except FileNotFoundError:
+        print(f"ERROR: Could not find 'ssh'. Ensure SSH is installed and in your PATH.")
+        return None, log_filename # Return log_filename even on error
+    except Exception as e:
+        print(f"ERROR starting remote process on {ip}: {e}")
+        return None, log_filename # Return log_filename even on error
 
 
 def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index, prefix):
@@ -376,6 +415,8 @@ def copy_log_file_back(remote_ip, remote_user, ssh_key, log_filename, local_targ
         local_log_path
     ]
 
+    print(command)
+
     print(f"--- Copying remote log file {log_filename} from {remote_ip} ---")
 
     try:
@@ -465,6 +506,148 @@ def cleanup_remote_yaml_files(hosts, ssh_key, ssh_user):
 
     print("Remote YAML cleanup finished.")
 
+def run_perf(binary_name, hosts, duration, username, key):
+    # Get thread IDs
+    for host in hosts:
+        # Get the thread IDs 
+        perf_cmd = f"sudo perf record -F 99 -g -t $(pgrep {binary_name} | xargs -I {{}} ls /proc/{{}}/task | tr '\\n' ',' | sed 's/,$//') -o /tmp/perf.data -- sleep {duration} &"
+        print(perf_cmd)
+        execute_arbitrary_remote_command(host, username, key, perf_cmd)
+
+def get_perf_files(binary_name, hosts, username, key, target_dir):
+    # Get thread IDs
+    for i in range(0, len(hosts)):
+        # Get the thread IDs 
+        host = hosts[i]
+        perf_cmd = f"sudo perf script -i /tmp/perf.data > {binary_name}_{i}.perf"
+        print(perf_cmd)
+        execute_arbitrary_remote_command(host, username, key, perf_cmd)
+
+        debug_cmd = f"ssh -i {key} {username}@{host} 'ls -lh /users/murray22/{binary_name}_{i}.perf'"
+        print(debug_cmd)
+        debug_result = subprocess.run(debug_cmd, shell=True, capture_output=True, text=True)
+        print(f"[{host}] DEBUG Remote File Stats: {debug_result.stdout.strip()}")
+        time.sleep(1)
+        copy_log_file_back(host, username, key, f"{binary_name}_{i}.perf", target_dir)
+
+def process_and_aggregate_baseline_results(local_target_dir, json_name, system_name, base_config, system_config):
+    """
+    Reads all JSON files in the target directory, calculates aggregate throughput and 
+    total average latency PER JSON_NAME, and writes a summary JSON file for each group.
+    """
+    # Find all JSON files in the directory
+    all_files = os.listdir(local_target_dir)
+    # Filter out files that look like aggregated summaries (ends with just .json)
+    result_files = [f for f in all_files if f.endswith('.json') and len(f.split('_')) > 1]
+
+    if not result_files:
+        print(f"Warning: No raw client result JSON files found in {local_target_dir} for aggregation. Cannot aggregate.")
+        return
+
+    print(f"\n--- Aggregating Results for this experiment group ---")
+    it = 0
+    total_agg_tput = 0.0
+    total_avg_latency_sum = 0.0
+    total_sub_lat_sum = 0.0
+    file_count = 0
+    batch_size = 0 
+    num_clients = 0
+
+    for filename in result_files:
+        filepath = os.path.join(local_target_dir, filename)
+        data = None
+
+        try:
+            with open(filepath, 'r') as f:
+                content = f.read().strip()
+
+            # Robust JSON Decoding
+            start_index = content.find('{')
+            end_index = content.rfind('}')
+
+            if start_index != -1 and end_index != -1 and end_index > start_index:
+                json_string = content[start_index:end_index + 1]
+                data = json.loads(json_string)
+            else:
+                print(f"Error: File {filename} does not contain a valid JSON object. Skipping.")
+                continue
+
+            # Aggregate Throughput
+            throughput = data.get('throughput')
+            if isinstance(throughput, (int, float)):
+                total_agg_tput += throughput
+
+            clients = data.get('num_clients')
+            if isinstance(clients, (int, float)):
+                num_clients += clients
+
+            # Aggregate Latency
+            avg_latency = data.get('avg_latency')
+            if isinstance(avg_latency, (int, float)):
+                total_avg_latency_sum += avg_latency
+                file_count += 1
+            batch_size = data.get('batch_size')
+
+            # Aggregate Time-to-first-Subscribe
+        except json.JSONDecodeError:
+            print(f"Error: Failed to decode JSON from file: {filename}. Skipping.")
+        except IOError as e:
+            print(f"Error: Failed to read file {filename}: {e}. Skipping.")
+
+    # Calculate Final Average Latency
+    final_avg_latency = total_avg_latency_sum / file_count if file_count > 0 else 0.0
+    print("=========== FINAL STATS")
+    # Construct Final Output
+    num_switches = 0
+    if system_name == "pringles":
+        num_switches = len(system_config['experiment_parameters']['switches_in_ring'])
+
+    final_results = {
+        "agg_tput": total_agg_tput,
+        "total_avg_latency": final_avg_latency,
+        "num_clients": num_clients,
+        "batch_size": batch_size,
+        "payload_size": base_config['experiment_parameters']['message_size'],
+        "git_hash": base_config['experiment_parameters']['git_hash'],
+        "system_name": system_name
+    }
+    print(final_results)
+
+    # Iterate over all .json files in the source directory
+    local_indiv_json_dir = Path(local_target_dir) /  json_name #os.path.join(local_target_dir, json_name) # NEW
+    print(str(local_indiv_json_dir))
+    local_indiv_json_dir.mkdir(parents=True, exist_ok=True)
+    print(result_files)
+    for json_file in result_files:
+        source_path = Path(local_target_dir) / json_file
+        print(str(source_path))
+        target_path = local_indiv_json_dir
+        try:
+            shutil.move(str(source_path), str(target_path))
+        except shutil.Error as e:
+            print("shutil error occured! Investigate later")
+            continue
+        print(f"Moved: {source_path.name} to {str(target_path)}")
+    patterns = ['*.txt', '*.log', '*.perf']
+    files_to_move = chain.from_iterable(Path(local_target_dir).glob(pattern) for pattern in patterns)
+    for file_path in files_to_move:
+        source_path = Path(local_target_dir) / file_path
+        target_path = local_indiv_json_dir
+        shutil.move(str(source_path), str(target_path))
+        print(f"Moved: {source_path.name}")
+    # Write the final aggregated JSON file named [json_name].json
+    output_filename = f"{json_name}.json"
+    output_filepath = os.path.join(local_target_dir, output_filename)
+    #print(f"Moved: {json_file.name}")  
+
+    try:
+        with open(output_filepath, 'w') as f:
+            json.dump(final_results, f, indent=4)
+        print(f"Summary for {json_name} written to: {output_filepath}")
+    except IOError as e:
+        print(f"Error: Failed to write final summary JSON to {output_filepath}: {e}")
+
+
 def process_and_aggregate_results(local_target_dir, json_name, system_name, base_config, system_config):
     """
     Reads all JSON files in the target directory, calculates aggregate throughput and 
@@ -530,7 +713,7 @@ def process_and_aggregate_results(local_target_dir, json_name, system_name, base
     # Calculate Final Average Latency
     final_avg_latency = total_avg_latency_sum / file_count if file_count > 0 else 0.0
     final_avg_sub_lat = total_sub_lat_sum / file_count if file_count > 0 else 0.0
-    print("=========== INAL STATS")
+    print("=========== FINAL STATS")
     # Construct Final Output
     num_switches = 0
     if system_name == "pringles":
@@ -560,9 +743,13 @@ def process_and_aggregate_results(local_target_dir, json_name, system_name, base
         source_path = Path(local_target_dir) / json_file
         print(str(source_path))
         target_path = local_indiv_json_dir
-        shutil.move(str(source_path), str(target_path))
+        try:
+            shutil.move(str(source_path), str(target_path))
+        except shutil.Error as e:
+            print("shutil error occured! Investigate later")
+            continue
         print(f"Moved: {source_path.name} to {str(target_path)}")
-    patterns = ['*.txt', '*.log']
+    patterns = ['*.txt', '*.log', '*.perf']
     files_to_move = chain.from_iterable(Path(local_target_dir).glob(pattern) for pattern in patterns)
     for file_path in files_to_move:
         source_path = Path(local_target_dir) / file_path
@@ -1049,6 +1236,148 @@ def setup_switches(config):
         jump_client.close()
 
 # To be executed for each experiment
+def run_experiment_cycle_baseline(base_config, benchmark_config_file, idx, local_results_dir, system_name):
+    """Runs a single, full experiment cycle based on the merged configuration."""
+    try:
+        with open(benchmark_config_file, 'r') as f:
+            full_config = toml.load(f)
+    except FileNotFoundError:
+        print(f"Error: Configuration file '{benchmark_config_file}' not found.")
+        return
+    except toml.TomlDecodeError as e:
+        print(f"Error: Failed to parse TOML file: {e}")
+        return
+
+    # Extract the list of experiments to run and remove it from the base config
+    experiments_to_run = full_config.pop('experiment', [])
+    if not experiments_to_run:
+        print("Warning: No '[[experiment]]' sections found. Running only the default configuration once.")
+        default_params = full_config.get('experiment_parameters', {})
+        experiments_to_run.append(default_params)
+
+    # The remaining dictionary is the base configuration
+    config = full_config.copy() 
+
+    for exp_index, exp_params in enumerate(experiments_to_run): 
+        # Merge experiment-specific parameters (overrides)
+        for key, value in exp_params.items():
+            print(key)
+            print(value)
+            if key in config.get('experiment_parameters', {}):
+                config['experiment_parameters'][key] = value
+        
+        # Extract run-specific parameters from the merged config
+        ssh_key = os.path.expanduser(config['network_setup']['ssh_key'])
+        ssh_user = config['network_setup']['ssh_user']
+        client_ips = config['network_setup']['cli_ips'] # TODO SEQ make plural?
+        cli_net_ifs = config['network_setup']['cli_net_ifs'] # TODO SEQ make plural?
+        switch_ip = config['network_setup']['switch_ip']
+        switch_net_if = config['network_setup']['switch_net_if']
+        all_server_ips = config['network_setup']['stor_ips']
+        server_net_ifs = config['network_setup']['stor_net_ifs']
+        path_client = f"{pringles_base}" + config['program_paths']['path_client']
+        path_server = f"{pringles_base}" + config['program_paths']['path_server']
+        path_switch = f"{pringles_base}" + config['program_paths']['path_switch']
+
+        general_json_output_name = base_config['experiment_parameters']['general_json_name']
+        json_output_name = general_json_output_name + "-" + config['experiment_parameters']['json_name']
+
+        print(f"\n========================================================")
+        print(f"   RUNNING EXPERIMENT {exp_index + 1}: {json_output_name}")
+        print(f"   Client Threads: {base_config['experiment_parameters']['num_client_threads']}")
+        print(f"========================================================")
+
+        server_processes = []
+        client_log_files = []
+        client_processes = []
+        server_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
+        switch_processes = []
+        switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
+        server_ips = []
+
+        try:
+            # --- 6. Wait for Servers to Initialize ---
+            print(f"\nWaiting {SERVER_START_DELAY} seconds for storage servers to initialize...")
+
+            # Start remote process
+            switch_exec = os.path.basename(path_switch) # Use the basename remotely
+            kill_process(switch_exec, ssh_key, ssh_user, switch_ip)
+            time.sleep(3)
+            if not transfer_file(path_switch, switch_ip, ssh_user, ssh_key):
+                raise Exception("Benchmark switch not successfully transfered!")
+            exec_switch_filepath = "~/" + switch_exec
+
+            #num_stor_threads = config['experiment_parameters']['num_servers_per_shard'] * config['experiment_parameters']['num_shards']
+            remote_command = f"{exec_switch_filepath}"
+            switch_process = execute_arbitrary_remote_command(switch_ip, ssh_user, ssh_key, remote_command)
+            if not switch_process:
+                raise Exception("Benchmark switch not successfully started.")
+
+            # --- 9. Generate Client Configuration and Start Process ---
+            print("\n--- Starting Client ---")
+            for i, ip in enumerate(client_ips):
+                client_exec = os.path.basename(path_client) # Use the basename remotely
+                kill_process(client_exec, ssh_key, ssh_user, ip)
+                if not transfer_file(path_client, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer server binary to server {ip}")
+
+                #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name) TODO
+                cli_exec_file = "~/" + client_exec
+                prefix = "client"
+                num_client_threads = base_config['experiment_parameters']['num_client_threads']
+                duration = base_config["experiment_parameters"]["experiment_duration"]
+                remote_command = f"{cli_exec_file} {duration} {num_client_threads} {ip} {switch_ip} {json_output_name}"
+                client_process = execute_arbitrary_remote_command(ip, ssh_user, ssh_key, remote_command)
+            
+                if client_process:
+                    print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
+                    print("This script is now waiting for the client process to finish...")
+                    client_processes.append(client_process)
+                else: # TODO more error handling?
+                    raise Exception("Failed to start client process.")
+            i = 0 
+
+            for proc in client_processes: 
+                # Wait for the client process to finish
+                print("Waiting for the client process {proc.id} to finish!")
+                proc.wait()
+                print(f"Trying to copy json results with name {json_output_name} back!")
+
+                # --- 8. Copy JSON Results Back ---
+                copy_results_back(
+                    client_ips[i], 
+                    ssh_user, 
+                    ssh_key, 
+                    json_output_name, 
+                    local_results_dir
+                )
+
+                # NEW: Copy Client Log File Back
+                i += 1
+
+        except Exception as e:
+            print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
+
+        finally:
+            # --- 10. Kill all server processes and retrieve logs ---
+
+            # MODIFIED: Copy Server Log Files Back (for all servers)
+            print("Server processes are assumed to exit on their own after the client terminates.")
+            try:
+                if switch_process.poll() is None:
+                    print(f"Terminating server process (PID: {proc.pid})...")
+                    switch_process.kill()
+                    kill_process(switch_exec, ssh_key, ssh_user, switch_ip)
+                # The nohup process is difficult to kill via Popen.terminate(). 
+                # Relying on the server timeout is safer.
+                #pass 
+            except Exception as e:
+                print(f"Could not check on switch process: {e}")
+            print("Switch processes are assumed to exit on their own after the client terminates.") # TODO
+            process_and_aggregate_baseline_results(local_results_dir, json_output_name, system_name, base_config, config)
+
+
+# To be executed for each experiment
 def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, local_results_dir, system_name, with_tunnel=False):
     """Runs a single, full experiment cycle based on the merged configuration."""
     try:
@@ -1263,6 +1592,7 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
                 switch_exec = os.path.basename(path_switch) # Use the basename remotely
                 kill_process(switch_exec, ssh_key, ssh_user, switch_ip)
 
+
                 # Write YAML file locally
                 with open(switch_config_filename, 'w') as f:
                     yaml.dump(switch_config, f, default_flow_style=False)
@@ -1341,6 +1671,8 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
                         exp_index,
                         prefix
                     )
+
+
                     if client_process:
                         print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
                         print("This script is now waiting for the client process to finish...")
@@ -1354,6 +1686,13 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
                     execute_remote_switch_cmd(config, path_server, config_filename)
 
             i = 0 
+            cli_perf_duration = 10
+            switch_perf_duration = 10
+            client_exec = os.path.basename(path_client) # Use the basename remotely
+            switch_exec = os.path.basename(path_switch) # Use the basename remotely
+            run_perf(switch_exec, [switch_ip], switch_perf_duration, ssh_user, ssh_key)
+            run_perf(client_exec, client_ips, cli_perf_duration, ssh_user, ssh_key)
+
             for proc in client_processes: 
                 # Wait for the client process to finish
                 print("Waiting for the client process {proc.id} to finish!")
@@ -1415,6 +1754,8 @@ def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, 
                 except Exception as e:
                     print(f"Could not check on server process: {e}")
 
+            get_perf_files(client_exec, client_ips, ssh_user, ssh_key, local_results_dir)
+            get_perf_files(switch_exec, [switch_ip], ssh_user, ssh_key, local_results_dir)
             print("Server processes are assumed to exit on their own after the client terminates.")
             for proc in switch_processes:
                 try:
@@ -2079,6 +2420,7 @@ def run_experiment_cycle_speclog(base_config, exp_index, local_results_dir, syst
 
 EXPERIMENT_CYCLE_FNS = {
     'pringles': run_experiment_cycle_pringles,
+    'baseline': run_experiment_cycle_baseline,
     'pringles_hardware': run_experiment_cycle_hardware,
     'scalog':   run_experiment_cycle_scalog,
     'speclog':  run_experiment_cycle_speclog,
@@ -2164,6 +2506,8 @@ def main(config_file="general.toml"):
             protocol_config = "speclog.toml"
         elif system_name == "kakfa":
             protocol_config = "kafka.toml"
+        elif system_name == "baseline":
+            protocol_config = "benchmark.toml"
 
         cycle_fn = EXPERIMENT_CYCLE_FNS.get(system_name)
         if cycle_fn is None:

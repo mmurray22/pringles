@@ -8,54 +8,59 @@
 #include <cstdlib>
 #include <thread>
 #include <vector>
-#include <fstream>
-#include <iomanip>
+#include <fstream>  // Required for file writing
+#include <iomanip>  // Required for std::fixed (formatting JSON numbers)
 
 #define SERVER_PORT 8888
-#define STORAGE_PORT 9999
 #define PAYLOAD_SIZE 100
 
+// Struct to hold individual thread performance data
 struct ThreadStats {
     long long total_packets = 0;
     double total_rtt_ms = 0.0;
     long long invalid_responses = 0;
 };
 
-void client_worker(int duration, ThreadStats& stats, int thread_id, std::string self_ip, std::string server_ip) {
+// Worker function executed by each thread
+void client_worker(int duration, ThreadStats& stats, int thread_id) {
     int sockfd;
     struct sockaddr_in server_addr, client_addr;
 
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) return;
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        std::cerr << "Thread " << thread_id << ": Socket creation failed" << std::endl;
+        return;
+    }
 
-    struct timeval tv = {1, 0};
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
+    const char* iface = "enp65s0f1np1";
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, iface, strlen(iface)) < 0) {
+        // Silent fail for interface binding, useful for local testing
+    }
 
     memset(&client_addr, 0, sizeof(client_addr));
     client_addr.sin_family = AF_INET;
-    client_addr.sin_port = htons(0); 
-    client_addr.sin_addr.s_addr = inet_addr(self_ip.c_str());
+    client_addr.sin_port = htons(0); // Port 0 lets the OS assign a unique ephemeral port
+    client_addr.sin_addr.s_addr = inet_addr("10.10.1.2");
 
-    if (bind(sockfd, (const struct sockaddr *)&client_addr, sizeof(client_addr)) < 0) return;
-
-    // --- NEW: Ask the kernel what ephemeral port we were assigned ---
-    socklen_t addr_len = sizeof(client_addr);
-    getsockname(sockfd, (struct sockaddr *)&client_addr, &addr_len);
-    uint32_t my_ip = client_addr.sin_addr.s_addr;
-    uint16_t my_port = client_addr.sin_port;
+    if (bind(sockfd, (const struct sockaddr *)&client_addr, sizeof(client_addr)) < 0) {
+        std::cerr << "Thread " << thread_id << ": Bind failed." << std::endl;
+        close(sockfd);
+        return;
+    }
 
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(SERVER_PORT); // TODO: Change for whether it sends to server or store
-    server_addr.sin_addr.s_addr = inet_addr(server_ip.c_str()); // TODO: Change to change whether it sends to server or store
+    server_addr.sin_port = htons(SERVER_PORT);
+    server_addr.sin_addr.s_addr = inet_addr("10.10.1.3");
 
     char payload[PAYLOAD_SIZE];
     memset(payload, 0xFF, PAYLOAD_SIZE);
-    
-    // --- NEW: Embed the IP and Port directly into the payload ---
-    memcpy(&payload[4], &my_ip, sizeof(my_ip));
-    memcpy(&payload[8], &my_port, sizeof(my_port));
-
     char buffer[1024];
+
     auto start_time = std::chrono::steady_clock::now();
     auto end_time = start_time + std::chrono::seconds(duration);
 
@@ -65,12 +70,12 @@ void client_worker(int duration, ThreadStats& stats, int thread_id, std::string 
         auto send_time = std::chrono::steady_clock::now();
         sendto(sockfd, payload, PAYLOAD_SIZE, MSG_CONFIRM, (const struct sockaddr *)&server_addr, sizeof(server_addr));
 
-	struct sockaddr_in reply_addr;
-        socklen_t len = sizeof(reply_addr);
-        int n = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr *)&reply_addr, &len);
+        socklen_t len = sizeof(server_addr);
+        int n = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr *)&server_addr, &len);
 
         if (n > 0) {
             auto recv_time = std::chrono::steady_clock::now();
+            
             if ((unsigned char)buffer[0] == 0xBB) {
                 std::chrono::duration<double, std::milli> rtt = recv_time - send_time;
                 stats.total_rtt_ms += rtt.count();
@@ -80,20 +85,18 @@ void client_worker(int duration, ThreadStats& stats, int thread_id, std::string 
             }
         }
     }
+
     close(sockfd);
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 6) {
-        std::cerr << "Usage: " << argv[0] << " <DURATION_SECONDS> <NUM_THREADS> <SELF_IP> <SERVER_IP>" << std::endl;
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <DURATION_SECONDS> <NUM_THREADS>" << std::endl;
         return -1;
     }
 
     int duration = std::stoi(argv[1]);
     int num_threads = std::stoi(argv[2]);
-    std::string self_ip = std::string(argv[3]);
-    std::string server_ip = std::string(argv[4]);
-    std::string json_name = std::string(argv[5]);
 
     if (duration <= 0 || num_threads <= 0) {
         std::cerr << "Duration and number of threads must be greater than 0." << std::endl;
@@ -106,7 +109,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Spawning " << num_threads << " threads for " << duration << " seconds..." << std::endl;
 
     for (int i = 0; i < num_threads; ++i) {
-        threads.emplace_back(client_worker, duration, std::ref(thread_stats[i]), i, self_ip, server_ip);
+        threads.emplace_back(client_worker, duration, std::ref(thread_stats[i]), i);
     }
 
     for (auto& t : threads) {
@@ -134,17 +137,21 @@ int main(int argc, char* argv[]) {
         std::cout << "Aggregate Throughput: " << throughput_pps << " pkts/sec" << std::endl;
 
         // --- JSON File Generation ---
-        std::string filename = json_name + "_" + self_ip + ".json";
+        std::string filename = std::to_string(num_threads) + "-client-pringles-default.json";
         std::ofstream json_file(filename);
 
         if (json_file.is_open()) {
             // Write the JSON template mapping our variables into the requested fields
             json_file << "{\n";
-            json_file << "    \"throughput\": " << std::fixed << throughput_pps << ",\n";
-            json_file << "    \"avg_latency\": " << avg_rtt << ",\n";
+            json_file << "    \"agg_tput\": " << std::fixed << throughput_pps << ",\n";
+            json_file << "    \"total_avg_latency\": " << avg_rtt << ",\n";
+            json_file << "    \"subscribe_delay\": 0.0,\n";
             json_file << "    \"num_clients\": " << num_threads << ",\n";
             json_file << "    \"batch_size\": 1,\n";
             json_file << "    \"payload_size\": " << PAYLOAD_SIZE << ",\n";
+            json_file << "    \"num_switches_in_ring\": 1,\n";
+            json_file << "    \"num_shards\": 1,\n";
+            json_file << "    \"num_servers_per_shard\": 1,\n";
             json_file << "    \"git_hash\": \"1b0aec5ee4e12df008d835842cafe794b9e77615\",\n";
             json_file << "    \"system_name\": \"benchmark\"\n";
             json_file << "}\n";

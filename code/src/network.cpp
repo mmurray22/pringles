@@ -1,4 +1,5 @@
 #include <netinet/if_ether.h>
+#include <linux/net_tstamp.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <net/if.h>
@@ -66,6 +67,8 @@ Network::Network(std::string socket_type,
 
     spdlog::critical("DONE with the network setup!");
     /* End of new initializing socket */
+
+    use_timestamp = true;
 }
 
 
@@ -172,6 +175,8 @@ Network::Network(std::string send_port,
         msgs[i].msg_hdr.msg_iovlen = 1;
     }
     /* End of new initializing socket */
+    
+    use_timestamp = true;
 }
     
 Network::~Network() {
@@ -197,12 +202,23 @@ int Network::create_random_port_socket() {
     local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     local_addr.sin_port = htons(0); // The magic zero: OS assigns a random port
 
+    struct timeval timeout;      
+    timeout.tv_sec = 2;  // 5 seconds
+    timeout.tv_usec = 0; // 0 microseconds
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        close(sockfd);
+	return -1;
+    }
+
     // Bind the socket to apply the random port assignment
     if (bind(sockfd, (const struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
         perror("Bind to port 0 failed");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
+
+    int flags = fcntl(sockfd, F_GETFL, 0);
+    fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
 
     return sockfd;
 }
@@ -687,16 +703,167 @@ bool Network::send_udp_packet(std::unique_ptr<char[]> send_packet,
     return sent_all;
 }
 
+
+/*************/
+/*#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/epoll.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <linux/errqueue.h>
+
+#define MAX_EVENTS 10
+#define BUF_SIZE 2048
+
+// A clean packet structure to correlate tracking IDs across nodes
+struct __attribute__((packed)) AppPacket {
+    uint32_t packet_id;
+    char payload[64];
+};
+
+// Set socket to non-blocking mode
+int set_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1) return -1;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+// Extract timestamp array and optional tracking ID from a control message buffer
+void Network::parse_timestamp_cmsg(struct msghdr *msg, uint32_t *out_id, struct timespec *out_ts) {
+    struct cmsghdr *cmsg;
+    for (cmsg = CMSG_FIRSTHDR(msg); cmsg != NULL; cmsg = CMSG_NXTHDR(msg, cmsg)) {
+        // Pull the Core Timestamps
+        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMPING) {
+            struct scm_timestamping *ts = (struct scm_timestamping *)CMSG_DATA(cmsg);
+            // Index 0: Software (Kernel) | Index 2: Hardware
+            // Defaulting to hardware if present, otherwise software
+            if (ts->ts[2].tv_sec != 0) {
+                *out_ts = ts->ts[2];
+            } else {
+                *out_ts = ts->ts[0];
+            }
+        }
+        // Pull the Tracking ID assigned via SOF_TIMESTAMPING_OPT_ID
+        if (cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_RECVERR) {
+            struct sock_extended_err *see = (struct sock_extended_err *)CMSG_DATA(cmsg);
+            if (see->ee_origin == SO_EE_ORIGIN_TIMESTAMPING) {
+                *out_id = see->ee_data; // This matches your internal counter sequence
+            }
+        }
+    }
+}
+
+// Process TX timestamp loops from the Error Queue
+void Network::handle_tx_timestamps(int sockfd) {
+    struct AppPacket pkt;
+    struct iovec iov = { .iov_base = &pkt, .iov_len = sizeof(pkt) };
+    char cmsg_buf[1024];
+    
+    struct msghdr msg = {
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+        .msg_control = cmsg_buf,
+        .msg_controllen = sizeof(cmsg_buf)
+    };
+
+    // MSG_ERRQUEUE is mandatory to shift into the loopback error buffer
+    ssize_t res = recvmsg(sockfd, &msg, MSG_ERRQUEUE);
+    if (res < 0) return;
+
+    uint32_t tx_id = 0;
+    struct timespec tx_ts = {0};
+    parse_timestamp_cmsg(&msg, &tx_id, &tx_ts);
+
+    printf("[TX TIMESTAMP] Packet ID: %u | Timestamp: %ld.%09ld s\n", 
+           tx_id, tx_ts.tv_sec, tx_ts.tv_nsec);
+}
+
+// Process incoming network data
+void handle_rx_messages(int sockfd) {
+    struct AppPacket pkt;
+    struct iovec iov = { .iov_base = &pkt, .iov_len = sizeof(pkt) };
+    char cmsg_buf[1024];
+    
+    struct msghdr msg = {
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+        .msg_control = cmsg_buf,
+        .msg_controllen = sizeof(cmsg_buf)
+    };
+
+    // Standard recvmsg without special flags for raw processing
+    ssize_t res = recvmsg(sockfd, &msg, 0);
+    if (res < 0) return;
+
+    uint32_t dummy_id = 0;
+    struct timespec rx_ts = {0};
+    parse_timestamp_cmsg(&msg, &dummy_id, &rx_ts);
+
+    // Read the tracking ID embedded straight inside your application's wire protocol
+    printf("[RX DATA] Packet ID: %u | Payload: %s | Arrival: %ld.%09ld s\n", 
+           pkt.packet_id, pkt.payload, rx_ts.tv_sec, rx_ts.tv_nsec);
+}
+
+int Network::timestamp_thread(int sockfd) {
+    set_nonblocking(sockfd);
+
+    // Enable timestamping and OPT_ID logic here via setsockopt...
+
+    int epoll_fd = epoll_create1(0);
+    struct epoll_event ev, events[MAX_EVENTS];
+    
+    // CRITICAL: You must register EPOLLERR to capture the Error Queue interrupts
+    ev.events = EPOLLIN | EPOLLERR | EPOLLET; 
+    ev.data.fd = sockfd;
+    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sockfd, &ev);
+
+    uint32_t global_tx_counter = 0;
+
+    // Simulation Event Loop
+    while (end_thread) {
+        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000); // 1-second timeout
+        
+        for (int i = 0; i < nfds; i++) {
+            // Check if the error queue has a TX timestamp waiting
+            if (events[i].events & EPOLLERR) {
+                handle_tx_timestamps(events[i].data.fd);
+            }
+            
+            // Check if normal application network traffic has arrived
+            if (events[i].events & EPOLLIN) {
+                handle_rx_messages(events[i].data.fd);
+            }
+        }
+
+        // Example trigger: Periodic transmission tracking
+        struct AppPacket out_pkt;
+        out_pkt.packet_id = global_tx_counter++; // Matches internal kernel tracker index
+        strcpy(out_pkt.payload, "Ping");
+        // sendto(sockfd, &out_pkt, sizeof(out_pkt), 0, ...);
+    }
+
+    close(sockfd);
+    close(epoll_fd);
+    return 0;
+}*/
+
+
+/***************/
+
 char* Network::recv_packet() { // do you need to memset? TODO
     int numbytes = 0;
     struct sockaddr_storage src_addr;
     socklen_t addr_len = sizeof src_addr;
-
+    
     //TODO epoll    
     if ((numbytes = recvfrom(recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
         //spdlog::warn("Receiver Error {} occurred: {}", std::to_string(errno), strerror(errno));
         return NULL;
     }
+
     //spdlog::debug("Returning unrelated buffer!");
     return norm_buf;
 }
@@ -733,6 +900,14 @@ int Network::setup_batch_socket(int port) {
     if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, (this->send_interface).c_str(), strlen((this->send_interface).c_str())) < 0) {
         // Silent failure here just in case interface doesn't match testing env
     }
+
+    int flags = SOF_TIMESTAMPING_TX_SCHED | SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_ID;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_TIMESTAMP, &flags, sizeof(flags)) < 0) {
+	spdlog::debug("setsockopt TIMESTAMP was failed!");
+        close(sockfd);
+	return -1;
+    }
+
 
     spdlog::debug("Third!");
     memset(&server_addr, 0, sizeof(server_addr));
@@ -799,12 +974,11 @@ int Network::get_recv_socket() {
 }
 
 char* Network::recv_packet(int udp_recv_socket) { // do you need to memset? TODO
-    (void) udp_recv_socket;
     int numbytes = 0;
     struct sockaddr_storage src_addr;
     socklen_t addr_len = sizeof src_addr;
 
-    while ((numbytes = recvfrom(recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
+    while ((numbytes = recvfrom(udp_recv_socket, norm_buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addr_len)) < 0) {
         return NULL;
     }
     return norm_buf;

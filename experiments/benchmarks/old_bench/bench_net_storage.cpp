@@ -13,33 +13,8 @@
 #define BATCH_SIZE 512
 #define BUF_SIZE 1024
 
-// Creates a UDP socket bound to a random OS-assigned ephemeral port
-int create_random_port_socket() {
-    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
-        perror("Socket creation failed");
-        exit(EXIT_FAILURE);
-    }
-
-    struct sockaddr_in local_addr;
-    memset(&local_addr, 0, sizeof(local_addr));
-    
-    local_addr.sin_family = AF_INET;
-    local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    local_addr.sin_port = htons(0); // The magic zero: OS assigns a random port
-
-    // Bind the socket to apply the random port assignment
-    if (bind(sockfd, (const struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
-        perror("Bind to port 0 failed");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-
-    return sockfd;
-}
-
 // Worker function for each storage thread
-void storage_worker(int thread_id) {
+void storage_worker(int thread_id, std::string self_ip) {
     std::cout << "New storage worker!" << std::endl;
     int sockfd;
     struct sockaddr_in storage_addr;
@@ -62,7 +37,7 @@ void storage_worker(int thread_id) {
     memset(&storage_addr, 0, sizeof(storage_addr));
     storage_addr.sin_family = AF_INET;
     storage_addr.sin_port = htons(STORAGE_PORT);
-    storage_addr.sin_addr.s_addr = inet_addr("10.10.1.4");
+    storage_addr.sin_addr.s_addr = inet_addr(self_ip.c_str());
 
     if (bind(sockfd, (const struct sockaddr *)&storage_addr, sizeof(storage_addr)) < 0) {
         std::cerr << "Thread " << thread_id << ": Bind failed." << std::endl;
@@ -90,8 +65,11 @@ void storage_worker(int thread_id) {
             iovecs[i].iov_len = BUF_SIZE;
         }
 
+
         int num_received = recvmmsg(sockfd, msgs, BATCH_SIZE, MSG_WAITFORONE, NULL);
         if (num_received < 0) continue;
+
+	std::cout << "Server packet!" << std::endl;
 
         for (int i = 0; i < num_received; i++) {
             if (msgs[i].msg_len > 0) {
@@ -108,26 +86,27 @@ void storage_worker(int thread_id) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <NUM_THREADS>" << std::endl;
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <NUM_THREADS> <SELF_IP>" << std::endl;
         return -1;
     }
 
     int num_threads = std::stoi(argv[1]);
+    std::string self_ip = std::string(argv[2]);
 
     if (num_threads <= 0) {
         std::cerr << "Number of threads must be greater than 0." << std::endl;
         return -1;
     }
 
-    std::cout << "Starting Storage Node on 10.10.1.4:" << STORAGE_PORT 
+    std::cout << "Starting Storage Node on " << self_ip << ":" << STORAGE_PORT 
               << " with " << num_threads << " thread(s)..." << std::endl;
 
     std::vector<std::thread> threads;
 
     // Spawn the requested number of worker threads
     for (int i = 0; i < num_threads; ++i) {
-        threads.emplace_back(storage_worker, i);
+        threads.emplace_back(storage_worker, i, self_ip);
     }
 
     // Keep the main thread alive
