@@ -69,6 +69,8 @@ std::string get_multicast_addr(YAML::Node config);
 std::string get_stor_receive_port(YAML::Node config);
 std::string get_switch_receive_port(YAML::Node config);
 
+std::string get_seq_recv_port(YAML::Node config);
+
 uint64_t get_use_switch(YAML::Node config);
 uint64_t get_use_stor(YAML::Node config);
 bool get_use_streams(YAML::Node config);

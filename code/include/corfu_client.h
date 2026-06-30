@@ -41,7 +41,6 @@ protected:
 	std::shared_ptr<Network> net;
 
 	uint64_t min_matching_acks = 0;
-	uint64_t num_pkt_types = 0;
 
 	std::mutex pkt_q_lock;
 	std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
@@ -52,6 +51,9 @@ protected:
 	uint64_t payload_size;
 	uint64_t batch_size;
 	uint64_t num_work_threads;
+
+	std::string send_port;
+	std::string recv_port;
 
 	uint64_t dummy_idx;
 	std::mutex dummy_idx_lock;

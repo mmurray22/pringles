@@ -31,33 +31,23 @@
 #include "corfustorage.pb.h"
 #include "corfusequencer.pb.h"
 
-#define base_storage_port 5000
-#define seq_port "4951"
+#define ERROR 999999
 
 CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
    // Get packet types for sending/receiving
    this->cid = thread_id;
    YAML::Node config = YAML::LoadFile(input_file);
-   num_pkt_types = get_num_pkt_types(config);
-//    std::vector<std::array<uint8_t, 6>> mac_addrs = get_dst_mac_addrs(config);
-//    if (mac_addrs.size() < 1) {
-//        spdlog::critical("Unable to parse mac address!");
-//        throw;
-//    }
-
-    uint64_t base_send_port = get_send_port(config);
-    uint64_t base_recv_port = get_recv_port(config);
-
-    std::string unique_send_port = std::to_string(base_send_port + cid);
-    std::string unique_recv_port = std::to_string(base_recv_port + cid);
   
    this->num_work_threads = get_num_client_threads(config);
    // Create network
    std::string multicast_ip = "";
 
+   send_port = std::to_string(get_send_port(config));
+   recv_port = std::to_string(get_recv_port(config));
+
     net = std::make_shared<Network>(
-        unique_send_port, 
-        unique_recv_port,
+        send_port,
+        recv_port,
 		get_socket_type(config),
         get_log_level(config),
 		get_batch_size(config),
@@ -70,11 +60,6 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
 		false);
         
     spdlog::info("Corfu Client: net init");
-    
-    // Start receiving thread 
-    for (size_t i = 0; i < num_pkt_types; i++) {
-        this->pkt_q.insert(std::pair<PacketType, std::queue<std::unique_ptr<char[]>>>(PacketType(i), std::queue<std::unique_ptr<char[]>>()));
-    }
 
     this->num_m_per_extent = get_num_m_per_extent(config);
     this->num_m_per_rep_set = get_num_m_per_rep_set(config);
@@ -135,9 +120,9 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     // this->batch_size = num_work_threads * payload_size;
     // this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id)
 
-    this->warm_up = get_warm_up(config);
-    this->cool_down = get_cool_down(config);
-    this->max_duration = get_experiment_duration(config) - warm_up - cool_down; // Duration of the actual experiment
+    // this->warm_up = get_warm_up(config);
+    // this->cool_down = get_cool_down(config);
+    // this->max_duration = get_experiment_duration(config) - warm_up - cool_down; // Duration of the actual experiment
     this->global_thread_id = thread_id;
    
     // this->switch_mac = get_switch_mac(config);
@@ -261,12 +246,12 @@ uint32_t CorfuClient::append(std::string entry) {
     spdlog::debug("Append: gettoken packet is of size: {}", allocated_packet_size);
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
     memcpy(packet.get(), sequencing_packet->c_str(), allocated_packet_size);
-    spdlog::debug("sending to {}:{}", seq_ips[0], seq_port);
+    spdlog::debug("sending to {}:{}", seq_ips[0], recv_port);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size,
         seq_ips[0],
-        seq_port // THIS IS HARDCODED, FIND A BETTER FIX TODO
+        recv_port
     );
     char* msg = net->recv_packet();
 
@@ -281,7 +266,7 @@ uint32_t CorfuClient::append(std::string entry) {
     if (!msg && read_time >= TIMEOUT) {
         // TODO i think you need to reconfigure here
         spdlog::critical("Append: We did not receive anything from sequencer before timeout");
-        return 1; // failure
+        return ERROR; // failure
     }
 
     // recv packet from the sequencer
@@ -301,7 +286,7 @@ uint32_t CorfuClient::append(std::string entry) {
 
     if (send_machines.empty()) {
         spdlog::critical("Append: Unable to find send machines");
-        return 1; 
+        return ERROR; 
     }
 
     // mod relative log pos, even = first machine, odd = second machine
@@ -321,7 +306,7 @@ uint32_t CorfuClient::append(std::string entry) {
             std::move(packet), 
             allocated_packet_size, 
             storage_ips[sm],
-            std::to_string(base_storage_port + sm) // THIS IS HARDCODED, FIND A BETTER FIX TODO
+            recv_port // THIS IS HARDCODED, FIND A BETTER FIX TODO
         );
         msg = net->recv_packet();
 
@@ -340,7 +325,7 @@ uint32_t CorfuClient::append(std::string entry) {
             // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
             // reconfigure(log_idx, *failing_unit);
             // spdlog::info("Append: Just reconfigured, you should attempt to append again");
-            return 1; // return error
+            return ERROR; // return error
         }
 
         // CHECK FOR ACK OR ERROR
@@ -352,13 +337,13 @@ uint32_t CorfuClient::append(std::string entry) {
             // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
             // reconfigure(log_idx, *failing_unit);
             // spdlog::info("Append: Just reconfigured, you should attempt to append again");
-            return 1;
+            return ERROR;
         } else if (packet_contents.packet_type() == CORFU_DELETED_PROTO_TYPE) {
             spdlog::critical("Append: We got an err_deleted and now we're returning the error code");
-            return 1;
+            return ERROR;
         } else if (packet_contents.packet_type() == CORFU_WRITTEN_PROTO_TYPE) {
             spdlog::critical("Append: We got an err_written and now we're returning the error code");
-            return 1;
+            return ERROR;
         }
 
         // check to make sure that we've received an ack
@@ -367,7 +352,7 @@ uint32_t CorfuClient::append(std::string entry) {
             continue;
         } else {
             spdlog::critical("Append: We did not receive an ack :(");
-            return 1;
+            return ERROR;
         }
     }
     spdlog::info("Append: end of append");
@@ -406,7 +391,7 @@ std::string CorfuClient::read(uint64_t log_idx) {
         std::move(packet), 
         allocated_packet_size,
         storage_ips[send_machines[machine].back()],
-        std::to_string(base_storage_port + machine) // THIS IS HARDCODED, FIND A BETTER FIX
+        recv_port
     );
     char* msg = net->recv_packet();
 
@@ -467,7 +452,7 @@ uint64_t CorfuClient::fill(uint64_t idx) {
 
     if (send_machines.empty()) {
         spdlog::critical("Fill: Unable to find send machines");
-        return 1; 
+        return ERROR; 
     }
 
     // mod relative log pos, even = first machine, odd = second machine
@@ -487,7 +472,7 @@ uint64_t CorfuClient::fill(uint64_t idx) {
             std::move(packet), 
             allocated_packet_size, 
             storage_ips[sm],
-            std::to_string(base_storage_port + sm) // THIS IS HARDCODED, FIND A BETTER FIX TODO
+            recv_port
         );
         char* msg = net->recv_packet();
 
@@ -506,7 +491,7 @@ uint64_t CorfuClient::fill(uint64_t idx) {
             // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
             // reconfigure(log_idx, *failing_unit);
             // spdlog::info("Fill: Just reconfigured, you should attempt to append again");
-            return 1; // return error
+            return ERROR; // return error
         }
 
         // CHECK FOR ACK OR ERROR
@@ -519,7 +504,7 @@ uint64_t CorfuClient::fill(uint64_t idx) {
             // reconfigure(log_idx, *failing_unit);
             // spdlog::info("Fill: Just reconfigured, you should attempt to append again");
             // needs to redo Fill
-            return 1;
+            return ERROR;
         } else if (packet_contents.packet_type() == CORFU_WRITTEN_PROTO_TYPE) {
             junk = packet_contents.err_written().content();
             spdlog::info("Fill: received err_written with content {}", junk);
@@ -531,7 +516,7 @@ uint64_t CorfuClient::fill(uint64_t idx) {
             continue;
         } else {
             spdlog::critical("Fill: We did not receive an ack :(");
-            return 1;
+            return ERROR;
         }
     }
     spdlog::info("Fill: end of fill");
@@ -565,7 +550,7 @@ bool CorfuClient::trim(uint64_t log_idx) {
             std::move(packet), 
             allocated_packet_size, 
             storage_ips[sm],
-            std::to_string(base_storage_port + sm) // THIS IS HARDCODED, FIND A BETTER FIX TODO
+            recv_port
         );
         char* msg = net->recv_packet();
 
@@ -630,15 +615,6 @@ void CorfuClient::wait_to_cooldown() {
 
 bool CorfuClient::experiment_status() {
     return !end_thread;
-}
-
-/* Header functions */
-std::vector<int> CorfuClient::get_pkt_eth_types() {
-    std::vector<int> eth_types = {};
-    for(uint64_t i = 0; i < num_pkt_types; i++) {
-        eth_types.push_back(get_eth_type(i));
-    }
-    return eth_types;
 }
 
 int CorfuClient::get_eth_type(uint64_t pkt_type) {

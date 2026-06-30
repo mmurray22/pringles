@@ -209,6 +209,74 @@ def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, p
 
     return yaml_config
 
+def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset, send_port, recv_port, network_interface=None, entity_id=None):
+    """
+    Generates the configuration dictionary for a Corfu entity mapping variables 
+    from the provided TOML base_config.
+    """
+
+    # Extract required parameters from the fully merged base_config
+    general_exp_params = base_config['experiment_parameters']
+    net_params = base_config.get('network_setup', {})
+    exp_params = base_config.get('experiment_parameters', {})
+
+    # Calculate experiment duration, adding a delay for servers (Feature 3)
+    exp_duration = general_exp_params['experiment_duration']
+    warm_up = general_exp_params['warm_up']
+    cool_down = general_exp_params['cool_down']
+
+    if entity_type == 'server':
+        # Servers run longer than the client to ensure no early termination
+        final_duration = exp_duration + warm_up + cool_down + SERVER_START_DELAY
+    elif entity_type == 'sequencer':
+        final_duration = exp_duration + warm_up + cool_down + SWITCH_START_DELAY
+    else:
+        final_duration = exp_duration + warm_up + cool_down
+
+    # Map the arrays of IPs, ensuring they are quoted strings in the YAML
+    cli_ips = [QuotedString(ip) for ip in net_params.get('cli_ips', [])]
+    seq_ips = [QuotedString(ip) for ip in net_params.get('seq_ips', [])]
+    stor_ips = [QuotedString(ip) for ip in net_params.get('stor_ips', [])]
+
+    yaml_config = {
+        'log_level': general_exp_params['log_level'],
+        'seq_ips': seq_ips,
+        'cli_ips': cli_ips,
+        'stor_ips': stor_ips,
+        'send_port': QuotedString(send_port),
+        'recv_port': QuotedString(recv_port),
+        'stor_recv_port': QuotedString(net_params['stor_recv_port']),
+        'seq_recv_port': QuotedString(net_params['seq_recv_port']),
+        'num_client_threads': len(cli_ips),
+        # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
+        'socket_type': QuotedString(exp_params['socket_type']),
+        # WRAPPED: Ensures self_ip is quoted
+        'self_ip': QuotedString(entity_ip),
+        # WRAPPED: Ensures interface name is quoted
+        'batch_size': exp_params['batch_size'],
+        'batch_usec_timeout': exp_params['batch_usec_timeout'], 
+        'batch_on': exp_params['batch_on'],
+        # Use the calculated final duration (adjusted for servers)
+        'experiment_duration': final_duration, 
+        'machines_per_extent': exp_params['machines_per_extent'],
+        'machines_per_replica_set': exp_params['machines_per_replica_set'], 
+        'extent_range_size': exp_params['extent_range_size'],
+        'interface': QuotedString(network_interface)
+    }
+
+        # --- Client Specific Fields ---
+    if entity_type == 'client':
+        yaml_config.update({
+            'cli_id': entity_id, # Integer
+        })
+
+    if entity_type == 'server':
+        yaml_config.update({
+            'stor_id': entity_id
+        })
+
+    return yaml_config
+
 def kill_process(process_name, ssh_key, ssh_user, ip):
     """
     Executes a program on a remote machine asynchronously using SSH, 
@@ -1737,165 +1805,181 @@ def run_experiment_cycle_kafka(config, kafka_config_file, exp_index, local_resul
         for ip, log_filename in broker_log_files.items():
             copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
 
-def run_experiment_cycle_corfu(base_config, protocol_config, run_id, local_results_dir, system_name):
-    """
-    Executes a complete Corfu lifecycle matching the signature expected by main().
-    """
-    # Extract structural configs from base_config just like the main loop does
-    net_setup = base_config.get('network_setup', {})
-    prog_paths = base_config.get('program_paths', {})
-    exp_params = base_config.get('experiment_parameters', {})
 
-    ssh_user = net_setup.get('ssh_user', 'colang')
-    ssh_key = net_setup.get('ssh_key', '/proj/ove-PG0/colang/ssh/cloudlab')
+def run_experiment_cycle_corfu(base_config, protocol_config, exp_index, local_results_dir, system_name):
+    """
+    Runs a single experiment cycle for Corfu.
+    Generates configs, deploys them, starts sequencers -> servers -> clients, 
+    waits for completion, and collects logs/results.
+    """
+    print(f"\n--- Starting Corfu Experiment Cycle {exp_index + 1} ---")
+    
+    # 1. Extract necessary credentials and network setup strictly from TOML
+    ssh_key = os.path.expanduser(base_config['network_setup']['ssh_key'])
+    ssh_user = base_config['network_setup']['ssh_user']
+    
+    seq_ips = base_config['network_setup'].get('seq_ips', [])
+    stor_ips = base_config['network_setup'].get('stor_ips', [])
+    cli_ips = base_config['network_setup'].get('cli_ips', [])
+    all_ips = seq_ips + stor_ips + cli_ips
+    
+    # Network interfaces (Strictly from TOML)
+    seq_net_if = base_config['network_setup']['seq_net_if']
+    stor_net_ifs = base_config['network_setup']['stor_net_ifs']
+    cli_net_ifs = base_config['network_setup']['cli_net_ifs']
+    
+    # Binary paths and names (Strictly from TOML)
+    path_seq = base_config['program_paths']['path_sequencer']
+    path_stor = base_config['program_paths']['path_server']
+    path_cli = base_config['program_paths']['path_client']
+    
+    seq_binary = base_config['program_paths']['sequencer_binary']
+    stor_binary = base_config['program_paths']['server_binary']
+    cli_binary = base_config['program_paths']['client_binary']
 
-    remote_processes = []
-    client_processes = []
+    # Required parameters (Strictly from TOML)
+    json_name = base_config['experiment_parameters']['json_name']
+    stor_recv_port = base_config['network_setup']['stor_recv_port']
+    seq_recv_port = base_config['network_setup']['seq_recv_port']
+    cli_recv_port = base_config['network_setup']['cli_recv_port']
+
+    # 2. Cleanup preceding experiment files on remote machines
+    print("\n--- Cleaning up previous remote files ---")
+    for ip in all_ips:
+        cleanup_remote_json_files(ip, ssh_key, ssh_user, json_name)
+    cleanup_remote_yaml_files(all_ips, ssh_key, ssh_user)
+
+    # 3. Generate & Transfer YAML Configs
+    print("\n--- Generating and Transferring Corfu Config Files ---")
+    port_offset = 0
+    
+    # Sequencers
+    for i, ip in enumerate(seq_ips):
+        seq_config = generate_corfu_yaml_config(
+            base_config=base_config,
+            entity_ip=ip,
+            entity_type="sequencer",
+            port_offset=port_offset,
+            send_port=BASE_PORT,
+            recv_port=cli_recv_port,
+            network_interface=seq_net_if
+        )
+        port_offset += 2
+        local_yaml = os.path.join(local_results_dir, f"corfu_seq_{i}.yaml")
+        with open(local_yaml, 'w') as f:
+            f.write("---\n")
+            yaml.dump(seq_config, f, default_flow_style=False, sort_keys=False)
+            f.write("...\n")
+        transfer_file(local_yaml, ip, ssh_user, ssh_key, remote_filename="config.yaml")
+
+    # Storage Servers
+    for i, ip in enumerate(stor_ips):
+        stor_interface = stor_net_ifs[i] if i < len(stor_net_ifs) else stor_net_ifs[0]
+        stor_config = generate_corfu_yaml_config(
+            base_config=base_config,
+            entity_ip=ip,
+            entity_type="server",
+            port_offset=port_offset,
+            send_port=BASE_PORT,
+            recv_port=cli_recv_port,
+            network_interface=stor_interface,
+            entity_id=i
+        )
+        port_offset += 2
+        local_yaml = os.path.join(local_results_dir, f"corfu_stor_{i}.yaml")
+        with open(local_yaml, 'w') as f:
+            f.write("---\n")
+            yaml.dump(stor_config, f, default_flow_style=False, sort_keys=False)
+            f.write("...\n")
+        transfer_file(local_yaml, ip, ssh_user, ssh_key, remote_filename="config.yaml")
+
+    # Clients
+    for i, ip in enumerate(cli_ips):
+        interface = cli_net_ifs[i] if i < len(cli_net_ifs) else cli_net_ifs[0]
+        cli_config = generate_corfu_yaml_config(
+            base_config=base_config,
+            entity_ip=ip,
+            entity_type="client",
+            port_offset=port_offset,
+            send_port=BASE_PORT,
+            recv_port=cli_recv_port,
+            network_interface=interface,
+            entity_id=i
+        )
+        port_offset += 2
+        local_yaml = os.path.join(local_results_dir, f"corfu_cli_{i}.yaml")
+        with open(local_yaml, 'w') as f:
+            f.write("---\n")
+            yaml.dump(cli_config, f, default_flow_style=False, sort_keys=False)
+            f.write("...\n")
+        transfer_file(local_yaml, ip, ssh_user, ssh_key, remote_filename="config.yaml")
+
+    # 4. Start Remote Processes
     server_processes = []
-    client_log_files = []
-    server_log_files = {}
-    seq_processes = []
-    seq_log_files = {}
+    component_log_files = {}
 
     try:
-        # =========================================================
-        # 1. LAUNCH CORFU SEQUENCER
-        # =========================================================
-        print("--- Launching Dedicated Corfu Sequencer Node(s) ---")
-        for seq_idx, ip in enumerate(net_setup.get('seq_ips', [])):
-            yaml_dict = generate_yaml_config(
-                base_config=base_config, 
-                pringles_config=base_config, 
-                entity_type='sequencer', 
-                entity_ip=ip, 
-                port_offset=0,  
-                server_ips=net_setup.get('stor_ips', []),
-                entity_id=seq_idx
-            )
-            yaml_filename = f"seq_{seq_idx}.yaml"
-            with open(yaml_filename, 'w') as f:
-                yaml.dump(yaml_dict, f, default_flow_style=False)
-            transfer_file(yaml_filename, ip, ssh_user, ssh_key)
-
-            binary_path = prog_paths.get('path_sequencer', 'pringles/build/experiments/unit_tests/corfu_seq')
-            process, log_name = execute_remote_command(ip, binary_path, yaml_filename, ssh_key, ssh_user, seq_idx, "seq")
-            remote_processes.append((ip, process, log_name))
-        
-        print(f"Waiting {SWITCH_START_DELAY} seconds for Sequencer to initialize...")
-        time.sleep(SWITCH_START_DELAY)
-
-        # =========================================================
-        # 2. LAUNCH CORFU STORAGE SERVERS
-        # =========================================================
-        print(f"--- Launching Corfu Storage Server Node(s) ---")
-        for stor_idx, ip in enumerate(net_setup.get('stor_ips', [])):
-            yaml_dict = generate_yaml_config(
-                base_config=base_config, 
-                pringles_config=base_config, 
-                entity_type='server', 
-                entity_ip=ip, 
-                port_offset=100 + stor_idx, 
-                server_ips=net_setup.get('stor_ips', []),
-                entity_id=stor_idx
-            )
-            yaml_filename = f"stor_{stor_idx}.yaml"
-            with open(yaml_filename, 'w') as f:
-                yaml.dump(yaml_dict, f, default_flow_style=False)
-            transfer_file(yaml_filename, ip, ssh_user, ssh_key)
-
-            binary_path = prog_paths.get('path_server', 'pringles/build/experiments/unit_tests/corfu_stor')
-            process, log_name = execute_remote_command(ip, binary_path, yaml_filename, ssh_key, ssh_user, stor_idx, "stor")
-            remote_processes.append((ip, process, log_name))
-            
-        print(f"Waiting {SERVER_START_DELAY} seconds for Storage layer to initialize...")
+        # Start Sequencers in background
+        print("\n--- Starting Sequencers ---")
+        for i, ip in enumerate(seq_ips):
+            proc, log = execute_remote_command(ip, path_seq, "config.yaml", ssh_key, ssh_user, exp_index, f"seq_{i}", background=True)
+            if proc:
+                server_processes.append(proc)
+                component_log_files[f'seq_{i}'] = (ip, log)
         time.sleep(SERVER_START_DELAY)
 
-        # =========================================================
-        # 3. LAUNCH CORFU CLIENT WORKLOAD
-        # =========================================================
-        print(f"--- Launching Corfu Client Node(s) ---")
-        for cli_idx, ip in enumerate(net_setup.get('cli_ips', [])):
-            yaml_dict = generate_yaml_config(
-                base_config=base_config, 
-                pringles_config=base_config, 
-                entity_type='client', 
-                entity_ip=ip, 
-                port_offset=200 + cli_idx,
-                server_ips=net_setup.get('stor_ips', []),
-                entity_id=cli_idx,
-                json_name=exp_params.get('json_name', 'default')
-            )
-            yaml_filename = f"cli_{cli_idx}.yaml"
-            with open(yaml_filename, 'w') as f:
-                yaml.dump(yaml_dict, f, default_flow_style=False)
-            transfer_file(yaml_filename, ip, ssh_user, ssh_key)
-
-            binary_path = prog_paths.get('path_client', 'pringles/build/experiments/unit_tests/corfu_cli')
-            
-            # NOTICE: background=False here so proc.wait() actually tracks runtime progress!
-            process, log_name = execute_remote_command(ip, binary_path, yaml_filename, ssh_key, ssh_user, cli_idx, "cli", background=False)
-            client_processes.append((ip, process, log_name))
-
-        # =========================================================
-        # 4. MONITOR EXECUTION RUNTIME
-        # =========================================================
-        print("Experiment tracking active...")
-        for ip, proc, log_name in client_processes:
+        # Start Storage Servers in background
+        print("\n--- Starting Storage Servers ---")
+        for i, ip in enumerate(stor_ips):
+            proc, log = execute_remote_command(ip, path_stor, "config.yaml", ssh_key, ssh_user, exp_index, f"stor_{i}", background=True)
             if proc:
-                proc.wait()  # Block until the client C++ binary completes its asserts
-        print("Corfu client assertions completed and exited.")
+                server_processes.append(proc)
+                component_log_files[f'stor_{i}'] = (ip, log)
+        time.sleep(SERVER_START_DELAY)
+
+        # Start Clients (Synchronous / Blocking)
+        print("\n--- Starting Clients ---")
+        client_procs = []
+        for i, ip in enumerate(cli_ips):
+            proc, log = execute_remote_command(ip, path_cli, "config.yaml", ssh_key, ssh_user, exp_index, f"cli_{i}", background=False)
+            if proc:
+                client_procs.append(proc)
+                component_log_files[f'cli_{i}'] = (ip, log)
+        
+        # Wait for all clients to finish their execution
+        print("Waiting for clients to finish processing...")
+        for proc in client_procs:
+            proc.wait()
+
+        # 5. Retrieve Logs & Results
+        print("\n--- Retrieving Results & Logs ---")
+        for i, ip in enumerate(cli_ips):
+            copy_results_back(ip, ssh_user, ssh_key, json_name, local_results_dir)
+        
+        for name, (ip, log_filename) in component_log_files.items():
+            copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
 
     except Exception as e:
-        print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
+        print(f"\nFATAL ERROR during Corfu experiment cycle {exp_index + 1}: {e}")
 
     finally:
-        # --- 10. Kill all server processes and retrieve logs ---
-        print("\n--- Experiment finished. Retrieving server logs and cleaning up ---")
-
-        # MODIFIED: Copy Server Log Files Back (for all servers)
-        for ip, log_filename in server_log_files.items():
-            copy_log_file_back(
-                ip,
-                ssh_user,
-                ssh_key,
-                log_filename,
-                local_results_dir
-            )
-
-        for ip, log_filename in seq_log_files.items():
-            copy_log_file_back(
-                switch_ip,
-                ssh_user,
-                ssh_key,
-                log_filename,
-                local_results_dir
-            )
-
-        for proc in server_processes:
-            try:
-                if proc.poll() is None:
-                    print(f"Terminating server process (PID: {proc.pid})...")
-                    proc.kill()
-                # The nohup process is difficult to kill via Popen.terminate(). 
-                # Relying on the server timeout is safer.
-                #pass 
-            except Exception as e:
-                print(f"Could not check on server process: {e}")
-
-        print("Server processes are assumed to exit on their own after the client terminates.")
-        for proc in seq_processes:
-            try:
-                if proc.poll() is None:
-                    print(f"Terminating server process (PID: {proc.pid})...")
-                    proc.kill()
-                # The nohup process is difficult to kill via Popen.terminate(). 
-                # Relying on the server timeout is safer.
-                #pass 
-            except Exception as e:
-                print(f"Could not check on switch process: {e}")
-
-        print("Switch processes are assumed to exit on their own after the client terminates.") # TODO
-        process_and_aggregate_results(local_results_dir, json_output_name, system_name, base_config, config)
+        # 6. Tear down processes & cleanup
+        print("\n--- Tearing Down Corfu Cluster ---")
+        
+        # Now tearing down using the exact binary names supplied in the TOML
+        for ip in seq_ips:
+            kill_remote_process(ip, seq_binary, ssh_key, ssh_user)
+        for ip in stor_ips:
+            kill_remote_process(ip, stor_binary, ssh_key, ssh_user)
+        for ip in cli_ips:
+            kill_remote_process(ip, cli_binary, ssh_key, ssh_user)
+        
+        # Clean up local yaml artifact generation
+        # for f in glob.glob(os.path.join(local_results_dir, "corfu_*.yaml")):
+        #     try:
+        #         os.remove(f)
+        #     except OSError:
+        #         pass
 
 def generate_scalog_config(discovery_ip, order_ips, data_ips, order_replication_factor, data_replication_factor,
                            batching_interval,

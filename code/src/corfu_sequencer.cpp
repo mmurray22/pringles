@@ -2,14 +2,13 @@
 
 CorfuSequencer::CorfuSequencer(std::string input_file) {
     YAML::Node config = YAML::LoadFile(input_file);
-    this->num_pkt_types = get_num_pkt_types(config);
-
+    
     this->cli_ips = get_cli_ip(config);
 
    std::string multicast_ip = "";
 
     net = std::make_shared<Network>(
-        std::to_string(get_send_port(config)), 
+        std::to_string(get_send_port(config)),
         std::to_string(get_recv_port(config)),
 		get_socket_type(config),
         get_log_level(config),
@@ -22,7 +21,7 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
 		false,
 		false);
 
-    this->send_port = get_send_port(config);
+    this->send_port = std::to_string(get_recv_port(config));
     this->max_duration = get_experiment_duration(config);
 
     terminate = false;
@@ -70,7 +69,7 @@ void CorfuSequencer::run_sequencer_thread() {
                 std::move(packet), 
                 allocated_packet_size, 
                 cli_ips[cid],
-                std::to_string(send_port + cid)
+                send_port
             );
             spdlog::debug("Sequencer gave index {} to cid {}", idx, packet_contents.clientid());
         } else {

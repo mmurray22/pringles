@@ -65,7 +65,7 @@ class CorfuStorage {
         std::thread server_thread;
         std::atomic<bool> terminate{false};
 
-        uint64_t send_port;
+        std::string send_port;
         uint64_t num_pkt_types;
 
         // In-memory Key-Value Store

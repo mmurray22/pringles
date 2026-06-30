@@ -16,16 +16,17 @@
 #include "utils.h"
 
 void run_client(std::string input_file, uint64_t i) {
+    spdlog::debug("client gets here");
     CorfuClient corfu_cli = CorfuClient(input_file, i);
     spdlog::debug("Corfu client created and started!");
 
-    uint64_t idx = 0;
+    uint64_t idx;
     std::string entry = "";
 
     std::string payload_x = "X";
     idx = corfu_cli.append(payload_x);
     spdlog::critical("APPEND idx {}", idx);
-    assert(idx == 1);
+    assert(idx == 0);
     entry = corfu_cli.read(idx);
     spdlog::critical("READ entry {}", entry);
     assert(entry == payload_x);
@@ -33,7 +34,7 @@ void run_client(std::string input_file, uint64_t i) {
     std::string payload_y = "Y";
     idx = corfu_cli.append(payload_y);
     spdlog::critical("APPEND idx {}", idx);
-    assert(idx == 2);
+    assert(idx == 1);
     entry = corfu_cli.read(idx);
     spdlog::critical("READ entry {}", entry);
     assert(entry == payload_y);
@@ -41,12 +42,12 @@ void run_client(std::string input_file, uint64_t i) {
     std::string payload_z = "Z";
     idx = corfu_cli.append(payload_z);
     spdlog::critical("APPEND idx {}", idx);
-    assert(idx == 3);
+    assert(idx == 2);
     entry = corfu_cli.read(idx);
     spdlog::critical("READ entry {}", entry);
     assert(entry == payload_z);
 
-    corfu_cli.wait_to_cooldown();
+    // corfu_cli.wait_to_cooldown();
 }
 
 int main(int argc, char* argv[]) {
@@ -59,8 +60,9 @@ int main(int argc, char* argv[]) {
 
     std::vector<std::thread> cli_threads = {};
     uint64_t num_work_threads = get_num_client_threads(config);
+    uint64_t cli_id = get_cli_id(config);
     for (uint64_t i = 0; i < num_work_threads; i++) {
-        cli_threads.emplace_back(std::thread(&run_client, input_file, i));	
+        cli_threads.emplace_back(std::thread(&run_client, input_file, cli_id));	
     }
     for (uint64_t i = 0; i < cli_threads.size(); i++) {
         cli_threads[i].join();

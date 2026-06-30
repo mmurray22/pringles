@@ -11,16 +11,15 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
     : ssid(ssid), s_epoch(0), mark(0), terminate(false)
 {
     YAML::Node config = YAML::LoadFile(input_file);
-    this->num_pkt_types = get_num_pkt_types(config);
 
     this->cli_ips = get_cli_ip(config);
-    this->stor = StorageType(get_storage_type(config));
 
     std::string multicast_ip = "";
+    this->stor = StorageType(0); // NOTE: this is hardcoded to be the KV store!!
 
     net = std::make_shared<Network>(
-        std::to_string(get_send_port(config) + ssid), 
-        std::to_string(get_recv_port(config) + ssid),
+        std::to_string(get_send_port(config)), 
+        std::to_string(get_recv_port(config)),
 		get_socket_type(config),
         get_log_level(config),
 		get_batch_size(config),
@@ -32,7 +31,7 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
 		false,
 		false);
 
-    this->send_port = get_send_port(config);
+    this->send_port = std::to_string(get_recv_port(config));
     this->max_duration = get_experiment_duration(config);
 
     terminate = false;
@@ -59,7 +58,7 @@ void CorfuStorage::error_sealed(int cid, std::string req_type) {
         std::move(packet),
         allocated_packet_size,
         cli_ips[cid],
-        std::to_string(send_port + cid)
+        send_port
     );
 }
 
@@ -75,7 +74,7 @@ void CorfuStorage::error_deleted(int cid, std::string req_type) {
         std::move(packet), 
         allocated_packet_size, 
         cli_ips[cid],
-        std::to_string(send_port + cid)
+        send_port
     );
 }
 
@@ -91,7 +90,7 @@ void CorfuStorage::send_ack(int cid, std::string req_type) {
         std::move(packet),
         allocated_packet_size,
         cli_ips[cid],
-        std::to_string(send_port + cid)
+        send_port
     );
 }
 
@@ -162,7 +161,7 @@ void CorfuStorage::write(corfuclient::Payload msg) {
                 std::move(packet), 
                 allocated_packet_size, 
                 cli_ips[cid],
-                std::to_string(send_port + cid)
+                send_port
             );
         }
         return;
@@ -203,7 +202,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
             std::move(packet), 
             allocated_packet_size, 
             cli_ips[cid],
-            std::to_string(send_port + cid)
+            send_port
         );
         return;
     }
@@ -227,7 +226,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
         std::move(packet), 
         allocated_packet_size, 
         cli_ips[cid],
-        std::to_string(send_port + cid)
+        send_port
     );
 }
 

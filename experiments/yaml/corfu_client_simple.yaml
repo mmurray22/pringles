@@ -9,7 +9,6 @@ interface: "eno1d1"
 batch_size: 1
 batch_on: false
 batch_usec_timeout: 460
-num_pkt_types: 2
 cli_ips:
 - "127.0.0.1"
 seq_ips:
@@ -21,5 +20,4 @@ storage_type: 0
 machines_per_extent: 1
 machines_per_replica_set: 1
 extent_range_size: 10
-num_client_threads : 1
 ...

@@ -284,6 +284,10 @@ std::vector<std::string> get_cli_ip(YAML::Node config) {
     return config["cli_ips"].as<std::vector<std::string>>();
 }
 
+std::string get_seq_recv_port(YAML::Node config) {
+    return config["seq_recv_port"].as<std::string>();
+}
+
 std::vector<std::string> get_seq_ips(const YAML::Node& config) {
     return config["seq_ips"].as<std::vector<std::string>>();
 }

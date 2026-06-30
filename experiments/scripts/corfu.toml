@@ -6,10 +6,9 @@
 ###### Storage server Network Information #####
 # This is the port the storage server(s) will be receiving info on
 # There is one receive port per machine, current assumption is each machine has one storage server
-stor_recv_port = "30003"
+stor_recv_port = "30005"
 # This is the IP address of every storage server being used
 stor_ips = ["10.10.1.3"]
-stor_macs = ["0c:42:a1:dd:59:bc"]
 # This is the network interface the storage servers use to send/receive
 stor_net_ifs = ["ens1f1np1"]
 
@@ -17,8 +16,7 @@ stor_net_ifs = ["ens1f1np1"]
 # This is the IP address of every client machine
 cli_ips = ["10.10.1.1"]
 # This is the receive port of the client
-cli_recv_port = "30001"
-cli_macs = ["0c:42:a1:dd:5a:45"]
+cli_recv_port = "30005"
 # This is the network interface the client machines use to send/receive
 cli_net_ifs = ["ens1f1np1"]
 
@@ -26,15 +24,14 @@ cli_net_ifs = ["ens1f1np1"]
 # This is the IP address of the sequencer
 seq_ips = ["10.10.1.2"]
 # This is the receive port of the sequencer
-seq_recv_port = "30002"
-seq_macs = ["0c:42:a1:dd:61:2c"]
+seq_recv_port = "30005"
 # This is the network interface the software switch uses to send/receive
 seq_net_if = "ens1f1np1"
 
-####### Dummy Switch Info (Required to bypass shared generator keys) #######
-switch_ip = "10.10.1.99"
-switch_mac = "00:00:00:00:00:00"
-switch_recv_port = "30000"
+# SSH key 
+ssh_key = "/proj/ove-PG0/colang/ssh/cloudlab"
+# SSH username
+ssh_user = "colang" # Added for complete SSH command
 
 ######## Should contain the necessary information to figure out what programs are being run where (and also the setup script?) #######
 [program_paths]
@@ -64,11 +61,10 @@ socket_type = "UDP"
 # How many storage threads there should be handling appends/reads
 # NOTE: This is a bit ill-defined at the moment, I would leave at 1 for now TODO
 num_storage_threads = 1
-num_client_threads = 1
 # Number of packets in a batch
 batch_size = 1 # Number of packets
 # Whether batching will be used or not...
-batch_on = true
+batch_on = false
 # How long to wait until sending a batch off
 batch_usec_timeout = 460
 
@@ -78,16 +74,6 @@ warm_up = 5
 cool_down = 5
 message_size = 64
 protocol_name = "corfu"
-
-# Boolean indicates whether the current experiments use the switch or not (if not then cli <-> storage servers)
-use_switch = 0
-# Boolean indicates whether the current experiments use the storage server or not (if not then cli <-> switches)
-use_store = 1
-# Boolean indicates whether the current experiments do sharding or not (if not then cli sends to all storage servers)
-use_shard = 0
-#  Boolean indicating that the streaming interface is being used
-use_streams = 0
-# Number of acks needed before replying to the client
-ack_threshold = 1
-# Boolean indicating whether ack counting is done in the switch or the client
-use_client_count_acks = 0
+machines_per_extent = 1
+machines_per_replica_set = 1
+extent_range_size = 10
