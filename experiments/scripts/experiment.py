@@ -1964,15 +1964,7 @@ def run_experiment_cycle_corfu(base_config, protocol_config, exp_index, local_re
 
     finally:
         # 6. Tear down processes & cleanup
-        print("\n--- Tearing Down Corfu Cluster ---")
-        
-        # Now tearing down using the exact binary names supplied in the TOML
-        for ip in seq_ips:
-            kill_remote_process(ip, seq_binary, ssh_key, ssh_user)
-        for ip in stor_ips:
-            kill_remote_process(ip, stor_binary, ssh_key, ssh_user)
-        for ip in cli_ips:
-            kill_remote_process(ip, cli_binary, ssh_key, ssh_user)
+        print("\n--- End of Corfu Experiment ---")
         
         # Clean up local yaml artifact generation
         # for f in glob.glob(os.path.join(local_results_dir, "corfu_*.yaml")):
