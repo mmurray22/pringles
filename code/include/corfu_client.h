@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <chrono>
+#include "measure.h"
 
 #define TIMEOUT std::chrono::seconds(10)
 const std::chrono::seconds MAX_WAIT_TIME(5);
@@ -45,37 +46,10 @@ protected:
 	std::mutex pkt_q_lock;
 	std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
 	std::vector<std::string> pkt_types;
-	bool end_thread = false;
 	bool started_append = false;
-
-	uint64_t payload_size;
-	uint64_t batch_size;
-	uint64_t num_work_threads;
 
 	std::string send_port;
 	std::string recv_port;
-
-	uint64_t dummy_idx;
-	std::mutex dummy_idx_lock;
-
-	std::mutex num_ready_bytes_lock;
-	uint64_t num_ready_bytes;
-	std::condition_variable batch_ready_cond;
-
-	std::mutex append_entries_lock;
-	std::vector<std::string> append_entries;
-	std::condition_variable append_cond;
-
-	std::mutex next_idx_lock;
-	bool message_available;
-
-	/* Hash/ID of pending append entries */
-        std::vector<uint64_t> pending_append_entries;
-        std::vector<uint64_t> pending_read_entries;
-
-        /* Local list of appended and read log entries and corresponding lock*/
-	std::map<uint64_t, std::string> cached_log_entries;
-	std::mutex cached_log_lock;
 
 	/* Protocol types */
 	SequencerType seq;
@@ -84,26 +58,18 @@ protected:
 	std::thread recv_thread;
 	std::thread append_thread;
 	std::thread duration_thread;
-	std::thread execution_thread;
+	
 	std::vector<std::thread> cli_threads;
 	std::vector<std::thread> recv_threads;
 
-	uint64_t max_duration;
-	uint64_t warm_up;
-	uint64_t cool_down;
-	std::atomic<bool> collect_stats; 
-
 	uint64_t global_thread_id;
-
-	std::array<uint8_t,6> seq_mac;
-	std::string seq_ip;
 
 	std::vector<int> get_pkt_eth_types();
 	int get_eth_type(uint64_t pkt_type);
 
 	std::pair<uint64_t, std::vector<std::vector<uint64_t>>> map(uint64_t log_idx);
 
-	std::vector<std::string> seq_ips;
+	std::string seq_ip;
 	std::vector<std::string> storage_ips;
 
 	uint64_t num_m_per_extent;
@@ -111,6 +77,8 @@ protected:
 	uint64_t extent_size;
 
 	void setup_auxiliary();
+
+	uint64_t cnt;
 
 public:
 	CorfuClient(std::string input_file, uint64_t thread_id);
@@ -122,12 +90,26 @@ public:
 	bool trim(uint64_t log_idx);
 	uint64_t fill(uint64_t idx);
 
+	void launch_append_execute();
 	void wait_to_warmup();
 	void wait_to_cooldown();
-	void wait_to_finish();
+	void wait_to_finish(bool is_append);
 	bool experiment_status();
 	void execute(uint64_t thread_id);
 
 	uint64_t getTail();
     void subscribe(uint64_t idx);
+
+	uint64_t append_cntr;
+	uint64_t payload_size;
+	uint64_t batch_size;
+	uint64_t num_work_threads;
+	std::unique_ptr<Stats> stat;
+	uint64_t max_duration;
+	uint64_t warm_up;
+	uint64_t cool_down;
+	bool collect_stats;
+	bool testing_append;
+	bool end_thread;
+	std::thread execution_thread;
 };

@@ -21,7 +21,7 @@ int dummy_client(std::string input_file, uint64_t cid) {
 
    uint64_t num_pkt_types = get_num_pkt_types(config);
 
-   std::vector<std::string> seq_ips = get_seq_ips(config);
+   std::string seq_ip = get_seq_ip(config);
   
    // Create network
    std::string client_send_port = std::to_string(get_recv_port(config));
@@ -62,7 +62,7 @@ int dummy_client(std::string input_file, uint64_t cid) {
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
-        seq_ips[0],
+        seq_ip,
         client_send_port
     );
     char* msg = net->recv_packet();

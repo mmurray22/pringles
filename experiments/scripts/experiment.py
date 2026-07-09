@@ -35,6 +35,7 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 
 # --- Configuration Constants ---
 pringles_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/colang")
+corfu_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/colang")
 BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
@@ -209,7 +210,7 @@ def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, p
 
     return yaml_config
 
-def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset, send_port, recv_port, network_interface=None, entity_id=None):
+def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset, send_port, recv_port, json_name=None, network_interface=None, entity_id=None):
     """
     Generates the configuration dictionary for a Corfu entity mapping variables 
     from the provided TOML base_config.
@@ -235,18 +236,16 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
 
     # Map the arrays of IPs, ensuring they are quoted strings in the YAML
     cli_ips = [QuotedString(ip) for ip in net_params.get('cli_ips', [])]
-    seq_ips = [QuotedString(ip) for ip in net_params.get('seq_ips', [])]
+    seq_ip = QuotedString(net_params['seq_ip'])
     stor_ips = [QuotedString(ip) for ip in net_params.get('stor_ips', [])]
 
     yaml_config = {
         'log_level': general_exp_params['log_level'],
-        'seq_ips': seq_ips,
         'cli_ips': cli_ips,
         'stor_ips': stor_ips,
+        'seq_ip': seq_ip,
         'send_port': QuotedString(send_port),
         'recv_port': QuotedString(recv_port),
-        'stor_recv_port': QuotedString(net_params['stor_recv_port']),
-        'seq_recv_port': QuotedString(net_params['seq_recv_port']),
         'num_client_threads': len(cli_ips),
         # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
         'socket_type': QuotedString(exp_params['socket_type']),
@@ -261,13 +260,23 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
         'machines_per_extent': exp_params['machines_per_extent'],
         'machines_per_replica_set': exp_params['machines_per_replica_set'], 
         'extent_range_size': exp_params['extent_range_size'],
-        'interface': QuotedString(network_interface)
+        'interface': QuotedString(network_interface),
+        'payload_size': general_exp_params['message_size']
     }
 
         # --- Client Specific Fields ---
     if entity_type == 'client':
         yaml_config.update({
             'cli_id': entity_id, # Integer
+            # Add json_name to client config (as a QuotedString)
+            'json_name': QuotedString(json_name), 
+
+            # warm up time
+            'warm_up': warm_up,
+            'num_client_threads': exp_params['num_cli_threads'],
+
+            # cool down time
+            'cool_down': cool_down
         })
 
     if entity_type == 'server':
@@ -608,6 +617,118 @@ def process_and_aggregate_results(local_target_dir, json_name, system_name, base
         "num_shards": base_config['experiment_parameters']['num_shards'],
         "num_servers_per_shard": base_config['experiment_parameters']['num_servers_per_shard'],
         "git_hash": base_config['experiment_parameters']['git_hash'],
+        "system_name": system_name
+    }
+    print(final_results)
+
+    # Iterate over all .json files in the source directory
+    local_indiv_json_dir = Path(local_target_dir) /  json_name #os.path.join(local_target_dir, json_name) # NEW
+    print(str(local_indiv_json_dir))
+    local_indiv_json_dir.mkdir(parents=True, exist_ok=True)
+    print(result_files)
+    for json_file in result_files:
+        source_path = Path(local_target_dir) / json_file
+        print(str(source_path))
+        target_path = local_indiv_json_dir
+        shutil.move(str(source_path), str(target_path))
+        print(f"Moved: {source_path.name} to {str(target_path)}")
+    patterns = ['*.txt', '*.log']
+    files_to_move = chain.from_iterable(Path(local_target_dir).glob(pattern) for pattern in patterns)
+    for file_path in files_to_move:
+        source_path = Path(local_target_dir) / file_path
+        target_path = local_indiv_json_dir
+        shutil.move(str(source_path), str(target_path))
+        print(f"Moved: {source_path.name}")
+    # Write the final aggregated JSON file named [json_name].json
+    output_filename = f"{json_name}.json"
+    output_filepath = os.path.join(local_target_dir, output_filename)
+    #print(f"Moved: {json_file.name}")  
+
+    try:
+        with open(output_filepath, 'w') as f:
+            json.dump(final_results, f, indent=4)
+        print(f"Summary for {json_name} written to: {output_filepath}")
+    except IOError as e:
+        print(f"Error: Failed to write final summary JSON to {output_filepath}: {e}")
+
+def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name, base_config, system_config):
+    """
+    Reads all JSON files in the target directory, calculates aggregate throughput and 
+    total average latency PER JSON_NAME, and writes a summary JSON file for each group.
+    """
+    # Find all JSON files in the directory
+    all_files = os.listdir(local_target_dir)
+    # Filter out files that look like aggregated summaries (ends with just .json)
+    result_files = [f for f in all_files if f.endswith('.json') and len(f.split('_')) > 1]
+
+    if not result_files:
+        print(f"Warning: No raw client result JSON files found in {local_target_dir} for aggregation. Cannot aggregate.")
+        return
+
+    print(f"\n--- Aggregating Results for this experiment group ---")
+    it = 0
+    total_agg_tput = 0.0
+    total_avg_latency_sum = 0.0
+    total_sub_lat_sum = 0.0
+    file_count = 0
+    batch_size = 0 
+
+    for filename in result_files:
+        filepath = os.path.join(local_target_dir, filename)
+        data = None
+
+        try:
+            with open(filepath, 'r') as f:
+                content = f.read().strip()
+
+            # Robust JSON Decoding
+            start_index = content.find('{')
+            end_index = content.rfind('}')
+
+            if start_index != -1 and end_index != -1 and end_index > start_index:
+                json_string = content[start_index:end_index + 1]
+                data = json.loads(json_string)
+            else:
+                print(f"Error: File {filename} does not contain a valid JSON object. Skipping.")
+                continue
+
+            # Aggregate Throughput
+            throughput = data.get('throughput')
+            if isinstance(throughput, (int, float)):
+                total_agg_tput += throughput
+
+            # Aggregate Latency
+            avg_latency = data.get('avg_latency')
+            if isinstance(avg_latency, (int, float)):
+                total_avg_latency_sum += avg_latency
+                file_count += 1
+            batch_size = data.get('batch_size')
+
+            # Aggregate Time-to-first-Subscribe
+            sub_lat = data.get('sub_lat')
+            if isinstance(sub_lat, (int, float)):
+                total_sub_lat_sum += sub_lat
+        except json.JSONDecodeError:
+            print(f"Error: Failed to decode JSON from file: {filename}. Skipping.")
+        except IOError as e:
+            print(f"Error: Failed to read file {filename}: {e}. Skipping.")
+
+    # Calculate Final Average Latency
+    final_avg_latency = total_avg_latency_sum / file_count if file_count > 0 else 0.0
+    final_avg_sub_lat = total_sub_lat_sum / file_count if file_count > 0 else 0.0
+    print("=========== INAL STATS")
+    # Construct Final Output
+    num_servers = 0
+    num_servers = len(system_config['network_setup']['stor_ips'])
+
+    final_results = {
+        "agg_tput": total_agg_tput,
+        "total_avg_latency": final_avg_latency,
+        "subscribe_delay": final_avg_sub_lat,
+        "num_clients": file_count,
+        "batch_size": batch_size,
+        "payload_size": base_config['experiment_parameters']['message_size'],
+        "num_servers": num_servers,
         "system_name": system_name
     }
     print(final_results)
@@ -1805,173 +1926,301 @@ def run_experiment_cycle_kafka(config, kafka_config_file, exp_index, local_resul
         for ip, log_filename in broker_log_files.items():
             copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
 
-
-def run_experiment_cycle_corfu(base_config, protocol_config, exp_index, local_results_dir, system_name):
-    """
-    Runs a single experiment cycle for Corfu.
-    Generates configs, deploys them, starts sequencers -> servers -> clients, 
-    waits for completion, and collects logs/results.
-    """
-    print(f"\n--- Starting Corfu Experiment Cycle {exp_index + 1} ---")
-    
-    # 1. Extract necessary credentials and network setup strictly from TOML
-    ssh_key = os.path.expanduser(base_config['network_setup']['ssh_key'])
-    ssh_user = base_config['network_setup']['ssh_user']
-    
-    seq_ips = base_config['network_setup'].get('seq_ips', [])
-    stor_ips = base_config['network_setup'].get('stor_ips', [])
-    cli_ips = base_config['network_setup'].get('cli_ips', [])
-    all_ips = seq_ips + stor_ips + cli_ips
-    
-    # Network interfaces (Strictly from TOML)
-    seq_net_if = base_config['network_setup']['seq_net_if']
-    stor_net_ifs = base_config['network_setup']['stor_net_ifs']
-    cli_net_ifs = base_config['network_setup']['cli_net_ifs']
-    
-    # Binary paths and names (Strictly from TOML)
-    path_seq = base_config['program_paths']['path_sequencer']
-    path_stor = base_config['program_paths']['path_server']
-    path_cli = base_config['program_paths']['path_client']
-    
-    seq_binary = base_config['program_paths']['sequencer_binary']
-    stor_binary = base_config['program_paths']['server_binary']
-    cli_binary = base_config['program_paths']['client_binary']
-
-    # Required parameters (Strictly from TOML)
-    json_name = base_config['experiment_parameters']['json_name']
-    stor_recv_port = base_config['network_setup']['stor_recv_port']
-    seq_recv_port = base_config['network_setup']['seq_recv_port']
-    cli_recv_port = base_config['network_setup']['cli_recv_port']
-
-    # 2. Cleanup preceding experiment files on remote machines
-    print("\n--- Cleaning up previous remote files ---")
-    for ip in all_ips:
-        cleanup_remote_json_files(ip, ssh_key, ssh_user, json_name)
-    cleanup_remote_yaml_files(all_ips, ssh_key, ssh_user)
-
-    # 3. Generate & Transfer YAML Configs
-    print("\n--- Generating and Transferring Corfu Config Files ---")
-    port_offset = 0
-    
-    # Sequencers
-    for i, ip in enumerate(seq_ips):
-        seq_config = generate_corfu_yaml_config(
-            base_config=base_config,
-            entity_ip=ip,
-            entity_type="sequencer",
-            port_offset=port_offset,
-            send_port=BASE_PORT,
-            recv_port=cli_recv_port,
-            network_interface=seq_net_if
-        )
-        port_offset += 2
-        local_yaml = os.path.join(local_results_dir, f"corfu_seq_{i}.yaml")
-        with open(local_yaml, 'w') as f:
-            f.write("---\n")
-            yaml.dump(seq_config, f, default_flow_style=False, sort_keys=False)
-            f.write("...\n")
-        transfer_file(local_yaml, ip, ssh_user, ssh_key, remote_filename="config.yaml")
-
-    # Storage Servers
-    for i, ip in enumerate(stor_ips):
-        stor_interface = stor_net_ifs[i] if i < len(stor_net_ifs) else stor_net_ifs[0]
-        stor_config = generate_corfu_yaml_config(
-            base_config=base_config,
-            entity_ip=ip,
-            entity_type="server",
-            port_offset=port_offset,
-            send_port=BASE_PORT,
-            recv_port=cli_recv_port,
-            network_interface=stor_interface,
-            entity_id=i
-        )
-        port_offset += 2
-        local_yaml = os.path.join(local_results_dir, f"corfu_stor_{i}.yaml")
-        with open(local_yaml, 'w') as f:
-            f.write("---\n")
-            yaml.dump(stor_config, f, default_flow_style=False, sort_keys=False)
-            f.write("...\n")
-        transfer_file(local_yaml, ip, ssh_user, ssh_key, remote_filename="config.yaml")
-
-    # Clients
-    for i, ip in enumerate(cli_ips):
-        interface = cli_net_ifs[i] if i < len(cli_net_ifs) else cli_net_ifs[0]
-        cli_config = generate_corfu_yaml_config(
-            base_config=base_config,
-            entity_ip=ip,
-            entity_type="client",
-            port_offset=port_offset,
-            send_port=BASE_PORT,
-            recv_port=cli_recv_port,
-            network_interface=interface,
-            entity_id=i
-        )
-        port_offset += 2
-        local_yaml = os.path.join(local_results_dir, f"corfu_cli_{i}.yaml")
-        with open(local_yaml, 'w') as f:
-            f.write("---\n")
-            yaml.dump(cli_config, f, default_flow_style=False, sort_keys=False)
-            f.write("...\n")
-        transfer_file(local_yaml, ip, ssh_user, ssh_key, remote_filename="config.yaml")
-
-    # 4. Start Remote Processes
-    server_processes = []
-    component_log_files = {}
-
+def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_results_dir, system_name):
     try:
-        # Start Sequencers in background
-        print("\n--- Starting Sequencers ---")
-        for i, ip in enumerate(seq_ips):
-            proc, log = execute_remote_command(ip, path_seq, "config.yaml", ssh_key, ssh_user, exp_index, f"seq_{i}", background=True)
-            if proc:
-                server_processes.append(proc)
-                component_log_files[f'seq_{i}'] = (ip, log)
-        time.sleep(SERVER_START_DELAY)
+        with open(corfu_config_file, 'r') as f:
+            full_config = toml.load(f)
+    except FileNotFoundError:
+        print(f"Error: Configuration file '{corfu_config_file}' not found.")
+        return
+    except toml.TomlDecodeError as e:
+        print(f"Error: Failed to parse TOML file: {e}")
+        return
 
-        # Start Storage Servers in background
-        print("\n--- Starting Storage Servers ---")
-        for i, ip in enumerate(stor_ips):
-            proc, log = execute_remote_command(ip, path_stor, "config.yaml", ssh_key, ssh_user, exp_index, f"stor_{i}", background=True)
-            if proc:
-                server_processes.append(proc)
-                component_log_files[f'stor_{i}'] = (ip, log)
-        time.sleep(SERVER_START_DELAY)
+    # Extract the list of experiments to run and remove it from the base config
+    experiments_to_run = full_config.pop('experiment', [])
+    if not experiments_to_run:
+        print("Warning: No '[[experiment]]' sections found. Running only the default configuration once.")
+        default_params = full_config.get('experiment_parameters', {})
+        experiments_to_run.append(default_params)
 
-        # Start Clients (Synchronous / Blocking)
-        print("\n--- Starting Clients ---")
-        client_procs = []
-        for i, ip in enumerate(cli_ips):
-            proc, log = execute_remote_command(ip, path_cli, "config.yaml", ssh_key, ssh_user, exp_index, f"cli_{i}", background=False)
-            if proc:
-                client_procs.append(proc)
-                component_log_files[f'cli_{i}'] = (ip, log)
+    # The remaining dictionary is the base configuration
+    config = full_config.copy()
+
+    for exp_index, exp_params in enumerate(experiments_to_run): 
+       # 2. Merge experiment-specific parameters (overrides)
+        for key, value in exp_params.items():
+            print(key)
+            print(value)
+            if key in config.get('experiment_parameters', {}):
+                config['experiment_parameters'][key] = value
         
-        # Wait for all clients to finish their execution
-        print("Waiting for clients to finish processing...")
-        for proc in client_procs:
-            proc.wait()
+        # Extract run-specific parameters from the merged config
+        ssh_key = os.path.expanduser(config['network_setup']['ssh_key'])
+        ssh_user = config['network_setup']['ssh_user']
+        client_ips = config['network_setup']['cli_ips'] # TODO SEQ make plural?
+        cli_net_ifs = config['network_setup']['cli_net_ifs'] # TODO SEQ make plural?
+        seq_ip = config['network_setup']['seq_ip']
+        seq_net_if = config['network_setup']['seq_net_if']
+        all_server_ips = config['network_setup']['stor_ips']
+        server_net_ifs = config['network_setup']['stor_net_ifs']
+        path_client = f"{corfu_base}" + config['program_paths']['path_client']
+        path_server = f"{corfu_base}" + config['program_paths']['path_server']
+        path_sequencer = f"{corfu_base}" + config['program_paths']['path_sequencer']
 
-        # 5. Retrieve Logs & Results
-        print("\n--- Retrieving Results & Logs ---")
-        for i, ip in enumerate(cli_ips):
-            copy_results_back(ip, ssh_user, ssh_key, json_name, local_results_dir)
-        
-        for name, (ip, log_filename) in component_log_files.items():
-            copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
+        general_json_output_name = base_config['experiment_parameters']['general_json_name']
+        json_output_name = general_json_output_name + "-" + config['experiment_parameters']['json_name']
 
-    except Exception as e:
-        print(f"\nFATAL ERROR during Corfu experiment cycle {exp_index + 1}: {e}")
+        recv_port = base_config['network_setup']['recv_port']
+        send_port = base_config['network_setup']['send_port']
 
-    finally:
-        # 6. Tear down processes & cleanup
-        print("\n--- End of Corfu Experiment ---")
-        
-        # Clean up local yaml artifact generation
-        # for f in glob.glob(os.path.join(local_results_dir, "corfu_*.yaml")):
-        #     try:
-        #         os.remove(f)
-        #     except OSError:
-        #         pass
+        print(f"\n========================================================")
+        print(f"   RUNNING EXPERIMENT {exp_index + 1}: {json_output_name}")
+        print(f"========================================================")
+
+        server_processes = []
+        client_log_files = []
+        client_processes = []
+        server_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
+        seq_processes = []
+        seq_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
+
+        try:
+            # --- 5. Generate Server Configurations and Start Processes ---
+            print("\n--- Starting Storage Servers ---")
+
+
+            for i, ip in enumerate(all_server_ips):
+                print(ip)
+                config_filename = f"server_config_{json_output_name}_{i}.yaml" # Unique filename
+                port_offset = i * 2
+                print(config_filename)
+                stor_interface = server_net_ifs[i] if i < len(server_net_ifs) else server_net_ifs[0]
+                port_offset = i * 2
+                server_config = generate_corfu_yaml_config(
+                    base_config=base_config,
+                    entity_ip=ip,
+                    entity_type="server",
+                    port_offset=port_offset,
+                    send_port=send_port,
+                    recv_port=recv_port,
+                    network_interface=stor_interface,
+                    entity_id=i
+                )
+                print("Done with the YAML file!")
+                    
+
+                server_exec = os.path.basename(path_server) # Use the basename remotely
+                kill_process(server_exec, ssh_key, ssh_user, ip)
+
+                # Write YAML file locally
+                with open(config_filename, 'w') as f:
+                    yaml.dump(server_config, f, default_flow_style=False)
+                print(f"Generated server config: {config_filename}")
+                print(f"Server binary to copy: {path_server}")
+
+                # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+                if not transfer_file(config_filename, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer config to server {ip}")
+                if not transfer_file(path_server, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer server binary to server {ip}")
+
+                # Start remote process
+                print("MADE IT HERE ====================================================")
+                print(path_server)
+                exec_filepath = "~/" + server_exec
+                prefix = "server"
+                execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix)
+                # Second, execute the command
+                process, log_filename = execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
+                print("Done executing the server!")
+                if process:
+                    server_processes.append(process)
+                    server_log_files[ip] = log_filename # MODIFIED: Store log filename
+                else:
+                    raise Exception(f"Failed to start server process on {ip}")
+
+
+            if not server_processes:
+                raise Exception("No servers were successfully started.")
+
+            # --- 6. Wait for Servers to Initialize ---
+            print(f"\nWaiting {SERVER_START_DELAY} seconds for storage servers to initialize...")
+            time.sleep(SERVER_START_DELAY)
+
+            # --- 7. Generate Sequencer Configuration and Start Process --- # TODO
+            print("\n--- Starting Sequencer ---")
+            seq_config_filename = f"seq_config_{json_output_name}.yaml" # Unique filename
+            seq_port_offset = len(all_server_ips) * 2
+
+            seq_config = generate_corfu_yaml_config(
+                base_config=base_config,
+                entity_ip=seq_ip,
+                entity_type="sequencer",
+                port_offset=seq_port_offset,
+                send_port=send_port,
+                recv_port=recv_port,
+                network_interface=seq_net_if
+            )
+
+            seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
+            kill_process(seq_exec, ssh_key, ssh_user, seq_ip)
+
+            # Write YAML file locally
+            with open(seq_config_filename, 'w') as f:
+                yaml.dump(seq_config, f, default_flow_style=False)
+            print(f"Generated sequencer config: {seq_config_filename}")
+
+            # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+            if not transfer_file(seq_config_filename, seq_ip, ssh_user, ssh_key):
+                raise Exception(f"Failed to transfer config to server {seq_ip}")
+            if not transfer_file(path_sequencer, seq_ip, ssh_user, ssh_key):
+                raise Exception(f"Failed to transfer sequencer binary to switch {seq_ip}")
+                
+            # Start remote process
+            exec_seq_filepath = "~/" + seq_exec
+            prefix = "sequencer"
+            process, log_filename = execute_remote_command(seq_ip, exec_seq_filepath, seq_config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
+            if process:
+                seq_processes.append(process)
+                seq_log_files[ip] = log_filename # MODIFIED: Store log filename
+            else:
+                raise Exception(f"Failed to start sequencer process on {ip}")
+
+            if not seq_processes:
+                raise Exception("No sequencers were successfully started.")
+
+            # --- 8. Wait for Sequencer to Initialize --- TODO
+            print(f"\nWaiting {SWITCH_START_DELAY} seconds for sequencer to initialize...")
+            time.sleep(SWITCH_START_DELAY)
+
+            # --- 9. Generate Client Configuration and Start Process ---
+            print("\n--- Starting Client ---")
+            for i, ip in enumerate(client_ips):
+                config_filename = f"client_config_{json_output_name}_{i}.yaml" # Unique filename
+                client_port_offset = len(all_server_ips) * 3
+                interface = cli_net_ifs[i] if i < len(cli_net_ifs) else cli_net_ifs[0]
+                client_config = generate_corfu_yaml_config(
+                    base_config=base_config,
+                    entity_ip=ip,
+                    entity_type="client",
+                    port_offset=port_offset,
+                    send_port=send_port,
+                    recv_port=recv_port,
+                    json_name=json_output_name,
+                    network_interface=interface,
+                    entity_id=i
+                )
+                client_exec = os.path.basename(path_client) # Use the basename remotely
+                kill_process(client_exec, ssh_key, ssh_user, ip)
+
+                # Write YAML file locally
+                with open(config_filename, 'w') as f:
+                    yaml.dump(client_config, f, default_flow_style=False)
+                print(f"Generated client config: {config_filename}")
+
+                # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+                if not transfer_file(config_filename, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer config to server {ip}")
+                if not transfer_file(path_client, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer server binary to server {ip}")
+
+                #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name) TODO
+                cli_exec_file = "~/" + client_exec
+                prefix = "client"
+                client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
+                    ip, 
+                    cli_exec_file, 
+                    config_filename, 
+                    ssh_key, 
+                    ssh_user,
+                    exp_index,
+                    prefix
+                )
+                if client_process:
+                    print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
+                    print("This script is now waiting for the client process to finish...")
+                    client_processes.append(client_process)
+                    client_log_files.append(client_log_filename)
+                else: # TODO more error handling?
+                    raise Exception("Failed to start client process.")
+
+            i = 0 
+            for proc in client_processes: 
+                # Wait for the client process to finish
+                print("Waiting for the client process {proc.id} to finish!")
+                proc.wait()
+
+                # --- 8. Copy JSON Results Back ---
+                copy_results_back(
+                    client_ips[i], 
+                    ssh_user, 
+                    ssh_key, 
+                    json_output_name, 
+                    local_results_dir
+                )
+
+                # NEW: Copy Client Log File Back
+                copy_log_file_back(
+                    client_ips[i],
+                    ssh_user,
+                    ssh_key,
+                    client_log_files[i],
+                    local_results_dir
+                )
+                i += 1
+
+        except Exception as e:
+            print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
+
+        finally:
+            # --- 10. Kill all server processes and retrieve logs ---
+            print("\n--- Experiment finished. Retrieving server logs and cleaning up ---")
+
+            # MODIFIED: Copy Server Log Files Back (for all servers)
+            for ip, log_filename in server_log_files.items():
+                copy_log_file_back(
+                    ip,
+                    ssh_user,
+                    ssh_key,
+                    log_filename,
+                    local_results_dir
+                )
+
+            for ip, log_filename in seq_log_files.items():
+                copy_log_file_back(
+                    seq_ip,
+                    ssh_user,
+                    ssh_key,
+                    log_filename,
+                    local_results_dir
+                )
+
+            for proc in server_processes:
+                try:
+                    if proc.poll() is None:
+                        print(f"Terminating server process (PID: {proc.pid})...")
+                        proc.kill()
+                    # The nohup process is difficult to kill via Popen.terminate(). 
+                    # Relying on the server timeout is safer.
+                    #pass 
+                except Exception as e:
+                    print(f"Could not check on server process: {e}")
+
+            print("Server processes are assumed to exit on their own after the client terminates.")
+            for proc in seq_processes:
+                try:
+                    if proc.poll() is None:
+                        print(f"Terminating server process (PID: {proc.pid})...")
+                        proc.kill()
+                    # The nohup process is difficult to kill via Popen.terminate(). 
+                    # Relying on the server timeout is safer.
+                    #pass 
+                except Exception as e:
+                    print(f"Could not check on sequencer process: {e}")
+
+            print("Sequencer processes are assumed to exit on their own after the client terminates.") # TODO
+            process_and_aggregate_corfu_results(local_results_dir, json_output_name, system_name, base_config, config)
 
 def generate_scalog_config(discovery_ip, order_ips, data_ips, order_replication_factor, data_replication_factor,
                            batching_interval,

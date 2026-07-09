@@ -20,7 +20,7 @@ int dummy_client(std::string input_file) {
    YAML::Node config = YAML::LoadFile(input_file);
    uint64_t cid = 0;
 
-   std::vector<std::string> seq_ips = get_seq_ips(config);
+   std::string seq_ip = get_seq_ip(config);
    std::vector<std::string> storage_ips = get_stor_ips(config);
   
    // Create network
@@ -55,7 +55,7 @@ int dummy_client(std::string input_file) {
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size, 
-        seq_ips[0],
+        seq_ip,
         "4951" // THIS IS HARDCODED, FIND A BETTER FIX TODO
     );
     char* msg = net->recv_packet();
@@ -131,7 +131,7 @@ int dummy_client(std::string input_file) {
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size,
-        seq_ips.at(0),
+        seq_ip,
         "4952" // THIS IS HARDCODED, FIND A BETTER FIX TODO
     );
     msg = net->recv_packet();

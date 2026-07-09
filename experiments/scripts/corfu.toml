@@ -4,9 +4,6 @@
 [network_setup]
 
 ###### Storage server Network Information #####
-# This is the port the storage server(s) will be receiving info on
-# There is one receive port per machine, current assumption is each machine has one storage server
-stor_recv_port = "30005"
 # This is the IP address of every storage server being used
 stor_ips = ["10.10.1.3"]
 # This is the network interface the storage servers use to send/receive
@@ -15,18 +12,18 @@ stor_net_ifs = ["ens1f1np1"]
 ######## Client Network Info #######
 # This is the IP address of every client machine
 cli_ips = ["10.10.1.1"]
-# This is the receive port of the client
-cli_recv_port = "30005"
 # This is the network interface the client machines use to send/receive
 cli_net_ifs = ["ens1f1np1"]
 
 ####### Sequencer Network information ########
 # This is the IP address of the sequencer
-seq_ips = ["10.10.1.2"]
-# This is the receive port of the sequencer
-seq_recv_port = "30005"
+seq_ip = "10.10.1.2"
 # This is the network interface the software switch uses to send/receive
 seq_net_if = "ens1f1np1"
+
+####### Port Information ########
+recv_port = "30005"
+send_port = "30004"
 
 # SSH key 
 ssh_key = "/proj/ove-PG0/colang/ssh/cloudlab"
@@ -36,15 +33,15 @@ ssh_user = "colang" # Added for complete SSH command
 ######## Should contain the necessary information to figure out what programs are being run where (and also the setup script?) #######
 [program_paths]
 # This is the full path to the client binary that will be run on all clients
-path_client = "/proj/ove-PG0/colang/pringles/build/experiments/unit_tests/corfu_cli"
+path_client = "/pringles/build/experiments/unit_tests/corfu_cli"
 # Name of the actual client binary 
 client_binary = "corfu_cli"
 # This is the full path to the storage server binary that will be run on all storage servers
-path_server = "/proj/ove-PG0/colang/pringles/build/experiments/unit_tests/corfu_stor"
+path_server = "/pringles/build/experiments/unit_tests/corfu_stor"
 # Name of the actual storage binary 
 server_binary = "corfu_stor"
 # This is the full path to the sequencer binary that will be run on the sequencer
-path_sequencer = "/proj/ove-PG0/colang/pringles/build/experiments/unit_tests/corfu_seq"
+path_sequencer = "/pringles/build/experiments/unit_tests/corfu_seq"
 sequencer_binary = "corfu_seq"
 # Boolean indicating whether the install script should be run to install packages on all machines
 # Generally safe to set to "False"
@@ -55,6 +52,7 @@ run_setup_script = "False"
 ######## Defines variables necessary for experiments #######
 [experiment_parameters]
 experiment_name = "corfu_basic_test"
+general_json_name = "json_name"
 json_name = "default"
 # Indicates whether we send raw or UDP sockets. Should always be UDP as of now
 socket_type = "UDP"
@@ -67,13 +65,20 @@ batch_size = 1 # Number of packets
 batch_on = false
 # How long to wait until sending a batch off
 batch_usec_timeout = 460
+with_tunnel = false
+num_cli_threads = 1
 
 log_level = 5
-experiment_duration = 10
+experiment_duration = 30
 warm_up = 5
 cool_down = 5
 message_size = 64
 protocol_name = "corfu"
 machines_per_extent = 1
 machines_per_replica_set = 1
-extent_range_size = 10
+extent_range_size = 3000
+
+
+
+[[experiment]]
+json_name = "one_client_test"

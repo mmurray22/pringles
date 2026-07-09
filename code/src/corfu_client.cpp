@@ -45,6 +45,8 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
    send_port = std::to_string(get_send_port(config));
    recv_port = std::to_string(get_recv_port(config));
 
+   std::string self_ip = get_self_ip(config);
+
     net = std::make_shared<Network>(
         send_port,
         recv_port,
@@ -64,7 +66,7 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     this->num_m_per_extent = get_num_m_per_extent(config);
     this->num_m_per_rep_set = get_num_m_per_rep_set(config);
     this->extent_size = get_extent_size(config);
-    this->seq_ips = get_seq_ips(config);
+    this->seq_ip = get_seq_ip(config);
     this->storage_ips = get_stor_ips(config);
 
     setup_auxiliary();
@@ -116,57 +118,54 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     // Updating the log 
     this->started_append = false; 
 
-    // this->payload_size = get_payload_size(config);
-    // this->batch_size = num_work_threads * payload_size;
-    // this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id)
+    this->payload_size = get_payload_size(config);
+    this->batch_size = num_work_threads * payload_size;
+    this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id, self_ip);
 
-    // this->warm_up = get_warm_up(config);
-    // this->cool_down = get_cool_down(config);
-    // this->max_duration = get_experiment_duration(config) - warm_up - cool_down; // Duration of the actual experiment
+    this->warm_up = get_warm_up(config);
+    this->cool_down = get_cool_down(config);
+    this->max_duration = get_experiment_duration(config) - warm_up - cool_down; // Duration of the actual experiment
     this->global_thread_id = thread_id;
-   
-    // this->switch_mac = get_switch_mac(config);
-    // this->switch_ip = get_switch_ip(config); 
 
-    // this->execution_thread = std::thread(&CorfuClient::execute, this, thread_id);
-    // pthread_t native_handle = this->execution_thread.native_handle();
-
-    // Create a CPU set and add the desired core
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(thread_id, &cpuset); // Pin to core 'i'
-
-    // Set thread affinity
-    // int result = pthread_setaffinity_np(native_handle, sizeof(cpu_set_t), &cpuset);
-    // if (result != 0) {
-    //     std::cerr << "Error setting thread affinity for thread " << this->execution_thread.get_id() << ": " << result << std::endl;
-    // }
+    this->cnt = 0;
+    this->collect_stats = false;
+    this->testing_append = false;
+    this->end_thread = false;
 
     collect_stats = false;
 }
 
 CorfuClient::~CorfuClient() {
-    //TODO subscribe_thread.join();
-    /*for (uint64_t i = 0; i < num_work_threads; i++) {
-        recv_threads[i].join();
-    }*/
-    //duration_thread.join(); 
-    // execution_thread.join();
+    if (testing_append) {
+        execution_thread.join();
+    }
     spdlog::debug("Joined the client threads!");
     net->done();
 }
 
-void CorfuClient::execute(uint64_t /*thread_id*/) {
-    // spdlog::debug("At the beginning of execution here!");	
-    // spdlog::critical("Execute thread starting with TID = {}", gettid());
-    // std::string payload(payload_size, 'X');
-    // uint64_t cnt = 0;
-    // while (experiment_status()) {	    
- 	// uint32_t idx = append(std::make_unique<std::string>(payload)); // dummy(payload); //append(payload);
-    // spdlog::debug("The entry was given index: {}", idx);
-	// cnt += 1;
-    // }
-    // spdlog::critical("Total number of sent appends (NOT necessarily successful): {} from thread {}", cnt, thread_id);
+void CorfuClient::launch_append_execute() {
+    this->execution_thread = std::thread(&CorfuClient::execute, this, global_thread_id);
+    this->testing_append = true;
+}
+
+void CorfuClient::execute(uint64_t thread_id) {
+    spdlog::debug("At the beginning of execution here!");	
+    spdlog::critical("Execute thread starting with TID = {}", gettid());
+    
+    // Generate the dummy payload based on payload_size config
+    std::string payload(payload_size, 'X');
+    uint64_t total_count = 0;
+
+    while (experiment_status()) {
+        if (!collect_stats) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue; 
+        }
+        uint32_t idx = append(payload);
+        total_count += 1;
+        spdlog::debug("The entry was given index: {}", idx);
+    }
+    spdlog::critical("Total number of sent appends (NOT necessarily successful): {} from thread {}", total_count, thread_id);
 }
 
 void CorfuClient::setup_auxiliary() {
@@ -238,29 +237,30 @@ std::pair<uint64_t, std::vector<std::vector<uint64_t>>> CorfuClient::map(uint64_
     return std::pair<uint64_t, std::vector<std::vector<uint64_t>>>(0, std::vector<std::vector<uint64_t>>{});
 }
 
-// error codes are lowk useless btw since this func returns the log_idx and the log_idx can be 1
 uint32_t CorfuClient::append(std::string entry) {
+    double start_time = collect_stats ? stat->getStartLat() : 0;
+    
     // SEQUENCING PART
     std::unique_ptr<std::string> sequencing_packet = corfu_client_serialize_str_entry("", CORFU_GETTOKEN_PROTO_TYPE, cid, 0, 0);
     uint64_t allocated_packet_size = sequencing_packet->length() + 1;
     spdlog::debug("Append: gettoken packet is of size: {}", allocated_packet_size);
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
     memcpy(packet.get(), sequencing_packet->c_str(), allocated_packet_size);
-    spdlog::debug("sending to {}:{}", seq_ips[0], recv_port);
+    spdlog::debug("sending to {}:{}", seq_ip, recv_port);
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size,
-        seq_ips[0],
+        seq_ip,
         recv_port
     );
     char* msg = net->recv_packet();
 
     // start timer
-    auto start_time = std::chrono::high_resolution_clock::now();
+    auto msg_time = std::chrono::high_resolution_clock::now();
     auto read_time = std::chrono::high_resolution_clock::duration::zero();
     while (read_time < TIMEOUT && !msg) {
         msg = net->recv_packet();
-        read_time = std::chrono::high_resolution_clock::now() - start_time;
+        read_time = std::chrono::high_resolution_clock::now() - msg_time;
     }
 
     if (!msg && read_time >= TIMEOUT) {
@@ -306,16 +306,16 @@ uint32_t CorfuClient::append(std::string entry) {
             std::move(packet), 
             allocated_packet_size, 
             storage_ips[sm],
-            recv_port // THIS IS HARDCODED, FIND A BETTER FIX TODO
+            recv_port
         );
         msg = net->recv_packet();
 
         // start timer
-        start_time = std::chrono::high_resolution_clock::now();
+        msg_time = std::chrono::high_resolution_clock::now();
         read_time = std::chrono::high_resolution_clock::duration::zero();
         while (read_time < TIMEOUT && !msg) {
             msg = net->recv_packet();
-            read_time = std::chrono::high_resolution_clock::now() - start_time;
+            read_time = std::chrono::high_resolution_clock::now() - msg_time;
         }
 
         // must reconfigure if there's no response
@@ -355,11 +355,23 @@ uint32_t CorfuClient::append(std::string entry) {
             return ERROR;
         }
     }
+
+    if (collect_stats && start_time > 0) {
+        stat->getDuration(start_time);
+        stat->addOp();
+    }
+    cnt += 1;
+
     spdlog::info("Append: end of append");
     return (uint32_t) log_idx;
 }
 
 std::string CorfuClient::read(uint64_t log_idx) {
+    // std::chrono::high_resolution_clock::time_point start_time = 0;
+    // if (collect_stats) {
+    //     start_time = stat->getStartLat();
+    // }
+
     // MAPPING FUNCTION PART
     // find machines in extent
     std::pair<uint64_t, std::vector<std::vector<uint64_t>>> map_result = map(log_idx);
@@ -371,7 +383,7 @@ std::string CorfuClient::read(uint64_t log_idx) {
         return "should reconfigure";
     }
 
-    // mod relative log pos, even = first machine, odd = second machine
+    // mod relative log pos, even = first machine, odd = second machine if num m per extent = 2
     uint64_t machine = relative_log_pos % num_m_per_extent;
 
     spdlog::debug("reading from machine {}", machine);
@@ -437,6 +449,11 @@ std::string CorfuClient::read(uint64_t log_idx) {
     } else {
         spdlog::critical("Read: idk what we just received but it's not an error nor page contents :(");
     }
+
+    // if (collect_stats) {
+    //     stat->addResult(start_time, contents.size()); 
+    // }
+    
     spdlog::info("Read: end of read");
     return content;
 }
@@ -589,15 +606,29 @@ bool CorfuClient::trim(uint64_t log_idx) {
 }
 
 /* Experiment Logistics */
-void CorfuClient::wait_to_finish() {
+void CorfuClient::wait_to_finish(bool is_append) {
     collect_stats = true;
     std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);
     spdlog::debug("Collecting statistics!");
-    // stat->getAvgLatency();
-    // stat->getThroughput(max_duration);
-    // stat->getTotalOps();
-    // stat->exportResultsToJson();
+    if (is_append) {
+	spdlog::critical("========================= CLIENT STATISTICS ================================");
+    	// spdlog::critical("APPEND Highest index seen is: {}", highest_idx_seen);
+    	spdlog::critical("APPEND sent {} appends in {} seconds.", cnt, max_duration);
+    	spdlog::critical("APPEND STATISTICS: lat is: {}, tput: {}, total ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
+    	stat->getAvgLatency();
+    	stat->getThroughput(max_duration);
+    	stat->getTotalOps();
+    	stat->exportResultsToJson();
+    } else {
+	    // spdlog::critical("========================= CLIENT STATISTICS ================================");
+	    // spdlog::critical("READ sent {} appends in {} seconds.", read_cntr, max_duration);
+    	// spdlog::critical("READ STATISTICS: lat is: {}, tput: {}, total ops: {}", read_stat->getAvgLatency(), read_stat->getThroughput(max_duration), read_stat->getTotalOps());
+	    // read_stat->getAvgLatency();
+    	// read_stat->getThroughput(max_duration);
+    	// read_stat->getTotalOps();
+    	// read_stat->exportResultsToJson();
+    }
     collect_stats = false;
 } 
 

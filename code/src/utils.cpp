@@ -288,8 +288,8 @@ std::string get_seq_recv_port(YAML::Node config) {
     return config["seq_recv_port"].as<std::string>();
 }
 
-std::vector<std::string> get_seq_ips(const YAML::Node& config) {
-    return config["seq_ips"].as<std::vector<std::string>>();
+std::string get_seq_ip(const YAML::Node& config) {
+    return config["seq_ip"].as<std::string>();
 }
 
 uint64_t get_num_m_per_extent(const YAML::Node& config) {
