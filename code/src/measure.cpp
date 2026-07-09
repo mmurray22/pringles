@@ -144,3 +144,10 @@ void Stats::exportResultsToJson() {
         std::cerr << "ERROR: Unable to open file " << filename << std::endl;
     } 
 }
+
+void Stats::dumpAllLatencies() {
+    // spdlog::info("--- Raw Latency Dump for Thread {} ---");
+    // for (size_t i = 0; i < latencies.size(); ++i) {
+    //     spdlog::info("Latency: {}", latencies[i]);
+    // }
+}

@@ -23,6 +23,23 @@ void run_append_client(std::string input_file, uint64_t i) {
     spdlog::critical("Corfu client cooldown is done!");
 }
 
+void dummy_run_append_client(std::string input_file, uint64_t i) {
+    CorfuClient corfu_cli = CorfuClient(input_file, i);
+
+    spdlog::critical("Corfu client created, starting basic appends");
+    corfu_cli.collect_stats = true;
+    
+    corfu_cli.execute(i); 
+
+    spdlog::critical("Appends done! Printing stats");
+    
+    corfu_cli.stat->getAvgLatency();
+    corfu_cli.stat->getThroughput(1);
+    corfu_cli.stat->getTotalOps();
+    corfu_cli.stat->dumpAllLatencies();
+    corfu_cli.stat->exportResultsToJson();
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         spdlog::critical("Not enough arguments provided! Need YAML file");

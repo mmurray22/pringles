@@ -28,6 +28,8 @@ class Stats {
 	    void putSubLatency(double sub_lat);
 	    void exportResultsToJson();
 
+		void dumpAllLatencies();
+
 	private:
 	    uint64_t thread_id;
 	    std::string client_ip;

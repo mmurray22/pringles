@@ -9,7 +9,7 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
 
     net = std::make_shared<Network>(
         std::to_string(get_send_port(config)),
-        std::to_string(get_recv_port(config)),
+        get_seq_recv_port(config),
 		get_socket_type(config),
         get_log_level(config),
 		get_batch_size(config),

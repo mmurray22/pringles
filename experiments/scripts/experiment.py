@@ -261,7 +261,11 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
         'machines_per_replica_set': exp_params['machines_per_replica_set'], 
         'extent_range_size': exp_params['extent_range_size'],
         'interface': QuotedString(network_interface),
-        'payload_size': general_exp_params['message_size']
+        'payload_size': general_exp_params['message_size'],
+
+        # not sure i need this we'll see
+        'seq_recv_port': QuotedString(net_params['seq_recv_port']),
+        'stor_recv_port': QuotedString(net_params['stor_recv_port'])
     }
 
         # --- Client Specific Fields ---
@@ -669,7 +673,6 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
     it = 0
     total_agg_tput = 0.0
     total_avg_latency_sum = 0.0
-    total_sub_lat_sum = 0.0
     file_count = 0
     batch_size = 0 
 
@@ -703,11 +706,6 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
                 total_avg_latency_sum += avg_latency
                 file_count += 1
             batch_size = data.get('batch_size')
-
-            # Aggregate Time-to-first-Subscribe
-            sub_lat = data.get('sub_lat')
-            if isinstance(sub_lat, (int, float)):
-                total_sub_lat_sum += sub_lat
         except json.JSONDecodeError:
             print(f"Error: Failed to decode JSON from file: {filename}. Skipping.")
         except IOError as e:
@@ -715,7 +713,6 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
 
     # Calculate Final Average Latency
     final_avg_latency = total_avg_latency_sum / file_count if file_count > 0 else 0.0
-    final_avg_sub_lat = total_sub_lat_sum / file_count if file_count > 0 else 0.0
     print("=========== INAL STATS")
     # Construct Final Output
     num_servers = 0
@@ -724,7 +721,6 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
     final_results = {
         "agg_tput": total_agg_tput,
         "total_avg_latency": final_avg_latency,
-        "subscribe_delay": final_avg_sub_lat,
         "num_clients": file_count,
         "batch_size": batch_size,
         "payload_size": base_config['experiment_parameters']['message_size'],

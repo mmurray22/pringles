@@ -51,6 +51,8 @@ uint64_t get_num_client_threads(YAML::Node config);
 uint64_t get_cli_id(YAML::Node config);
 uint64_t get_stor_id(YAML::Node config);
 
+std::string get_stor_recv_port(YAML::Node config);
+
 std::string get_json_name(YAML::Node config);
 uint64_t get_num_failures(YAML::Node config);
 

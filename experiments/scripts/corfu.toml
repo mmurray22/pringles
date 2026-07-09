@@ -25,6 +25,9 @@ seq_net_if = "ens1f1np1"
 recv_port = "30005"
 send_port = "30004"
 
+stor_recv_port = "30003"
+seq_recv_port = "30002"
+
 # SSH key 
 ssh_key = "/proj/ove-PG0/colang/ssh/cloudlab"
 # SSH username

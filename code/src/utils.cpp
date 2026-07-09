@@ -340,6 +340,10 @@ uint64_t get_num_client_threads(YAML::Node config) {
     return config["num_client_threads"].as<uint64_t>();
 }
 
+std::string get_stor_recv_port(YAML::Node config) {
+    return config["stor_recv_port"].as<std::string>();
+}
+
 uint64_t get_cli_id(YAML::Node config) {
     return config["cli_id"].as<uint64_t>();
 }

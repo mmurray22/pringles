@@ -63,6 +63,9 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
         
     spdlog::info("Corfu Client: net init");
 
+    seq_recv_port = get_seq_recv_port(config);
+    stor_recv_port = get_stor_recv_port(config);
+
     this->num_m_per_extent = get_num_m_per_extent(config);
     this->num_m_per_rep_set = get_num_m_per_rep_set(config);
     this->extent_size = get_extent_size(config);
@@ -155,12 +158,7 @@ void CorfuClient::execute(uint64_t thread_id) {
     // Generate the dummy payload based on payload_size config
     std::string payload(payload_size, 'X');
     uint64_t total_count = 0;
-
     while (experiment_status()) {
-        if (!collect_stats) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue; 
-        }
         uint32_t idx = append(payload);
         total_count += 1;
         spdlog::debug("The entry was given index: {}", idx);
@@ -247,27 +245,28 @@ uint32_t CorfuClient::append(std::string entry) {
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
     memcpy(packet.get(), sequencing_packet->c_str(), allocated_packet_size);
     spdlog::debug("sending to {}:{}", seq_ip, recv_port);
+    
     net->send_client_udp_packet(
         std::move(packet), 
         allocated_packet_size,
         seq_ip,
-        recv_port
+        seq_recv_port
     );
     char* msg = net->recv_packet();
 
     // start timer
-    auto msg_time = std::chrono::high_resolution_clock::now();
-    auto read_time = std::chrono::high_resolution_clock::duration::zero();
-    while (read_time < TIMEOUT && !msg) {
-        msg = net->recv_packet();
-        read_time = std::chrono::high_resolution_clock::now() - msg_time;
-    }
+    // auto msg_time = std::chrono::high_resolution_clock::now();
+    // auto read_time = std::chrono::high_resolution_clock::duration::zero();
+    // while (read_time < TIMEOUT && !msg) {
+    //     msg = net->recv_packet();
+    //     read_time = std::chrono::high_resolution_clock::now() - msg_time;
+    // }
 
-    if (!msg && read_time >= TIMEOUT) {
-        // TODO i think you need to reconfigure here
-        spdlog::critical("Append: We did not receive anything from sequencer before timeout");
-        return ERROR; // failure
-    }
+    // if (!msg && read_time >= TIMEOUT) {
+    //     // TODO i think you need to reconfigure here
+    //     spdlog::critical("Append: We did not receive anything from sequencer before timeout");
+    //     return ERROR; // failure
+    // }
 
     // recv packet from the sequencer
     corfusequencer::Payload packet_contents = corfu_sequencer_deserialize_str_entry(std::make_unique<std::string>(msg));
@@ -306,27 +305,27 @@ uint32_t CorfuClient::append(std::string entry) {
             std::move(packet), 
             allocated_packet_size, 
             storage_ips[sm],
-            recv_port
+            stor_recv_port
         );
         msg = net->recv_packet();
 
         // start timer
-        msg_time = std::chrono::high_resolution_clock::now();
-        read_time = std::chrono::high_resolution_clock::duration::zero();
-        while (read_time < TIMEOUT && !msg) {
-            msg = net->recv_packet();
-            read_time = std::chrono::high_resolution_clock::now() - msg_time;
-        }
+        // msg_time = std::chrono::high_resolution_clock::now();
+        // read_time = std::chrono::high_resolution_clock::duration::zero();
+        // while (read_time < TIMEOUT && !msg) {
+        //     msg = net->recv_packet();
+        //     read_time = std::chrono::high_resolution_clock::now() - msg_time;
+        // }
 
-        // must reconfigure if there's no response
-        if (!msg && read_time >= TIMEOUT) {
-            // TODO: THIS IS A BLACK BOX
-            spdlog::info("Append: Must reconfigure because there was no response");
-            // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
-            // reconfigure(log_idx, *failing_unit);
-            // spdlog::info("Append: Just reconfigured, you should attempt to append again");
-            return ERROR; // return error
-        }
+        // // must reconfigure if there's no response
+        // if (!msg && read_time >= TIMEOUT) {
+        //     // TODO: THIS IS A BLACK BOX
+        //     spdlog::info("Append: Must reconfigure because there was no response");
+        //     // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
+        //     // reconfigure(log_idx, *failing_unit);
+        //     // spdlog::info("Append: Just reconfigured, you should attempt to append again");
+        //     return ERROR; // return error
+        // }
 
         // CHECK FOR ACK OR ERROR
 
@@ -619,6 +618,7 @@ void CorfuClient::wait_to_finish(bool is_append) {
     	stat->getAvgLatency();
     	stat->getThroughput(max_duration);
     	stat->getTotalOps();
+        stat->dumpAllLatencies();
     	stat->exportResultsToJson();
     } else {
 	    // spdlog::critical("========================= CLIENT STATISTICS ================================");

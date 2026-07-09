@@ -80,6 +80,9 @@ protected:
 
 	uint64_t cnt;
 
+	std::string seq_recv_port;
+	std::string stor_recv_port;
+
 public:
 	CorfuClient(std::string input_file, uint64_t thread_id);
 	~CorfuClient();
