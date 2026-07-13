@@ -25,5 +25,6 @@ int main(int argc, char* argv[]) {
 
     CorfuSequencer corfu_seq = CorfuSequencer(input_file);
     corfu_seq.wait_to_finish();
+    spdlog::info("sequencer done");
     return 0;
 }

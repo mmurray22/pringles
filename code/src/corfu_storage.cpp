@@ -39,11 +39,11 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
 }
 
 CorfuStorage::~CorfuStorage() {
-    terminate = true;
-    if (storage_thread.joinable()) {
-        storage_thread.join();
-    }
-    spdlog::debug("Storage thread with ssid {} joined!", ssid);
+    // terminate = true;
+    // if (storage_thread.joinable()) {
+    //     storage_thread.join();
+    // }
+    // spdlog::debug("Storage thread with ssid {} joined!", ssid);
 }
 
 void CorfuStorage::error_sealed(int cid, std::string req_type) {

@@ -314,39 +314,46 @@ def kill_process(process_name, ssh_key, ssh_user, ip):
     subprocess.Popen(command, stdout=subprocess.PIPE)
 
 
-def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index, prefix, background=True):
+def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index, prefix):
     """
     Executes a program on a remote machine asynchronously using SSH, 
-    redirecting BOTH stdout and stderr to a log file.
+    redirecting stdout/stderr to a log file. Returns the Popen object and the log filename.
     """
+    # NEW/MODIFIED: Log file is named after the IP address
     log_filename = prefix + f"_{ip}_{exp_index}.txt" 
 
-    # Redirect both stdout and stderr (2>&1) to ensure crashes/asserts are caught
-    if background:
-        remote_command = f'{program_path} ~/{config_filename} > ~/{log_filename} 2>&1 &'
-    else:
-        remote_command = f'{program_path} ~/{config_filename} > ~/{log_filename} 2>&1'
-
+    # NEW/MODIFIED: redirect all output (&>) to the log file, and run in background (&)
+    command = []
+    remote_command = f'{program_path} ~/{config_filename} > ~/{log_filename} &'
+    full_remote_command = f'/bin/bash -c "{remote_command} ; sleep 1"'
     command = [
         'ssh',
         '-i', ssh_key,
-        '-o', 'StrictHostKeyChecking=no',
-        '-o', 'UserKnownHostsFile=/dev/null',
+        '-o', 'StrictHostKeyChecking=no', # Bypass host key check
+        '-o', 'UserKnownHostsFile=/dev/null', # Prevent known_hosts interference
         f'{ssh_user}@{ip}',
-        remote_command
+        remote_command # Use the command that includes logging/backgrounding
     ]
 
-    print(f"Starting program on {ip}: {' '.join(command)}")
+    # UPDATED PRINT: Reflects the logging change
+    print(f"Starting program on {ip} (as root): {' '.join(command)}, logging to ~/{log_filename}...")
 
     try:
+        # Popen executes the command asynchronously (non-blocking)
+        # We redirect the local Popen stdout/stderr to /dev/null since the remote program's 
+        # output is already being redirected to the remote log file.
         process = subprocess.Popen(command, 
-                                   stdout=subprocess.DEVNULL, 
-                                   stderr=subprocess.DEVNULL, 
+                                   stdout=subprocess.DEVNULL, # Change from PIPE to DEVNULL
+                                   stderr=subprocess.DEVNULL, # Change from PIPE to DEVNULL
                                    bufsize=1)
+        # NEW RETURN: Return the log filename
         return process, log_filename
+    except FileNotFoundError:
+        print(f"ERROR: Could not find 'ssh'. Ensure SSH is installed and in your PATH.")
+        return None, log_filename # Return log_filename even on error
     except Exception as e:
         print(f"ERROR starting remote process on {ip}: {e}")
-        return None, log_filename
+        return None, log_filename # Return log_filename even on error
 
 def transfer_file(local_path, remote_ip, remote_user, ssh_key, remote_filename=None, remote_filepath=None):
     """
@@ -2022,7 +2029,6 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                     raise Exception(f"Failed to transfer server binary to server {ip}")
 
                 # Start remote process
-                print("MADE IT HERE ====================================================")
                 print(path_server)
                 exec_filepath = "~/" + server_exec
                 prefix = "server"
@@ -2121,7 +2127,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                 if not transfer_file(path_client, ip, ssh_user, ssh_key):
                     raise Exception(f"Failed to transfer server binary to server {ip}")
 
-                #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name) TODO
+                #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name)
                 cli_exec_file = "~/" + client_exec
                 prefix = "client"
                 client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
@@ -2142,6 +2148,13 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                     raise Exception("Failed to start client process.")
 
             i = 0 
+            # cli_perf_duration = 10
+            # seq_perf_duration = 10
+            # client_exec = os.path.basename(path_client) # Use the basename remotely
+            # switch_exec = os.path.basename(path_switch) # Use the basename remotely
+            # run_perf(switch_exec, [switch_ip], switch_perf_duration, ssh_user, ssh_key)
+            # run_perf(client_exec, client_ips, cli_perf_duration, ssh_user, ssh_key)
+
             for proc in client_processes: 
                 # Wait for the client process to finish
                 print("Waiting for the client process {proc.id} to finish!")

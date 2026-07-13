@@ -31,11 +31,11 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
 }
 
 CorfuSequencer::~CorfuSequencer() {
-    terminate = true;
-    if (sequencer_thread.joinable()) {
-        sequencer_thread.join();
-    }
-    spdlog::debug("Sequencer thread joined!");
+    // terminate = true;
+    // if (sequencer_thread.joinable()) {
+    //     sequencer_thread.join();
+    // }
+    // spdlog::debug("Sequencer thread joined!");
 }
 
 void CorfuSequencer::run_sequencer_thread() {

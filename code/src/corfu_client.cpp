@@ -35,10 +35,10 @@
 
 CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
    // Get packet types for sending/receiving
-   this->cid = thread_id;
    YAML::Node config = YAML::LoadFile(input_file);
   
    this->num_work_threads = get_num_client_threads(config);
+   this->cid = get_cli_id(config);
    // Create network
    std::string multicast_ip = "";
 
@@ -139,11 +139,11 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
 }
 
 CorfuClient::~CorfuClient() {
+    net->done();
     if (testing_append) {
         execution_thread.join();
     }
     spdlog::debug("Joined the client threads!");
-    net->done();
 }
 
 void CorfuClient::launch_append_execute() {
@@ -152,16 +152,19 @@ void CorfuClient::launch_append_execute() {
 }
 
 void CorfuClient::execute(uint64_t thread_id) {
-    spdlog::debug("At the beginning of execution here!");	
+    spdlog::debug("At the beginning of execution here!");
     spdlog::critical("Execute thread starting with TID = {}", gettid());
     
     // Generate the dummy payload based on payload_size config
     std::string payload(payload_size, 'X');
     uint64_t total_count = 0;
+    int i = 0;
     while (experiment_status()) {
+    // while (i < 3) {
         uint32_t idx = append(payload);
         total_count += 1;
         spdlog::debug("The entry was given index: {}", idx);
+        i++;
     }
     spdlog::critical("Total number of sent appends (NOT necessarily successful): {} from thread {}", total_count, thread_id);
 }
@@ -252,7 +255,17 @@ uint32_t CorfuClient::append(std::string entry) {
         seq_ip,
         seq_recv_port
     );
+    
     char* msg = net->recv_packet();
+
+    if (end_thread) {
+        return 0;
+    }
+    
+    if (!msg) {
+        spdlog::debug("problem here");
+        return ERROR;
+    }
 
     // start timer
     // auto msg_time = std::chrono::high_resolution_clock::now();
@@ -308,6 +321,15 @@ uint32_t CorfuClient::append(std::string entry) {
             stor_recv_port
         );
         msg = net->recv_packet();
+
+        if (end_thread) {
+            return 0;
+        }
+
+        if (!msg) {
+            spdlog::debug("problem here");
+            return ERROR;
+        }
 
         // start timer
         // msg_time = std::chrono::high_resolution_clock::now();
@@ -607,11 +629,12 @@ bool CorfuClient::trim(uint64_t log_idx) {
 /* Experiment Logistics */
 void CorfuClient::wait_to_finish(bool is_append) {
     collect_stats = true;
+    spdlog::debug("Collecting statistics for {}!", max_duration);
     std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);
-    spdlog::debug("Collecting statistics!");
+
     if (is_append) {
-	spdlog::critical("========================= CLIENT STATISTICS ================================");
+	    spdlog::critical("========================= CLIENT STATISTICS ================================");
     	// spdlog::critical("APPEND Highest index seen is: {}", highest_idx_seen);
     	spdlog::critical("APPEND sent {} appends in {} seconds.", cnt, max_duration);
     	spdlog::critical("APPEND STATISTICS: lat is: {}, tput: {}, total ops: {}", stat->getAvgLatency(), stat->getThroughput(max_duration), stat->getTotalOps());
