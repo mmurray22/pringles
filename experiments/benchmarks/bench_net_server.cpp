@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <thread>
 #include <vector>
+#include <mutex>
 
 #define CLIENT_PORT 8888
 #define STORAGE_REPLY_PORT 8889
@@ -17,6 +18,7 @@
 std::vector<int> client_fds;
 std::vector<int> storage_fds;
 struct sockaddr_in storage_addr;
+std::mutex thread_print;
 
 // Creates a UDP socket bound to a random OS-assigned ephemeral port
 int create_random_port_socket() {
@@ -32,6 +34,14 @@ int create_random_port_socket() {
     local_addr.sin_family = AF_INET;
     local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     local_addr.sin_port = htons(0); // The magic zero: OS assigns a random port
+
+    struct timeval timeout;
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        close(sockfd);
+	return -1;
+    }
 
     // Bind the socket to apply the random port assignment
     if (bind(sockfd, (const struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
@@ -52,6 +62,13 @@ int create_reuseport_socket(int port) {
 
     //int busy_poll_us = 50; // Spin for 50 microseconds before sleeping
     //setsockopt(sockfd, SOL_SOCKET, SO_BUSY_POLL, &busy_poll_us, sizeof(busy_poll_us));
+    struct timeval timeout;
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        close(sockfd);
+        return -1;
+    }
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -64,7 +81,7 @@ int create_reuseport_socket(int port) {
 }
 
 // --- Frontend: Listens to Clients, Forwards blindly to Storage ---
-void client_worker(int thread_id, int num_storage_threads) {
+void client_worker(int thread_id, int num_storage_threads, int duration) {
     int recv_fd = client_fds[thread_id]; 
     struct mmsghdr msgs[BATCH_SIZE];
     struct iovec iovecs[BATCH_SIZE];
@@ -79,7 +96,12 @@ void client_worker(int thread_id, int num_storage_threads) {
 
     struct sockaddr_in sender_addrs[BATCH_SIZE];
 
-    while (true) {
+    auto start_time = std::chrono::steady_clock::now();
+    auto end_time = start_time + std::chrono::seconds(duration);
+    int avg_batch_size = 0;
+    int num_batches = 0;
+
+    while (std::chrono::steady_clock::now() < end_time) {
         for (int i = 0; i < BATCH_SIZE; i++) {
 	    msgs[i].msg_hdr.msg_name = &sender_addrs[i]; 
             msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
@@ -88,6 +110,8 @@ void client_worker(int thread_id, int num_storage_threads) {
 
         int num_received = recvmmsg(recv_fd, msgs, BATCH_SIZE, MSG_WAITFORONE, NULL);
         if (num_received < 0) continue;
+	avg_batch_size += num_received;
+	num_batches += 1;
 
         struct mmsghdr out_msgs[BATCH_SIZE];
         int out_count = 0;
@@ -108,10 +132,14 @@ void client_worker(int thread_id, int num_storage_threads) {
             sendmmsg(send_fd, out_msgs, out_count, 0);
         }
     }
+    thread_print.lock();
+    avg_batch_size = num_batches > 0 ? avg_batch_size / num_batches : 0;
+    std::cout << "Average batch size for client worker is: " << avg_batch_size << std::endl;
+    thread_print.unlock();
 }
 
 // --- Backend: Listens to Storage, Parses Payload to find the Client ---
-void storage_worker(int thread_id, int num_client_threads) {
+void storage_worker(int thread_id, int num_client_threads, int duration) {
     int recv_fd = storage_fds[thread_id]; 
     struct mmsghdr msgs[BATCH_SIZE];
     struct iovec iovecs[BATCH_SIZE];
@@ -124,32 +152,19 @@ void storage_worker(int thread_id, int num_client_threads) {
         msgs[i].msg_hdr.msg_iov = &iovecs[i];
         msgs[i].msg_hdr.msg_iovlen = 1;
     }
+   
+    auto start_time = std::chrono::steady_clock::now();
+    auto end_time = start_time + std::chrono::seconds(duration);
+    int avg_batch_size = 0;
+    int num_batches = 0;
 
-    /* TODO: delete */
-    /*char dummy_payload[64] = {0}; // Adjust size to match your normal payload
-    struct iovec iov[40];
-    struct mmsghdr msgvec[40];
-    
-    // Prepare a batch of 40 dummy packets
-    for (int i = 0; i < 40; i++) {
-        iov[i].iov_base = dummy_payload;
-        iov[i].iov_len = sizeof(dummy_payload);
-        msgvec[i].msg_hdr.msg_name = &storage_addr; // Point to Storage Node
-        msgvec[i].msg_hdr.msg_namelen = sizeof(storage_addr);
-        msgvec[i].msg_hdr.msg_iov = &iov[i];
-        msgvec[i].msg_hdr.msg_iovlen = 1;
-        msgvec[i].msg_len = 0;
-    }
-    
-    // Fire the initial 40 packets at the Storage node to kickstart the loop
-    sendmmsg(recv_fd, msgvec, 40, 0);*/
-    /* TODO */
-
-    while (true) {
+    while (std::chrono::steady_clock::now() < end_time) {
         for (int i = 0; i < BATCH_SIZE; i++) iovecs[i].iov_len = BUF_SIZE;
 
         int num_received = recvmmsg(recv_fd, msgs, BATCH_SIZE, MSG_WAITFORONE, NULL);
         if (num_received < 0) continue;
+	avg_batch_size += num_received;
+	num_batches += 1;
 
         struct mmsghdr out_msgs[BATCH_SIZE];
         int out_count = 0;
@@ -183,17 +198,22 @@ void storage_worker(int thread_id, int num_client_threads) {
             sendmmsg(send_fd, out_msgs, out_count, 0);
         }
     }
+    avg_batch_size = num_batches > 0 ? avg_batch_size / num_batches : 0;
+    thread_print.lock();
+    std::cout << "Average batch size storage worker is: " << avg_batch_size << std::endl;
+    thread_print.unlock();
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 3) {
+    if (argc != 4) {
         std::cerr << "Usage: " << argv[0] << " <NUM_CLIENT_THREADS> <NUM_STORAGE_THREADS>" << std::endl;
         return -1;
     }
 
     int num_client_threads = std::stoi(argv[1]);
     int num_storage_threads = std::stoi(argv[2]);
-    std::cout << "Client thread number is " << num_client_threads << " and storage thread num is " << num_storage_threads  << std::endl;
+    int duration = std::stoi(argv[3]);
+    std::cout << "Client thread number is " << num_client_threads << " and storage thread num is " << num_storage_threads  << " for duration " << duration << std::endl;
 
     memset(&storage_addr, 0, sizeof(storage_addr));
     storage_addr.sin_family = AF_INET;
@@ -208,8 +228,8 @@ int main(int argc, char* argv[]) {
     }
 
     std::vector<std::thread> threads;
-    for (int i = 0; i < num_client_threads; ++i) threads.emplace_back(client_worker, i, num_storage_threads);
-    for (int i = 0; i < num_storage_threads; ++i) threads.emplace_back(storage_worker, i, num_client_threads);
+    for (int i = 0; i < num_client_threads; ++i) threads.emplace_back(client_worker, i, num_storage_threads, duration);
+    for (int i = 0; i < num_storage_threads; ++i) threads.emplace_back(storage_worker, i, num_client_threads, duration);
 
     for (auto& t : threads) t.join();
     return 0;

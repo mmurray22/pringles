@@ -34,7 +34,7 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # ---------------------------------------
 
 # --- Configuration Constants ---
-pringles_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/colang")
+pringles_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/murray/")
 corfu_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/colang")
 BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
@@ -641,9 +641,13 @@ def process_and_aggregate_results(local_target_dir, json_name, system_name, base
         source_path = Path(local_target_dir) / json_file
         print(str(source_path))
         target_path = local_indiv_json_dir
-        shutil.move(str(source_path), str(target_path))
+        try:
+            shutil.move(str(source_path), str(target_path))
+        except shutil.Error as e:
+            print("shutil error occured! Investigate later")
+            continue
         print(f"Moved: {source_path.name} to {str(target_path)}")
-    patterns = ['*.txt', '*.log']
+    patterns = ['*.txt', '*.log', '*.perf']
     files_to_move = chain.from_iterable(Path(local_target_dir).glob(pattern) for pattern in patterns)
     for file_path in files_to_move:
         source_path = Path(local_target_dir) / file_path
@@ -2651,6 +2655,8 @@ def main(config_file="general.toml"):
             protocol_config = "speclog.toml"
         elif system_name == "kakfa":
             protocol_config = "kafka.toml"
+        elif system_name == "baseline":
+            protocol_config = "benchmark.toml"
         elif system_name == "corfu":
             protocol_config = "corfu.toml"
 

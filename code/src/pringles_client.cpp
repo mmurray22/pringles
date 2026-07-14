@@ -30,7 +30,6 @@
 #include "spdlog/spdlog.h"
 #include "yaml-cpp/yaml.h"
 
-std::counting_semaphore clientAppend{0};
 LogClient::LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_port_offset) {
     this->thread_id = thread_id;
     YAML::Node config = YAML::LoadFile(input_file);
@@ -72,7 +71,7 @@ LogClient::LogClient(std::string input_file, uint64_t thread_id, uint64_t recv_p
      message_available = false; // TODO: Needed?
      
      /* Receiving */
-     recv_thread = std::thread(&LogClient::receiver, this);
+     //recv_thread = std::thread(&LogClient::receiver, this); TODO
 
      /* Routing */   
      this->switch_mac = get_switch_mac(config);
@@ -188,7 +187,7 @@ LogClient::~LogClient() {
         subscribe_thread.join();
     }
     spdlog::debug("Receive is ending!");
-    recv_thread.join();
+    //recv_thread.join(); TODO
     spdlog::debug("Network is ending!");
     net->done();
     spdlog::debug("All done!");
@@ -304,10 +303,6 @@ uint64_t LogClient::append(std::string entry) {
             net->send_client_udp_packet(std::move(packet), allocated_packet_size, stor_ips[i], stor_receive_port);
         }
     }
-    /*if (!res) {
-        spdlog::critical("Sending append to the system failed!");
-	return 0;
-    }*/
 
     bool got_quorum = false;
     uint64_t return_idx = 0;
@@ -316,16 +311,18 @@ uint64_t LogClient::append(std::string entry) {
             break;
         }
 	
-	/*char* recv_ptr;
-	if (append_resp_q.empty()) {
-		clientAppend.acquire();
-	}
-	if (!append_resp_q.try_pop(recv_ptr) || !recv_ptr) {
-		continue;
-	}*/
-
 	// Wait to receive the packet 
-	char* recv_ptr;
+        char* recv_ptr = net->recv_packet();
+	if (!recv_ptr) {
+	    continue;
+	}
+        struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
+	if (ntohs(type_hdr->type) != ETH_APPEND_RESP) {
+	    continue;
+	}
+
+
+	/*char* recv_ptr;
 	if (!append_resp_q.try_pop(recv_ptr)) {
 	    std::unique_lock<std::mutex> lock(append_resp_q_mutex);
 	    append_resp_cv.wait(lock, [this] {return end_thread || !append_resp_q.empty();});
@@ -335,9 +332,9 @@ uint64_t LogClient::append(std::string entry) {
 	    if (!append_resp_q.try_pop(recv_ptr) || !recv_ptr) {
 	        continue;
 	    }
-	}
+	}*/
 
-        struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
+        //struct ring_type* type_hdr = (struct ring_type*)recv_ptr;
         struct ring_append_entry* append_entry = (struct ring_append_entry*)(recv_ptr + sizeof(struct ring_type));
         spdlog::debug("Append Registering the time and operation with type {} and nonce {} and seq no {}!", ntohs(type_hdr->type), ntohl(append_entry->nonce), ntohl(append_entry->g_idx));
         if (ntohs(type_hdr->type) == ETH_APPEND_RESP && ntohl(append_entry->nonce) == append_nonce) {
@@ -350,7 +347,7 @@ uint64_t LogClient::append(std::string entry) {
     	    }
             got_quorum = true;
         }
-	free(recv_ptr);
+	//free(recv_ptr);
     }
     append_nonce += 1;
     append_cntr += 1;

@@ -14,32 +14,33 @@ def main():
     parser.add_argument("x_label", nargs="?", default=None, help="Optional label for the x-axis")
     parser.add_argument("y_label", nargs="?", default=None, help="Optional label for the y-axis")
     parser.add_argument("--no-labels", action="store_true", help="Remove the filename labels from the data points")
-    parser.add_argument("--dir", default=".", help="Directory containing the JSON files (defaults to current dir)")
+    parser.add_argument("--dir", nargs="+", default=["."], help="One or more directories containing JSON files (defaults to current dir)")
     parser.add_argument("--out", default="plot.png", help="Output filename for the graph")
     
     args = parser.parse_args()
 
-    # Data extraction
+	# Data extraction
     data = []
-    search_path = os.path.join(args.dir, "*.json")
-    for filepath in glob.glob(search_path):
-        with open(filepath, 'r') as file:
-            try:
-                d = json.load(file)
-                # Ensure the required keys exist in this JSON file
-                if args.x_key in d and args.y_key in d and "system_name" in d:
-                    filename = os.path.splitext(os.path.basename(filepath))[0]
-                    # Capture the time the file was last modified/created
-                    file_time = os.path.getmtime(filepath) 
-                    data.append({
-                        args.x_key: d[args.x_key],
-                        args.y_key: d[args.y_key],
-                        'system_name': d['system_name'],
-                        'filename': filename,
-                        'timestamp': file_time  # Add it to our data
-                    })
-            except json.JSONDecodeError:
-                print(f"Warning: Could not parse {filepath}. Skipping.")
+    for directory in args.dir:
+        search_path = os.path.join(directory, "*.json")
+        for filepath in glob.glob(search_path):
+            with open(filepath, 'r') as file:
+                try:
+                    d = json.load(file)
+                    # Ensure the required keys exist in this JSON file
+                    if args.x_key in d and args.y_key in d and "system_name" in d:
+                        filename = os.path.splitext(os.path.basename(filepath))[0]
+                        # Capture the time the file was last modified/created
+                        file_time = os.path.getmtime(filepath) 
+                        data.append({
+                            args.x_key: d[args.x_key],
+                            args.y_key: d[args.y_key],
+                            'system_name': d['system_name'],
+                            'filename': filename,
+                            'timestamp': file_time  # Add it to our data
+                        })
+                except json.JSONDecodeError:
+                    print(f"Warning: Could not parse {filepath}. Skipping.")
 
     if not data:
         print(f"No valid data found containing keys '{args.x_key}', '{args.y_key}', and 'system_name'.")

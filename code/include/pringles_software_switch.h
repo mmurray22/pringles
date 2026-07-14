@@ -35,6 +35,7 @@ class LogSoftwareSwitch {
 	std::vector<std::string> stor_ips;
 	bool use_store;
 	bool use_shard;
+	bool use_performance;
 
 	// Shards
 	bool use_shards;
@@ -104,7 +105,7 @@ class LogSoftwareSwitch {
 
 	// Thread functions
 	void receiver();
-        void append_request(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id);
+        void append_request(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id,uint32_t stor_ip_int, uint16_t stor_recv_port);
 	void append_response(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id);
 	void read_request();
 	void read_response();

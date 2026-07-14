@@ -126,6 +126,8 @@ class Network {
 	std::thread send_thread;
 	std::thread recv_thread;
 
+	bool use_timestamp;
+
 	std::unordered_map<std::string, int> port_to_fd;
 
 	struct mmsghdr msgs[BATCH_SIZE];

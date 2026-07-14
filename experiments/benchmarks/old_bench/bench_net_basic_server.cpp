@@ -19,7 +19,7 @@ int main() {
     }
 
     // Bind to the specified network interface
-    const char* iface = "eno1d1"; // TODO make variable!
+    const char* iface = "enp65s0f0np0";
     if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, iface, strlen(iface)) < 0) {
         std::cerr << "Warning: Failed to bind to interface " << iface << ". Note: This often requires sudo." << std::endl;
     }
@@ -30,7 +30,7 @@ int main() {
     // Configure server address
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(PORT);
-    server_addr.sin_addr.s_addr = inet_addr("10.10.1.3"); // TODO make variable!
+    server_addr.sin_addr.s_addr = inet_addr("10.10.1.3");
 
     // Bind the socket to the IP and Port
     if (bind(sockfd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {

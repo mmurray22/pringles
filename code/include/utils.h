@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <sys/types.h>
+#include <unistd.h>
 #include "yaml-cpp/yaml.h"
 
 /* SPDLOG helper functions */
@@ -10,6 +12,8 @@ void set_spdlog_level(uint64_t log_level); //na
 uint64_t get_log_level(YAML::Node config); // covered
 
 void pin_current_thread_linux(int core_id);
+int setup_perf(pid_t tid);
+void configure_event(struct perf_event_attr *pe, uint32_t type, uint64_t config);
 
 uint32_t generate_nonce(); // na
 
@@ -47,6 +51,8 @@ uint64_t get_payload_size(YAML::Node config);
 std::vector<std::array<uint8_t, 6>> get_dst_mac_addrs(YAML::Node config);
 
 uint64_t get_append_req_threads(YAML::Node config);
+uint64_t get_append_resp_threads(YAML::Node config);
+uint64_t get_append_store_threads(YAML::Node config);
 uint64_t get_num_client_threads(YAML::Node config);
 uint64_t get_cli_id(YAML::Node config);
 uint64_t get_stor_id(YAML::Node config);
@@ -70,6 +76,8 @@ std::string get_multicast_addr(YAML::Node config);
 
 std::string get_stor_receive_port(YAML::Node config);
 std::string get_switch_receive_port(YAML::Node config);
+uint64_t get_switch_append_req_port(YAML::Node config);
+uint64_t get_switch_append_resp_port(YAML::Node config);
 
 std::string get_seq_recv_port(YAML::Node config);
 
