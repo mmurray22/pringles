@@ -313,6 +313,41 @@ def kill_process(process_name, ssh_key, ssh_user, ip):
 
     subprocess.Popen(command, stdout=subprocess.PIPE)
 
+def execute_arbitrary_remote_command(ip, ssh_user, ssh_key, remote_command):
+    """
+    Executes a program on a remote machine asynchronously using SSH, 
+    redirecting stdout/stderr to a log file. Returns the Popen object and the log filename.
+    """
+    command = [
+        'ssh',
+        '-i', ssh_key,
+        '-o', 'StrictHostKeyChecking=no', # Bypass host key check
+        '-o', 'UserKnownHostsFile=/dev/null', # Prevent known_hosts interference
+        f'{ssh_user}@{ip}',
+        remote_command # Use the command that includes logging/backgrounding
+    ]
+    print(command)
+
+    # UPDATED PRINT: Reflects the logging change
+    print(f"Starting program on {ip} (as root): {remote_command}...")
+
+    try:
+        # Popen executes the command asynchronously (non-blocking)
+        # We redirect the local Popen stdout/stderr to /dev/null since the remote program's 
+        # output is already being redirected to the remote log file.
+        process = subprocess.Popen(command, 
+                                   stdout=subprocess.DEVNULL, # Change from PIPE to DEVNULL
+                                   stderr=subprocess.DEVNULL, # Change from PIPE to DEVNULL
+                                   bufsize=1)
+        # NEW RETURN: Return the log filename
+        return process
+    except FileNotFoundError:
+        print(f"ERROR: Could not find 'ssh'. Ensure SSH is installed and in your PATH.")
+        return None, log_filename # Return log_filename even on error
+    except Exception as e:
+        print(f"ERROR starting remote process on {ip}: {e}")
+        return None, log_filename # Return log_filename even on error
+
 
 def execute_remote_command(ip, program_path, config_filename, ssh_key, ssh_user, exp_index, prefix):
     """
@@ -546,6 +581,30 @@ def cleanup_remote_yaml_files(hosts, ssh_key, ssh_user):
 
     print("Remote YAML cleanup finished.")
 
+def run_perf(binary_name, hosts, duration, username, key):
+    # Get thread IDs
+    for host in hosts:
+        # Get the thread IDs 
+        perf_cmd = f"sudo perf record -F 99 -g -t $(pgrep {binary_name} | xargs -I {{}} ls /proc/{{}}/task | tr '\\n' ',' | sed 's/,$//') -o /tmp/perf.data -- sleep {duration} &"
+        print(perf_cmd)
+        execute_arbitrary_remote_command(host, username, key, perf_cmd)
+
+def get_perf_files(binary_name, hosts, username, key, target_dir):
+    # Get thread IDs
+    for i in range(0, len(hosts)):
+        # Get the thread IDs 
+        host = hosts[i]
+        perf_cmd = f"sudo perf script -i /tmp/perf.data > {binary_name}_{i}.perf"
+        print(perf_cmd)
+        execute_arbitrary_remote_command(host, username, key, perf_cmd)
+
+        debug_cmd = f"ssh -i {key} {username}@{host} 'ls -lh /users/colang/{binary_name}_{i}.perf'"
+        print(debug_cmd)
+        debug_result = subprocess.run(debug_cmd, shell=True, capture_output=True, text=True)
+        print(f"[{host}] DEBUG Remote File Stats: {debug_result.stdout.strip()}")
+        time.sleep(1)
+        copy_log_file_back(host, username, key, f"{binary_name}_{i}.perf", target_dir)
+
 def process_and_aggregate_results(local_target_dir, json_name, system_name, base_config, system_config):
     """
     Reads all JSON files in the target directory, calculates aggregate throughput and 
@@ -724,7 +783,7 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
 
     # Calculate Final Average Latency
     final_avg_latency = total_avg_latency_sum / file_count if file_count > 0 else 0.0
-    print("=========== INAL STATS")
+    print("=========== FINAL STATS")
     # Construct Final Output
     num_servers = 0
     num_servers = len(system_config['network_setup']['stor_ips'])
@@ -751,7 +810,7 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
         target_path = local_indiv_json_dir
         shutil.move(str(source_path), str(target_path))
         print(f"Moved: {source_path.name} to {str(target_path)}")
-    patterns = ['*.txt', '*.log']
+    patterns = ['*.txt', '*.log', '*.perf']
     files_to_move = chain.from_iterable(Path(local_target_dir).glob(pattern) for pattern in patterns)
     for file_path in files_to_move:
         source_path = Path(local_target_dir) / file_path
@@ -2156,12 +2215,12 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                     raise Exception("Failed to start client process.")
 
             i = 0 
-            # cli_perf_duration = 10
-            # seq_perf_duration = 10
-            # client_exec = os.path.basename(path_client) # Use the basename remotely
-            # switch_exec = os.path.basename(path_switch) # Use the basename remotely
-            # run_perf(switch_exec, [switch_ip], switch_perf_duration, ssh_user, ssh_key)
-            # run_perf(client_exec, client_ips, cli_perf_duration, ssh_user, ssh_key)
+            cli_perf_duration = 10
+            seq_perf_duration = 10
+            client_exec = os.path.basename(path_client) # Use the basename remotely
+            seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
+            run_perf(seq_exec, [seq_ip], seq_perf_duration, ssh_user, ssh_key)
+            run_perf(client_exec, client_ips, cli_perf_duration, ssh_user, ssh_key)
 
             for proc in client_processes: 
                 # Wait for the client process to finish
@@ -2224,6 +2283,8 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                 except Exception as e:
                     print(f"Could not check on server process: {e}")
 
+            get_perf_files(client_exec, client_ips, ssh_user, ssh_key, local_results_dir)
+            get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
             print("Server processes are assumed to exit on their own after the client terminates.")
             for proc in seq_processes:
                 try:

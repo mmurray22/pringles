@@ -122,21 +122,8 @@ std::unique_ptr<std::string> corfu_storage_serialize_str_entry(std::string entry
     corfustorage::Payload corfu_payload;
     corfu_payload.set_packet_type(proto_type);
 
-    if (proto_type == CORFU_ACK_PROTO_TYPE) { // ack
-        corfustorage::Ack* ack_packet = corfu_payload.mutable_ack();
-        ack_packet->set_ack_code(true);
-
-    } else if (proto_type == CORFU_SEALED_PROTO_TYPE) { // errSealed
-        corfustorage::errSealed* err_sealed_packet = corfu_payload.mutable_err_sealed();
-        err_sealed_packet->set_err_code(true);
-
-    } else if (proto_type == CORFU_UNWRITTEN_PROTO_TYPE) { // errUnwritten
-        corfustorage::errUnwritten* err_unwritten_packet = corfu_payload.mutable_err_unwritten();
-        err_unwritten_packet->set_err_code(true);
-
-    } else if (proto_type == CORFU_WRITTEN_PROTO_TYPE) { // errWritten
+    if (proto_type == CORFU_WRITTEN_PROTO_TYPE) { // errWritten
         corfustorage::errWritten* err_written_packet = corfu_payload.mutable_err_written();
-        err_written_packet->set_err_code(true);
         err_written_packet->set_content(entry);
         
     } else if (proto_type == CORFU_STORE_READ_PROTO_TYPE) { // read
@@ -145,13 +132,9 @@ std::unique_ptr<std::string> corfu_storage_serialize_str_entry(std::string entry
 
     } else if (proto_type == CORFU_STORE_SEAL_PROTO_TYPE) { // seal
         corfustorage::Seal* return_seal_packet = corfu_payload.mutable_seal();
-        return_seal_packet->set_sealed(true);
         return_seal_packet->set_highaddr(highest_addr);
 
-    } else if (proto_type == CORFU_DELETED_PROTO_TYPE) { // errDeleted
-        corfustorage::errDeleted* err_deleted_packet = corfu_payload.mutable_err_deleted();
-        err_deleted_packet->set_err_code(true);
-    }
+    } 
 
     corfu_payload.SerializeToString(output.get());
 
@@ -163,11 +146,7 @@ std::unique_ptr<std::string> corfu_sequencer_serialize_str_entry(uint64_t proto_
 
     corfusequencer::Payload corfu_payload;
     corfu_payload.set_packet_type(proto_type);
-
-    if (proto_type == CORFU_GETTOKEN_REPLY_PROTO_TYPE) {
-        corfusequencer::SendToken* token_packet = corfu_payload.mutable_send_token();
-        token_packet->set_token(log_idx);
-    }
+    corfu_payload.set_token(log_idx);
 
     corfu_payload.SerializeToString(output.get());
 

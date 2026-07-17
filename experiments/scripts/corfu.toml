@@ -11,7 +11,7 @@ stor_net_ifs = ["ens1f1np1"]
 
 ######## Client Network Info #######
 # This is the IP address of every client machine
-cli_ips = ["10.10.1.1", "10.10.1.4"] # "10.10.1.5"]
+cli_ips = ["10.10.1.4"] #"10.10.1.4"] # "10.10.1.5"]
 # This is the network interface the client machines use to send/receive
 cli_net_ifs = ["ens1f1np1"]
 
@@ -70,18 +70,18 @@ batch_on = false
 batch_usec_timeout = 460
 with_tunnel = false
 
-log_level = 5
-experiment_duration = 30
+log_level = 6
+experiment_duration = 60
 warm_up = 5
 cool_down = 5
-message_size = 64
+message_size = 4000 #bytes
 protocol_name = "corfu"
 machines_per_extent = 1
 machines_per_replica_set = 1
 extent_range_size = 9999999999
-num_cli_threads = 4
+num_cli_threads = 8
 num_clients = 1
 
 
 [[experiment]]
-json_name = "one-client-machine-4thread"
+json_name = "one-client-machine-8thread_perf"

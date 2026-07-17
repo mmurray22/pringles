@@ -1,4 +1,5 @@
 #include "corfu_sequencer.h"
+#include <linux/perf_event.h>   
 
 CorfuSequencer::CorfuSequencer(std::string input_file) {
     YAML::Node config = YAML::LoadFile(input_file);
@@ -25,22 +26,15 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
     this->max_duration = get_experiment_duration(config);
     this->max_num_threads = get_num_client_threads(config);
 
+    this->use_performance = true;
+    SPDLOG_INFO("Sequencer Thread starting with TID = {}", gettid());
+
     terminate = false;
-    curr_idx.store(0);
+    curr_idx.store(1);
 
-    sequencer_thread = std::thread(&CorfuSequencer::run_sequencer_thread, this);
-}
+    // sequencer_thread = std::thread(&CorfuSequencer::run_sequencer_thread, this);
 
-CorfuSequencer::~CorfuSequencer() {
-    // terminate = true;
-    // if (sequencer_thread.joinable()) {
-    //     sequencer_thread.join();
-    // }
-    // spdlog::debug("Sequencer thread joined!");
-}
-
-void CorfuSequencer::run_sequencer_thread() {
-    spdlog::info("Sequencer active polling thread started.");
+    spdlog::info("Sequencer active polling thread starting.");
 
     while (!terminate) {
         char* recv_ptr = net->recv_packet();
@@ -73,11 +67,23 @@ void CorfuSequencer::run_sequencer_thread() {
                 cli_ips[cid],
                 std::to_string(send_port + cid * max_num_threads + thread_id)
             );
-            spdlog::debug("Sequencer gave index {} to cid {}", idx, packet_contents.clientid());
+            spdlog::debug("Sequencer gave index {} to cid {} tid {}", idx, packet_contents.clientid(), packet_contents.threadid());
         } else {
             spdlog::error("PACKET DROPPED: not asking for a token");
         }
     }
+}
+
+CorfuSequencer::~CorfuSequencer() {
+    // terminate = true;
+    // if (sequencer_thread.joinable()) {
+    //     sequencer_thread.join();
+    // }
+    // spdlog::debug("Sequencer thread joined!");
+}
+
+void CorfuSequencer::run_sequencer_thread() {
+    
 }
 
 uint64_t CorfuSequencer::assign_next_idx() {

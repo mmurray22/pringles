@@ -31,7 +31,7 @@
 #include "corfustorage.pb.h"
 #include "corfusequencer.pb.h"
 
-#define ERROR 999999
+#define ERROR 0
 
 CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
    // Get packet types for sending/receiving
@@ -239,7 +239,9 @@ std::pair<uint64_t, std::vector<std::vector<uint64_t>>> CorfuClient::map(uint64_
     return std::pair<uint64_t, std::vector<std::vector<uint64_t>>>(0, std::vector<std::vector<uint64_t>>{});
 }
 
-uint32_t CorfuClient::append(std::string entry) {
+
+// update so boolean in toml determines if just sequencing or both sequencing & writing
+uint32_t CorfuClient::append(const std::string& /*entry*/) {
     double start_time = collect_stats ? stat->getStartLat() : 0;
     
     // SEQUENCING PART
@@ -285,98 +287,102 @@ uint32_t CorfuClient::append(std::string entry) {
     // recv packet from the sequencer
     corfusequencer::Payload packet_contents = corfu_sequencer_deserialize_str_entry(std::make_unique<std::string>(msg));
 
-    uint64_t log_idx = packet_contents.send_token().token();
+    if (packet_contents.packet_type() != CORFU_GETTOKEN_REPLY_PROTO_TYPE) {
+        return ERROR;
+    }
+
+    uint64_t log_idx = packet_contents.token();
 
     spdlog::debug("Append: cid {} got index value {} from sequencer", cid, log_idx);
 
-    // APPEND PART
+    // // APPEND PART
 
-    // MAPPING FUNCTION PART
-    // find machines to send to
-    std::pair<uint64_t, std::vector<std::vector<uint64_t>>> map_result = map(log_idx);
-    uint64_t relative_log_pos = map_result.first;
-    std::vector<std::vector<uint64_t>> send_machines = map_result.second;
+    // // MAPPING FUNCTION PART
+    // // find machines to send to
+    // std::pair<uint64_t, std::vector<std::vector<uint64_t>>> map_result = map(log_idx);
+    // uint64_t relative_log_pos = map_result.first;
+    // std::vector<std::vector<uint64_t>> send_machines = map_result.second;
 
-    if (send_machines.empty()) {
-        spdlog::critical("Append: Unable to find send machines");
-        return ERROR; 
-    }
+    // if (send_machines.empty()) {
+    //     spdlog::critical("Append: Unable to find send machines");
+    //     return ERROR; 
+    // }
 
-    // mod relative log pos, even = first machine, odd = second machine
-    uint64_t machine = relative_log_pos % num_m_per_extent;
+    // // mod relative log pos, even = first machine, odd = second machine
+    // uint64_t machine = relative_log_pos % num_m_per_extent;
 
-    // for every replica in the set
-    for (uint64_t sm : send_machines[machine]) {
-        std::unique_ptr<std::string> append_packet = corfu_client_serialize_str_entry(entry, CORFU_APPEND_PROTO_TYPE, cid, thread_id, relative_log_pos, curr_epoch);
-        allocated_packet_size = append_packet->length() + 1;
-        spdlog::debug("append packet is of size: {}", allocated_packet_size);
-        packet = std::make_unique<char[]>(allocated_packet_size);
-        memcpy(packet.get(), append_packet->c_str(), allocated_packet_size);
+    // // for every replica in the set
+    // for (uint64_t sm : send_machines[machine]) {
+    //     std::unique_ptr<std::string> append_packet = corfu_client_serialize_str_entry(entry, CORFU_APPEND_PROTO_TYPE, cid, thread_id, relative_log_pos, curr_epoch);
+    //     allocated_packet_size = append_packet->length() + 1;
+    //     spdlog::debug("append packet is of size: {}", allocated_packet_size);
+    //     packet = std::make_unique<char[]>(allocated_packet_size);
+    //     memcpy(packet.get(), append_packet->c_str(), allocated_packet_size);
 
-        spdlog::info("client {} is appending '{} to machine {}'", cid, entry, sm);
+    //     // spdlog::info("client {} is appending to machine {}", cid, sm);
 
-        net->send_client_udp_packet(
-            std::move(packet), 
-            allocated_packet_size, 
-            storage_ips[sm],
-            stor_recv_port
-        );
-        msg = net->recv_packet();
+    //     net->send_client_udp_packet(
+    //         std::move(packet), 
+    //         allocated_packet_size, 
+    //         storage_ips[sm],
+    //         stor_recv_port
+    //     );
+    //     msg = net->recv_packet();
 
-        if (end_thread) {
-            return 0;
-        }
+    //     if (end_thread) {
+    //         return 0;
+    //     }
 
-        if (!msg) {
-            spdlog::debug("problem here");
-            return ERROR;
-        }
+    //     if (!msg) {
+    //         spdlog::debug("send machine didn't send back a packet");
+    //         return ERROR;
+    //     }
 
-        // start timer
-        // msg_time = std::chrono::high_resolution_clock::now();
-        // read_time = std::chrono::high_resolution_clock::duration::zero();
-        // while (read_time < TIMEOUT && !msg) {
-        //     msg = net->recv_packet();
-        //     read_time = std::chrono::high_resolution_clock::now() - msg_time;
-        // }
+    //     // start timer
+    //     // msg_time = std::chrono::high_resolution_clock::now();
+    //     // read_time = std::chrono::high_resolution_clock::duration::zero();
+    //     // while (read_time < TIMEOUT && !msg) {
+    //     //     msg = net->recv_packet();
+    //     //     read_time = std::chrono::high_resolution_clock::now() - msg_time;
+    //     // }
 
-        // // must reconfigure if there's no response
-        // if (!msg && read_time >= TIMEOUT) {
-        //     // TODO: THIS IS A BLACK BOX
-        //     spdlog::info("Append: Must reconfigure because there was no response");
-        //     // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
-        //     // reconfigure(log_idx, *failing_unit);
-        //     // spdlog::info("Append: Just reconfigured, you should attempt to append again");
-        //     return ERROR; // return error
-        // }
+    //     // // must reconfigure if there's no response
+    //     // if (!msg && read_time >= TIMEOUT) {
+    //     //     // TODO: THIS IS A BLACK BOX
+    //     //     spdlog::info("Append: Must reconfigure because there was no response");
+    //     //     // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
+    //     //     // reconfigure(log_idx, *failing_unit);
+    //     //     // spdlog::info("Append: Just reconfigured, you should attempt to append again");
+    //     //     return ERROR; // return error
+    //     // }
 
-        // CHECK FOR ACK OR ERROR
+    //     // CHECK FOR ACK OR ERROR
 
-        corfustorage::Payload packet_contents = corfu_storage_deserialize_str_entry(std::make_unique<std::string>(msg));
+    //     corfustorage::Payload packet_contents = corfu_storage_deserialize_str_entry(std::make_unique<std::string>(msg));
 
-        if (packet_contents.packet_type() == CORFU_SEALED_PROTO_TYPE) {
-            spdlog::info("Append: Must reconfigure because the current epoch was sealed");
-            // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
-            // reconfigure(log_idx, *failing_unit);
-            // spdlog::info("Append: Just reconfigured, you should attempt to append again");
-            return ERROR;
-        } else if (packet_contents.packet_type() == CORFU_DELETED_PROTO_TYPE) {
-            spdlog::critical("Append: We got an err_deleted and now we're returning the error code");
-            return ERROR;
-        } else if (packet_contents.packet_type() == CORFU_WRITTEN_PROTO_TYPE) {
-            spdlog::critical("Append: We got an err_written and now we're returning the error code");
-            return ERROR;
-        }
+    //     if (packet_contents.packet_type() == CORFU_SEALED_PROTO_TYPE) {
+    //         spdlog::info("Append: Must reconfigure because the current epoch was sealed");
+    //         // std::shared_ptr<CorfuStorage> failing_unit = send_machines[0];
+    //         // reconfigure(log_idx, *failing_unit);
+    //         // spdlog::info("Append: Just reconfigured, you should attempt to append again");
+    //         return ERROR;
+    //     } else if (packet_contents.packet_type() == CORFU_DELETED_PROTO_TYPE) {
+    //         spdlog::critical("Append: We got an err_deleted and now we're returning the error code");
+    //         return ERROR;
+    //     } else if (packet_contents.packet_type() == CORFU_WRITTEN_PROTO_TYPE) {
+    //         spdlog::critical("Append: We got an err_written and now we're returning the error code");
+    //         return ERROR;
+    //     }
 
-        // check to make sure that we've received an ack
-        if (packet_contents.ack().ack_code()) {
-            spdlog::info("Append: received an ack, continuing to write to next server if there are replicas");
-            continue;
-        } else {
-            spdlog::critical("Append: We did not receive an ack :(");
-            return ERROR;
-        }
-    }
+    //     // check to make sure that we've received an ack
+    //     if (packet_contents.packet_type() == CORFU_ACK_PROTO_TYPE) {
+    //         spdlog::info("Append: received an ack, continuing to write to next server if there are replicas");
+    //         continue;
+    //     } else {
+    //         spdlog::critical("Append: We did not receive an ack :(");
+    //         return ERROR;
+    //     }
+    // }
 
     if (collect_stats && start_time > 0) {
         stat->getDuration(start_time);
@@ -384,7 +390,7 @@ uint32_t CorfuClient::append(std::string entry) {
     }
     cnt += 1;
 
-    spdlog::info("Append: end of append");
+    // spdlog::info("Append: end of append");
     return (uint32_t) log_idx;
 }
 
@@ -550,7 +556,7 @@ uint64_t CorfuClient::fill(uint64_t idx) {
         }
 
         // check to make sure that we've received an ack
-        if (packet_contents.ack().ack_code()) {
+        if (packet_contents.packet_type() == CORFU_ACK_PROTO_TYPE) {
             spdlog::info("Fill: received an ack, continuing to write to next server if there are replicas");
             continue;
         } else {
@@ -616,7 +622,7 @@ bool CorfuClient::trim(uint64_t log_idx) {
         corfustorage::Payload packet_contents = corfu_storage_deserialize_str_entry(std::make_unique<std::string>(msg));
 
         // check to make sure that we've received an ack
-        if (packet_contents.ack().ack_code()) {
+        if (packet_contents.packet_type() == CORFU_ACK_PROTO_TYPE) {
             spdlog::info("Trim: received an ack, continuing to write to next server if there are replicas");
             continue;
         } else {

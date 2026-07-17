@@ -89,7 +89,7 @@ public:
 	~CorfuClient();
 
 	void reconfigure(uint64_t log_idx, CorfuStorage& failing_unit);
-	uint32_t append(std::string entry);
+	uint32_t append(const std::string& entry);
 	std::string read(uint64_t log_idx);
 	bool trim(uint64_t log_idx);
 	uint64_t fill(uint64_t idx);

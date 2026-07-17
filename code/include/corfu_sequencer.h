@@ -28,6 +28,7 @@ class CorfuSequencer {
         std::string IP;
 
         void wait_to_finish();
+        bool use_performance;
 
     protected:
         void run_sequencer_thread();
