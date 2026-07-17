@@ -40,10 +40,12 @@ class CorfuSequencer {
 
         std::vector<std::string> cli_ips;
 
-        std::string send_port;
+        uint64_t send_port;
 
         uint64_t num_pkt_types;
 
         uint64_t max_duration;
 	    bool end_thread = false;
+
+        uint64_t max_num_threads;
 };

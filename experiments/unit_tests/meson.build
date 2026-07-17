@@ -30,18 +30,18 @@
 #                          include_directories : inc,
 #                          dependencies: [yaml_cpp, spdlog, tbb_dep],
 #                          link_with : pringleslib)
-corfu_seq = executable('test_sequencer', 'test_sequencer_new.cpp', generated,
-                          include_directories : inc,
-                          dependencies: [yaml_cpp, spdlog, tbb_dep],
-                          link_with : pringleslib)
-corfu_simple = executable('test_corfu_simple', 'test_corfu_simple.cpp', generated,
-                          include_directories : inc,
-                          dependencies: [yaml_cpp, spdlog, tbb_dep],
-                          link_with : pringleslib)
-corfu_impl = executable('test_corfu_impl', 'test_corfu_impl.cpp', generated,
-                          include_directories : inc,
-                          dependencies: [yaml_cpp, spdlog, tbb_dep],
-                          link_with : pringleslib)
+#corfu_seq = executable('test_sequencer', 'test_sequencer_new.cpp', generated,
+#                          include_directories : inc,
+#                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+#                          link_with : pringleslib)
+#corfu_simple = executable('test_corfu_simple', 'test_corfu_simple.cpp', generated,
+#                          include_directories : inc,
+#                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+#                          link_with : pringleslib)
+#corfu_impl = executable('test_corfu_impl', 'test_corfu_impl.cpp', generated,
+#                          include_directories : inc,
+#                          dependencies: [yaml_cpp, spdlog, tbb_dep],
+ #                         link_with : pringleslib)
 corfu_cli = executable('corfu_cli', 'corfu_cli.cpp', generated,
                           include_directories : inc,
                           dependencies: [yaml_cpp, spdlog, tbb_dep],

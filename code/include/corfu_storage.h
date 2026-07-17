@@ -46,9 +46,9 @@ class CorfuStorage {
         void wait_to_finish();
 
     private:
-        void error_sealed(int cid, std::string req_type);
-        void error_deleted(int cid, std::string req_type);
-        void send_ack(int cid, std::string req_type);
+        void error_sealed(int cid, int thread_id, std::string req_type);
+        void error_deleted(int cid, int thread_id, std::string req_type);
+        void send_ack(int cid, int thread_id, std::string req_type);
         std::pair<std::string, bool> get_entry(uint64_t idx);
 
         void server();
@@ -65,11 +65,13 @@ class CorfuStorage {
         std::thread server_thread;
         std::atomic<bool> terminate{false};
 
-        std::string send_port;
+        uint64_t send_port;
         uint64_t num_pkt_types;
 
         // In-memory Key-Value Store
         std::map<uint64_t, std::pair<std::string, bool>> kv_store;
         // Key-Value Store Lock
         std::mutex kv_store_lock;
+
+        uint64_t max_num_threads;
 };

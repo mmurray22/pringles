@@ -39,15 +39,16 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
   
    this->num_work_threads = get_num_client_threads(config);
    this->cid = get_cli_id(config);
+   this->thread_id = thread_id;
    // Create network
    std::string multicast_ip = "";
 
-   send_port = std::to_string(get_send_port(config));
-   recv_port = std::to_string(get_recv_port(config));
+   this->send_port = std::to_string(get_send_port(config));
+   this->recv_port = std::to_string(get_recv_port(config) + cid * num_work_threads + thread_id);
 
    std::string self_ip = get_self_ip(config);
 
-    net = std::make_shared<Network>(
+    this->net = std::make_shared<Network>(
         send_port,
         recv_port,
 		get_socket_type(config),
@@ -63,8 +64,8 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
         
     spdlog::info("Corfu Client: net init");
 
-    seq_recv_port = get_seq_recv_port(config);
-    stor_recv_port = get_stor_recv_port(config);
+    this->seq_recv_port = get_seq_recv_port(config);
+    this->stor_recv_port = get_stor_recv_port(config);
 
     this->num_m_per_extent = get_num_m_per_extent(config);
     this->num_m_per_rep_set = get_num_m_per_rep_set(config);
@@ -75,43 +76,43 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     setup_auxiliary();
 
     // FOR DEBUGGING AUXILIARY FORMAT
-    uint64_t epoch = 0;
-    const std::map<uint64_t, std::map<std::pair<uint64_t, uint64_t>, std::vector<std::vector<uint64_t>>>>& aux = auxiliary;
-    auto epoch_it = aux.find(epoch);
-    if (epoch_it == aux.end()) {
-        spdlog::debug("[]");
-        return;
-    }
+    // uint64_t epoch = 0;
+    // const std::map<uint64_t, std::map<std::pair<uint64_t, uint64_t>, std::vector<std::vector<uint64_t>>>>& aux = auxiliary;
+    // auto epoch_it = aux.find(epoch);
+    // if (epoch_it == aux.end()) {
+    //     spdlog::debug("[]");
+    //     return;
+    // }
 
-    const auto& epoch_ranges = epoch_it->second;
-    std::ostringstream oss;
-    bool first_extent = true;
+    // const auto& epoch_ranges = epoch_it->second;
+    // std::ostringstream oss;
+    // bool first_extent = true;
 
-    for (const auto& [range, replica_sets] : epoch_ranges) {
-        if (!first_extent) {
-            oss << ", ";
-        }
-        first_extent = false;
+    // for (const auto& [range, replica_sets] : epoch_ranges) {
+    //     if (!first_extent) {
+    //         oss << ", ";
+    //     }
+    //     first_extent = false;
 
-        // Construct the replica sets string for this extent
-        oss << "[";
-        for (size_t i = 0; i < replica_sets.size(); ++i) {
-            oss << "[";
-            for (size_t j = 0; j < replica_sets[i].size(); ++j) {
-                oss << replica_sets[i][j];
-                if (j + 1 < replica_sets[i].size()) {
-                    oss << ", ";
-                }
-            }
-            oss << "]";
-            if (i + 1 < replica_sets.size()) {
-                oss << ", ";
-            }
-        }
-        oss << "]";
-    }
+    //     // Construct the replica sets string for this extent
+    //     oss << "[";
+    //     for (size_t i = 0; i < replica_sets.size(); ++i) {
+    //         oss << "[";
+    //         for (size_t j = 0; j < replica_sets[i].size(); ++j) {
+    //             oss << replica_sets[i][j];
+    //             if (j + 1 < replica_sets[i].size()) {
+    //                 oss << ", ";
+    //             }
+    //         }
+    //         oss << "]";
+    //         if (i + 1 < replica_sets.size()) {
+    //             oss << ", ";
+    //         }
+    //     }
+    //     oss << "]";
+    // }
     
-    spdlog::debug("{}", oss.str());
+    // spdlog::debug("{}", oss.str());
     // FOR DEBUGGING AUXILIARY ^
 
 
@@ -119,7 +120,7 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     // this->seq = SequencerType(get_sequencer_type(config));
 
     // Updating the log 
-    this->started_append = false; 
+    this->started_append = false;
 
     this->payload_size = get_payload_size(config);
     this->batch_size = num_work_threads * payload_size;
@@ -135,7 +136,7 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     this->testing_append = false;
     this->end_thread = false;
 
-    collect_stats = false;
+    this->collect_stats = false;
 }
 
 CorfuClient::~CorfuClient() {
@@ -242,12 +243,12 @@ uint32_t CorfuClient::append(std::string entry) {
     double start_time = collect_stats ? stat->getStartLat() : 0;
     
     // SEQUENCING PART
-    std::unique_ptr<std::string> sequencing_packet = corfu_client_serialize_str_entry("", CORFU_GETTOKEN_PROTO_TYPE, cid, 0, 0);
+    std::unique_ptr<std::string> sequencing_packet = corfu_client_serialize_str_entry("", CORFU_GETTOKEN_PROTO_TYPE, cid, thread_id, 0, 0);
     uint64_t allocated_packet_size = sequencing_packet->length() + 1;
     spdlog::debug("Append: gettoken packet is of size: {}", allocated_packet_size);
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
     memcpy(packet.get(), sequencing_packet->c_str(), allocated_packet_size);
-    spdlog::debug("sending to {}:{}", seq_ip, recv_port);
+    spdlog::debug("sending to {}:{}", seq_ip, seq_recv_port);
     
     net->send_client_udp_packet(
         std::move(packet), 
@@ -306,7 +307,7 @@ uint32_t CorfuClient::append(std::string entry) {
 
     // for every replica in the set
     for (uint64_t sm : send_machines[machine]) {
-        std::unique_ptr<std::string> append_packet = corfu_client_serialize_str_entry(entry, CORFU_APPEND_PROTO_TYPE, cid, relative_log_pos, curr_epoch);
+        std::unique_ptr<std::string> append_packet = corfu_client_serialize_str_entry(entry, CORFU_APPEND_PROTO_TYPE, cid, thread_id, relative_log_pos, curr_epoch);
         allocated_packet_size = append_packet->length() + 1;
         spdlog::debug("append packet is of size: {}", allocated_packet_size);
         packet = std::make_unique<char[]>(allocated_packet_size);
@@ -414,7 +415,7 @@ std::string CorfuClient::read(uint64_t log_idx) {
     // SEND READ REQ TO SERVER
     // client must go to the last replica in the set because they're not sure if the full set was written to or not
     // POSSIBLE OPTIMIZATION: can go to any replica in the set if client KNOWS this value has been written already (ex. via notification from writing client)
-    std::unique_ptr<std::string> read_packet = corfu_client_serialize_str_entry("", CORFU_READ_PROTO_TYPE, cid, relative_log_pos, curr_epoch);
+    std::unique_ptr<std::string> read_packet = corfu_client_serialize_str_entry("", CORFU_READ_PROTO_TYPE, cid, thread_id, relative_log_pos, curr_epoch);
     uint64_t allocated_packet_size = read_packet->length() + 1;
     spdlog::debug("Read: read packet is of size: {}", allocated_packet_size);
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
@@ -498,7 +499,7 @@ uint64_t CorfuClient::fill(uint64_t idx) {
 
     // for every replica in the set
     for (uint64_t sm : send_machines[machine]) {
-        std::unique_ptr<std::string> fill_packet = corfu_client_serialize_str_entry(junk, CORFU_APPEND_PROTO_TYPE, cid, relative_log_pos, curr_epoch);
+        std::unique_ptr<std::string> fill_packet = corfu_client_serialize_str_entry(junk, CORFU_APPEND_PROTO_TYPE, cid, thread_id, relative_log_pos, curr_epoch);
         uint64_t allocated_packet_size = fill_packet->length() + 1;
         spdlog::debug("fill packet is of size: {}", allocated_packet_size);
         std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
@@ -576,7 +577,7 @@ bool CorfuClient::trim(uint64_t log_idx) {
 
     // for every replica in the set
     for (uint64_t sm : send_machines[machine]) {
-        std::unique_ptr<std::string> trim_packet = corfu_client_serialize_str_entry("", CORFU_TRIM_PROTO_TYPE, cid, relative_log_pos, 0);
+        std::unique_ptr<std::string> trim_packet = corfu_client_serialize_str_entry("", CORFU_TRIM_PROTO_TYPE, cid, thread_id, relative_log_pos, 0);
         uint64_t allocated_packet_size = trim_packet->length() + 1;
         spdlog::debug("Trim packet is of size: {}", allocated_packet_size);
         std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);

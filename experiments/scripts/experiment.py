@@ -34,7 +34,7 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # ---------------------------------------
 
 # --- Configuration Constants ---
-pringles_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/murray/")
+pringles_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/colang")
 corfu_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/colang")
 BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
@@ -246,7 +246,7 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
         'seq_ip': seq_ip,
         'send_port': QuotedString(send_port),
         'recv_port': QuotedString(recv_port),
-        'num_client_threads': len(cli_ips),
+        'num_client_threads': exp_params['num_cli_threads'],
         # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
         'socket_type': QuotedString(exp_params['socket_type']),
         # WRAPPED: Ensures self_ip is quoted
@@ -277,10 +277,10 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
 
             # warm up time
             'warm_up': warm_up,
-            'num_client_threads': exp_params['num_cli_threads'],
 
             # cool down time
-            'cool_down': cool_down
+            'cool_down': cool_down,
+            'num_clients': exp_params['num_clients']
         })
 
     if entity_type == 'server':
@@ -1978,8 +1978,10 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
         general_json_output_name = base_config['experiment_parameters']['general_json_name']
         json_output_name = general_json_output_name + "-" + config['experiment_parameters']['json_name']
 
-        recv_port = base_config['network_setup']['recv_port']
-        send_port = base_config['network_setup']['send_port']
+        recv_port = config['network_setup']['recv_port']
+        send_port = config['network_setup']['send_port']
+
+        num_clients = config['experiment_parameters']['num_clients']
 
         print(f"\n========================================================")
         print(f"   RUNNING EXPERIMENT {exp_index + 1}: {json_output_name}")
@@ -2036,7 +2038,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                 print(path_server)
                 exec_filepath = "~/" + server_exec
                 prefix = "server"
-                execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix)
+                #execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix)
                 # Second, execute the command
                 process, log_filename = execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
                 print("Done executing the server!")
@@ -2089,7 +2091,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
             process, log_filename = execute_remote_command(seq_ip, exec_seq_filepath, seq_config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
             if process:
                 seq_processes.append(process)
-                seq_log_files[ip] = log_filename # MODIFIED: Store log filename
+                seq_log_files[seq_ip] = log_filename # MODIFIED: Store log filename
             else:
                 raise Exception(f"Failed to start sequencer process on {ip}")
 
@@ -2103,6 +2105,8 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
             # --- 9. Generate Client Configuration and Start Process ---
             print("\n--- Starting Client ---")
             for i, ip in enumerate(client_ips):
+                if i == num_clients:
+                    break
                 config_filename = f"client_config_{json_output_name}_{i}.yaml" # Unique filename
                 client_port_offset = len(all_server_ips) * 3
                 interface = cli_net_ifs[i] if i < len(cli_net_ifs) else cli_net_ifs[0]
@@ -2161,7 +2165,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
 
             for proc in client_processes: 
                 # Wait for the client process to finish
-                print("Waiting for the client process {proc.id} to finish!")
+                print(f"Waiting for the client process {proc.pid} to finish!")
                 proc.wait()
 
                 # --- 8. Copy JSON Results Back ---

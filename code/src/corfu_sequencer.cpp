@@ -21,8 +21,9 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
 		false,
 		false);
 
-    this->send_port = std::to_string(get_recv_port(config));
+    this->send_port = get_recv_port(config);
     this->max_duration = get_experiment_duration(config);
+    this->max_num_threads = get_num_client_threads(config);
 
     terminate = false;
     curr_idx.store(0);
@@ -64,12 +65,13 @@ void CorfuSequencer::run_sequencer_thread() {
             packet[token_packet->length()] = '\0';
 
             int cid = packet_contents.clientid();
+            int thread_id = packet_contents.threadid();
 
             net->send_client_udp_packet(
                 std::move(packet), 
                 allocated_packet_size, 
                 cli_ips[cid],
-                send_port
+                std::to_string(send_port + cid * max_num_threads + thread_id)
             );
             spdlog::debug("Sequencer gave index {} to cid {}", idx, packet_contents.clientid());
         } else {

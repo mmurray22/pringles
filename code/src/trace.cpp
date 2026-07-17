@@ -79,12 +79,13 @@ void TemporaryFunction ()
     (void)TempObj;
 }
 
-std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t client_id, uint64_t log_idx, uint64_t curr_epoch) {
+std::unique_ptr<std::string> corfu_client_serialize_str_entry(std::string entry, uint64_t proto_type, uint64_t client_id, uint64_t thread_id, uint64_t log_idx, uint64_t curr_epoch) {
     std::unique_ptr<std::string> output = std::make_unique<std::string>();
 
     corfuclient::Payload corfu_payload;
     corfu_payload.set_packet_type(proto_type);
     corfu_payload.set_clientid(client_id);
+    corfu_payload.set_threadid(thread_id);
 
     if (proto_type == CORFU_APPEND_PROTO_TYPE) { // append
         corfuclient::Append* append_packet = corfu_payload.mutable_append();

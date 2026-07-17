@@ -13,6 +13,7 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
     YAML::Node config = YAML::LoadFile(input_file);
 
     this->cli_ips = get_cli_ip(config);
+    this->max_num_threads = get_num_client_threads(config);
 
     std::string multicast_ip = "";
     this->stor = StorageType(0); // NOTE: this is hardcoded to be the KV store!!
@@ -31,7 +32,7 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
 		false,
 		false);
 
-    this->send_port = std::to_string(get_recv_port(config));
+    this->send_port = get_recv_port(config);
     this->max_duration = get_experiment_duration(config);
 
     terminate = false;
@@ -46,7 +47,7 @@ CorfuStorage::~CorfuStorage() {
     // spdlog::debug("Storage thread with ssid {} joined!", ssid);
 }
 
-void CorfuStorage::error_sealed(int cid, std::string req_type) {
+void CorfuStorage::error_sealed(int cid, int thread_id, std::string req_type) {
     auto err_packet = corfu_storage_serialize_str_entry("", CORFU_SEALED_PROTO_TYPE, 0);
     uint64_t allocated_packet_size = err_packet->length() + 1;
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
@@ -54,15 +55,16 @@ void CorfuStorage::error_sealed(int cid, std::string req_type) {
     packet[err_packet->length()] = '\0';
 
     spdlog::info("storage {} returning err_sealed from cid {}'s {} req", ssid, cid, req_type);
+
     net->send_client_udp_packet(
-        std::move(packet),
-        allocated_packet_size,
+        std::move(packet), 
+        allocated_packet_size, 
         cli_ips[cid],
-        send_port
+        std::to_string(send_port + cid * max_num_threads + thread_id)
     );
 }
 
-void CorfuStorage::error_deleted(int cid, std::string req_type) {
+void CorfuStorage::error_deleted(int cid, int thread_id, std::string req_type) {
     auto err_packet = corfu_storage_serialize_str_entry("", CORFU_DELETED_PROTO_TYPE, 0);
     uint64_t allocated_packet_size = err_packet->length() + 1;
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
@@ -74,11 +76,11 @@ void CorfuStorage::error_deleted(int cid, std::string req_type) {
         std::move(packet), 
         allocated_packet_size, 
         cli_ips[cid],
-        send_port
+        std::to_string(send_port + cid * max_num_threads + thread_id)
     );
 }
 
-void CorfuStorage::send_ack(int cid, std::string req_type) {
+void CorfuStorage::send_ack(int cid, int thread_id, std::string req_type) {
     auto ack_packet = corfu_storage_serialize_str_entry("", CORFU_ACK_PROTO_TYPE, 0);
     uint64_t allocated_packet_size = ack_packet->length() + 1;
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
@@ -87,10 +89,10 @@ void CorfuStorage::send_ack(int cid, std::string req_type) {
 
     spdlog::info("storage {} returning ack from cid {}'s {} req", ssid, cid, req_type);
     net->send_client_udp_packet(
-        std::move(packet),
-        allocated_packet_size,
+        std::move(packet), 
+        allocated_packet_size, 
         cli_ips[cid],
-        send_port
+        std::to_string(send_port + cid * max_num_threads + thread_id)
     );
 }
 
@@ -133,8 +135,9 @@ void CorfuStorage::write(corfuclient::Payload msg) {
     // if epoch != s_epoch, respond <err_sealed>
     int curr_epoch = msg.append().currepoch();
     int cid = msg.clientid();
+    int thread_id = msg.threadid();
     if (curr_epoch != s_epoch) {
-        error_sealed(cid, "append");
+        error_sealed(cid, thread_id, "append");
         return;
     }
     
@@ -146,7 +149,7 @@ void CorfuStorage::write(corfuclient::Payload msg) {
     if (it != kv_store.end()) { // is the entry already in the map?
         if (it->second.second) { // has it been marked deleted?
             // send <err_deleted>
-            error_deleted(cid, "append");
+            error_deleted(cid, thread_id, "append");
             return;
         } else { // if not marked deleted, then it must be written to already so we send back err + written contents
             // send <err_written>
@@ -161,7 +164,7 @@ void CorfuStorage::write(corfuclient::Payload msg) {
                 std::move(packet), 
                 allocated_packet_size, 
                 cli_ips[cid],
-                send_port
+                std::to_string(send_port + cid * max_num_threads + thread_id)
             );
         }
         return;
@@ -173,15 +176,16 @@ void CorfuStorage::write(corfuclient::Payload msg) {
     mark = std::max(mark, idx);
 
     // reply with ack
-    send_ack(cid, "append");
+    send_ack(cid, thread_id, "append");
 }
 
 void CorfuStorage::read(corfuclient::Payload msg) {
     // if epoch != s_epoch, respond <err_sealed>
     int curr_epoch = msg.read().currepoch();
     int cid = msg.clientid();
+    int thread_id = msg.threadid();
     if (curr_epoch != s_epoch) {
-        error_sealed(cid, "read");
+        error_sealed(cid, thread_id, "read");
         return;
     }
 
@@ -202,7 +206,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
             std::move(packet), 
             allocated_packet_size, 
             cli_ips[cid],
-            send_port
+            std::to_string(send_port + cid * max_num_threads + thread_id)
         );
         return;
     }
@@ -211,7 +215,7 @@ void CorfuStorage::read(corfuclient::Payload msg) {
     std::pair<std::string, bool> entry = get_entry(idx);
     if (entry.second) {
         // send <err_deleted>
-        error_deleted(cid, "read");
+        error_deleted(cid, thread_id, "read");
         return;
     }
     
@@ -226,19 +230,20 @@ void CorfuStorage::read(corfuclient::Payload msg) {
         std::move(packet), 
         allocated_packet_size, 
         cli_ips[cid],
-        send_port
+        std::to_string(send_port + cid * max_num_threads + thread_id)
     );
 }
 
 void CorfuStorage::storage_delete(corfuclient::Payload msg) {
     int cid = msg.clientid();
+    int thread_id = msg.threadid();
     
     uint64_t idx = msg.trim().idx();
     auto it = kv_store.find(idx);
 
     if (it != kv_store.end()) { // is the entry already in the map?
         it->second.second = true;
-        send_ack(cid, "trim");
+        send_ack(cid, thread_id, "trim");
         return;
     }
 
@@ -285,22 +290,23 @@ void CorfuStorage::server() {
         auto rcv_str = std::make_unique<std::string>(recv_ptr);
         corfuclient::Payload msg = corfu_client_deserialize_str_entry(std::move(rcv_str));
         int cid = msg.clientid();
+        int thread_id = msg.threadid();
 
         switch (msg.packet_type()) {
             case CORFU_APPEND_PROTO_TYPE:
-                spdlog::info("storage {} got an append req from client {}", ssid, cid);
+                spdlog::info("storage {} got an append req from client {}:{}", ssid, cid, thread_id);
                 write(msg);
                 break;
             case CORFU_READ_PROTO_TYPE:
-                spdlog::info("storage {} got a read req from client {}", ssid, cid);
+                spdlog::info("storage {} got a read req from client {}:{}", ssid, cid, thread_id);
                 read(msg);
                 break;
             case CORFU_TRIM_PROTO_TYPE:
-                spdlog::info("storage {} got a trim req from client {}", ssid, cid);
+                spdlog::info("storage {} got a trim req from client {}:{}", ssid, cid, thread_id);
                 storage_delete(msg);
                 break;
             case CORFU_SEAL_PROTO_TYPE:
-                spdlog::info("storage {} got a seal req from client {}", ssid, cid);
+                spdlog::info("storage {} got a seal req from client {}:{}", ssid, cid, thread_id);
                 seal(msg);
                 break;
             default:

@@ -63,6 +63,7 @@ protected:
 	std::vector<std::thread> recv_threads;
 
 	uint64_t global_thread_id;
+	uint64_t thread_id;
 
 	std::vector<int> get_pkt_eth_types();
 	int get_eth_type(uint64_t pkt_type);
