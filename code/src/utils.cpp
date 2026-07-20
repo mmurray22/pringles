@@ -433,6 +433,10 @@ uint64_t get_ack_threshold(YAML::Node config) {
     return config["ack_threshold"].as<uint64_t>();
 }
 
+bool get_full_append(YAML::Node config) {
+    return config["full_append"].as<bool>();
+}
+
 void configure_event(struct perf_event_attr *pe, uint32_t type, uint64_t config){
     memset(pe, 0, sizeof(struct perf_event_attr));
     pe->type = type;

@@ -90,6 +90,7 @@ uint64_t get_storage_server(YAML::Node config);
 uint64_t get_cli_idx(YAML::Node config);
 
 uint64_t get_ack_threshold(YAML::Node config);
+bool get_full_append(YAML::Node config);
 
 
 /*INACTIVE*/

@@ -69,6 +69,7 @@ batch_on = false
 # How long to wait until sending a batch off
 batch_usec_timeout = 460
 with_tunnel = false
+full_append = false
 
 log_level = 6
 experiment_duration = 60
@@ -79,9 +80,9 @@ protocol_name = "corfu"
 machines_per_extent = 1
 machines_per_replica_set = 1
 extent_range_size = 9999999999
-num_cli_threads = 8
+num_cli_threads = 5
 num_clients = 1
 
 
 [[experiment]]
-json_name = "one-client-machine-8thread_perf"
+json_name = "pin_core_test"

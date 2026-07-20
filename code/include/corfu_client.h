@@ -84,6 +84,8 @@ protected:
 	std::string seq_recv_port;
 	std::string stor_recv_port;
 
+	bool full_append;
+
 public:
 	CorfuClient(std::string input_file, uint64_t thread_id);
 	~CorfuClient();

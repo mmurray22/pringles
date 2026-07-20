@@ -280,7 +280,8 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
 
             # cool down time
             'cool_down': cool_down,
-            'num_clients': exp_params['num_clients']
+            'num_clients': exp_params['num_clients'],
+            'full_append': exp_params['full_append']
         })
 
     if entity_type == 'server':
@@ -795,6 +796,7 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
         "batch_size": batch_size,
         "payload_size": base_config['experiment_parameters']['message_size'],
         "num_servers": num_servers,
+        "full_append": base_config['experiment_parameters']['full_append'],
         "system_name": system_name
     }
     print(final_results)
@@ -2215,12 +2217,12 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                     raise Exception("Failed to start client process.")
 
             i = 0 
-            cli_perf_duration = 10
-            seq_perf_duration = 10
-            client_exec = os.path.basename(path_client) # Use the basename remotely
-            seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
-            run_perf(seq_exec, [seq_ip], seq_perf_duration, ssh_user, ssh_key)
-            run_perf(client_exec, client_ips, cli_perf_duration, ssh_user, ssh_key)
+            # cli_perf_duration = 10
+            # seq_perf_duration = 10
+            # client_exec = os.path.basename(path_client) # Use the basename remotely
+            # seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
+            # run_perf(seq_exec, [seq_ip], seq_perf_duration, ssh_user, ssh_key)
+            # run_perf(client_exec, client_ips, cli_perf_duration, ssh_user, ssh_key)
 
             for proc in client_processes: 
                 # Wait for the client process to finish
@@ -2283,8 +2285,8 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                 except Exception as e:
                     print(f"Could not check on server process: {e}")
 
-            get_perf_files(client_exec, client_ips, ssh_user, ssh_key, local_results_dir)
-            get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
+            # get_perf_files(client_exec, client_ips, ssh_user, ssh_key, local_results_dir)
+            # get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
             print("Server processes are assumed to exit on their own after the client terminates.")
             for proc in seq_processes:
                 try:
