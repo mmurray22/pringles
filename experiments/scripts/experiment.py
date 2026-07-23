@@ -262,6 +262,7 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
         'extent_range_size': exp_params['extent_range_size'],
         'interface': QuotedString(network_interface),
         'payload_size': general_exp_params['message_size'],
+        'use_performance': exp_params['use_performance'],
 
         # not sure i need this we'll see
         'seq_recv_port': QuotedString(net_params['seq_recv_port']),
@@ -2097,7 +2098,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
 
                 # Start remote process
                 print(path_server)
-                exec_filepath = "~/" + server_exec
+                exec_filepath = "sudo ~/" + server_exec
                 prefix = "server"
                 #execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix)
                 # Second, execute the command
@@ -2147,7 +2148,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                 raise Exception(f"Failed to transfer sequencer binary to switch {seq_ip}")
                 
             # Start remote process
-            exec_seq_filepath = "~/" + seq_exec
+            exec_seq_filepath = "sudo ~/" + seq_exec
             prefix = "sequencer"
             process, log_filename = execute_remote_command(seq_ip, exec_seq_filepath, seq_config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
             if process:
@@ -2197,7 +2198,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                     raise Exception(f"Failed to transfer server binary to server {ip}")
 
                 #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name)
-                cli_exec_file = "~/" + client_exec
+                cli_exec_file = "sudo ~/" + client_exec
                 prefix = "client"
                 client_process, client_log_filename = execute_remote_command( # MODIFIED: Get log filename
                     ip, 
@@ -2217,6 +2218,8 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                     raise Exception("Failed to start client process.")
 
             i = 0 
+
+            #PERF HERE
             # cli_perf_duration = 10
             # seq_perf_duration = 10
             # client_exec = os.path.basename(path_client) # Use the basename remotely
@@ -2285,6 +2288,8 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                 except Exception as e:
                     print(f"Could not check on server process: {e}")
 
+
+            #PERF HERE
             # get_perf_files(client_exec, client_ips, ssh_user, ssh_key, local_results_dir)
             # get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
             print("Server processes are assumed to exit on their own after the client terminates.")

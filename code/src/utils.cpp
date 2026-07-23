@@ -397,6 +397,10 @@ uint64_t get_use_switch(YAML::Node config) {
     return config["use_switch"].as<uint64_t>();
 }
 
+bool get_use_performance(YAML::Node config) {
+    return config["use_performance"].as<bool>();
+}
+
 uint64_t get_use_stor(YAML::Node config) {
     return config["use_store"].as<uint64_t>();
 }

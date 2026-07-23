@@ -1,5 +1,5 @@
 #include "corfu_sequencer.h"
-#include <linux/perf_event.h>   
+#include <linux/perf_event.h>
 
 CorfuSequencer::CorfuSequencer(std::string input_file) {
     YAML::Node config = YAML::LoadFile(input_file);
@@ -26,52 +26,18 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
     this->max_duration = get_experiment_duration(config);
     this->max_num_threads = get_num_client_threads(config);
 
-    this->use_performance = true;
+    this->use_performance = get_use_performance(config);
     SPDLOG_INFO("Sequencer Thread starting with TID = {}", gettid());
 
-    terminate = false;
+    end_thread = false;
     curr_idx.store(1);
 
-    // sequencer_thread = std::thread(&CorfuSequencer::run_sequencer_thread, this);
+    this->header = std::make_unique<struct corfu_seq_header>();
+    header.get()->proto_type = htons(CORFU_GETTOKEN_REPLY_PROTO_TYPE);
+    this->gettoken_reply = std::make_unique<struct corfu_gettoken_reply>();
+    gettoken_reply.get()->log_idx = htonl(0);
 
-    spdlog::info("Sequencer active polling thread starting.");
-
-    while (!terminate) {
-        char* recv_ptr = net->recv_packet();
-        
-        if (!recv_ptr) {
-            continue; 
-        }
-
-        // we received a packet!!!!!
-        auto rcv_str = std::make_unique<std::string>(recv_ptr);
-        corfuclient::Payload packet_contents = corfu_client_deserialize_str_entry(std::move(rcv_str));
-
-        if (packet_contents.has_token_req() && packet_contents.token_req().reqtoken()) {
-            spdlog::debug("Sequencer received a token request from client {}", packet_contents.clientid());
-            
-            uint64_t idx = assign_next_idx();
-            std::unique_ptr<std::string> token_packet = corfu_sequencer_serialize_str_entry(CORFU_GETTOKEN_REPLY_PROTO_TYPE, idx);
-            
-            uint64_t allocated_packet_size = token_packet->length() + 1;
-            std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
-            memcpy(packet.get(), token_packet->c_str(), allocated_packet_size);
-            packet[token_packet->length()] = '\0';
-
-            int cid = packet_contents.clientid();
-            int thread_id = packet_contents.threadid();
-
-            net->send_client_udp_packet(
-                std::move(packet), 
-                allocated_packet_size, 
-                cli_ips[cid],
-                std::to_string(send_port + cid * max_num_threads + thread_id)
-            );
-            spdlog::debug("Sequencer gave index {} to cid {} tid {}", idx, packet_contents.clientid(), packet_contents.threadid());
-        } else {
-            spdlog::error("PACKET DROPPED: not asking for a token");
-        }
-    }
+    sequencer_thread = std::thread(&CorfuSequencer::run_sequencer_thread, this);
 }
 
 CorfuSequencer::~CorfuSequencer() {
@@ -83,14 +49,65 @@ CorfuSequencer::~CorfuSequencer() {
 }
 
 void CorfuSequencer::run_sequencer_thread() {
-    
+    spdlog::info("Sequencer active polling thread starting.");
+
+    int perf_fd;
+    if (use_performance) {
+        perf_fd = setup_perf(gettid());
+        if (perf_fd < 0) {
+            perror("Error opening perf event");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    while (!end_thread) {
+        char* recv_ptr = net->recv_packet();
+        
+        if (!recv_ptr) {
+            continue; 
+        }
+
+        // we received a packet!!!!!
+        struct corfu_cli_header* recv_header = (struct corfu_cli_header*)recv_ptr;
+
+        if (ntohs(recv_header->proto_type) == CORFU_GETTOKEN_PROTO_TYPE) {
+            uint32_t idx = assign_next_idx();
+            uint32_t cid = ntohl(recv_header->client_id);
+            uint32_t thread_id = ntohl(recv_header->thread_id);
+            spdlog::debug("Sequencer received a token request from client {}:{}", cid, thread_id);
+
+            
+            size_t size_of_reply = get_corfu_gettoken_reply_size();
+            size_t size_of_hdr = get_corfu_seq_header_size();
+            spdlog::debug("Corfu gettoken reply, size of: {}, header size: {}", size_of_reply, size_of_hdr);
+            uint64_t allocated_packet_size = size_of_reply + size_of_hdr + 1;
+
+            // Create packet buffer which will be sent  
+            std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+            gettoken_reply->log_idx = htonl(idx);
+
+            memcpy(packet.get(), reinterpret_cast<const char*>(header.get()), size_of_hdr); 
+            memcpy(packet.get() + size_of_hdr, reinterpret_cast<const char*>(gettoken_reply.get()), size_of_reply + 1);
+
+            spdlog::debug("Sequencer is giving idx {} to client {}:{}", ntohl(gettoken_reply->log_idx), cid, thread_id);
+
+            net->send_client_udp_packet(
+                std::move(packet),
+                allocated_packet_size, 
+                cli_ips[cid],
+                std::to_string(send_port + cid * max_num_threads + thread_id)
+            );
+        } else {
+            spdlog::error("PACKET DROPPED: not asking for a token");
+        }
+    }
 }
 
-uint64_t CorfuSequencer::assign_next_idx() {
+uint32_t CorfuSequencer::assign_next_idx() {
     return curr_idx.fetch_add(1);
 }
 
-uint64_t CorfuSequencer::get_current_idx() {
+uint32_t CorfuSequencer::get_current_idx() {
     return curr_idx.load();
 }
 
@@ -98,5 +115,5 @@ void CorfuSequencer::wait_to_finish() {
     std::chrono::seconds sleep_duration(max_duration);
     std::this_thread::sleep_for(sleep_duration);
     end_thread = true;
-    spdlog::critical("End thread is bool: {}", end_thread);
+    spdlog::critical("End thread is bool: {}, max seq = {}", end_thread, get_current_idx());
 }

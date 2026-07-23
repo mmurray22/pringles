@@ -73,6 +73,11 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     this->seq_ip = get_seq_ip(config);
     this->storage_ips = get_stor_ips(config);
 
+    this->corfu_hdr = std::make_unique<struct corfu_cli_header>();
+    corfu_hdr.get()->proto_type = htons(0);
+    corfu_hdr.get()->thread_id = htonl(thread_id);
+    corfu_hdr.get()->client_id = htonl(cid);
+
     setup_auxiliary();
 
     // FOR DEBUGGING AUXILIARY FORMAT
@@ -120,8 +125,6 @@ CorfuClient::CorfuClient(std::string input_file, uint64_t thread_id) {
     // this->seq = SequencerType(get_sequencer_type(config));
 
     // Updating the log 
-    this->started_append = false;
-
     this->payload_size = get_payload_size(config);
     this->batch_size = num_work_threads * payload_size;
     this->stat = std::make_unique<Stats>(get_batch_size(config), get_batch_on(config), get_json_name(config), thread_id, self_ip);
@@ -160,13 +163,11 @@ void CorfuClient::execute(uint64_t thread_id) {
     // Generate the dummy payload based on payload_size config
     std::string payload(payload_size, 'X');
     uint64_t total_count = 0;
-    int i = 0;
     while (experiment_status()) {
-    // while (i < 3) {
+    // while (total_count < 3) {
         uint32_t idx = append(payload);
         total_count += 1;
         spdlog::debug("The entry was given index: {}", idx);
-        i++;
     }
     spdlog::critical("Total number of sent appends (NOT necessarily successful): {} from thread {}", total_count, thread_id);
 }
@@ -243,14 +244,29 @@ std::pair<uint64_t, std::vector<std::vector<uint64_t>>> CorfuClient::map(uint64_
 
 // update so boolean in toml determines if just sequencing or both sequencing & writing
 uint32_t CorfuClient::append(const std::string& entry) {
-    double start_time = collect_stats ? stat->getStartLat() : 0;
+    uint32_t log_idx = 0;
+    // double start_time = collect_stats ? stat->getStartLat() : 0;
     
     // SEQUENCING PART
-    std::unique_ptr<std::string> sequencing_packet = corfu_client_serialize_str_entry("", CORFU_GETTOKEN_PROTO_TYPE, cid, thread_id, 0, 0);
-    uint64_t allocated_packet_size = sequencing_packet->length() + 1;
-    spdlog::debug("Append: gettoken packet is of size: {}", allocated_packet_size);
+    // std::unique_ptr<std::string> sequencing_packet = corfu_client_serialize_str_entry("", CORFU_GETTOKEN_PROTO_TYPE, cid, thread_id, 0, 0);
+    // uint64_t allocated_packet_size = sequencing_packet->length() + 1;
+    // spdlog::debug("Append: gettoken packet is of size: {}", allocated_packet_size);
+    // std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
+    // memcpy(packet.get(), sequencing_packet->c_str(), allocated_packet_size);
+    size_t size_of_type_hdr = get_corfu_cli_header_size();
+    corfu_hdr.get()->proto_type = htons(CORFU_GETTOKEN_PROTO_TYPE);
+    corfu_hdr.get()->client_id = htonl(cid);
+    corfu_hdr.get()->thread_id = htonl(thread_id);
+    spdlog::debug("Corfu header: {}, size of: {}", ntohs(corfu_hdr.get()->proto_type), size_of_type_hdr);
+    uint64_t allocated_packet_size = size_of_type_hdr + 1;
+
+    // Only need to read from the map once to get the queue
+    // Create packet buffer which will be sent  
     std::unique_ptr<char[]> packet = std::make_unique<char[]>(allocated_packet_size);
-    memcpy(packet.get(), sequencing_packet->c_str(), allocated_packet_size);
+    double start_time = collect_stats ? stat->getStartLat() : 0;
+
+    memcpy(packet.get(), reinterpret_cast<const char*>(corfu_hdr.get()), size_of_type_hdr + 1);
+
     spdlog::debug("sending to {}:{}", seq_ip, seq_recv_port);
     
     net->send_client_udp_packet(
@@ -259,40 +275,43 @@ uint32_t CorfuClient::append(const std::string& entry) {
         seq_ip,
         seq_recv_port
     );
+
+    while (!end_thread) {
     
-    char* msg = net->recv_packet();
+        char* msg = net->recv_packet();
 
-    if (end_thread) {
-        return ERROR;
+        if (!msg) continue;
+
+        // start timer
+        // auto msg_time = std::chrono::high_resolution_clock::now();
+        // auto read_time = std::chrono::high_resolution_clock::duration::zero();
+        // while (read_time < TIMEOUT && !msg) {
+        //     msg = net->recv_packet();
+        //     read_time = std::chrono::high_resolution_clock::now() - msg_time;
+        // }
+
+        // if (!msg && read_time >= TIMEOUT) {
+        //     // TODO i think you need to reconfigure here
+        //     spdlog::critical("Append: We did not receive anything from sequencer before timeout");
+        //     return ERROR; // failure
+        // }
+
+        // recv packet from the sequencer
+        // corfusequencer::Payload packet_contents = corfu_sequencer_deserialize_str_entry(std::make_unique<std::string>(msg));
+
+        // if (packet_contents.packet_type() != CORFU_GETTOKEN_REPLY_PROTO_TYPE) {
+        //     return ERROR;
+        // }
+
+        struct corfu_seq_header* recv_hdr = (struct corfu_seq_header*)msg;
+        if (ntohs(recv_hdr->proto_type) != CORFU_GETTOKEN_REPLY_PROTO_TYPE) {
+            continue;
+        }
+
+        struct corfu_gettoken_reply* reply = (struct corfu_gettoken_reply*)(msg + sizeof(struct corfu_seq_header));
+        log_idx = ntohl(reply->log_idx);
+        break;
     }
-    
-    if (!msg) {
-        spdlog::debug("problem here");
-        return ERROR;
-    }
-
-    // start timer
-    // auto msg_time = std::chrono::high_resolution_clock::now();
-    // auto read_time = std::chrono::high_resolution_clock::duration::zero();
-    // while (read_time < TIMEOUT && !msg) {
-    //     msg = net->recv_packet();
-    //     read_time = std::chrono::high_resolution_clock::now() - msg_time;
-    // }
-
-    // if (!msg && read_time >= TIMEOUT) {
-    //     // TODO i think you need to reconfigure here
-    //     spdlog::critical("Append: We did not receive anything from sequencer before timeout");
-    //     return ERROR; // failure
-    // }
-
-    // recv packet from the sequencer
-    corfusequencer::Payload packet_contents = corfu_sequencer_deserialize_str_entry(std::make_unique<std::string>(msg));
-
-    if (packet_contents.packet_type() != CORFU_GETTOKEN_REPLY_PROTO_TYPE) {
-        return ERROR;
-    }
-
-    uint64_t log_idx = packet_contents.token();
 
     spdlog::debug("Append: cid {} got index value {} from sequencer", cid, log_idx);
 
@@ -329,7 +348,7 @@ uint32_t CorfuClient::append(const std::string& entry) {
                 storage_ips[sm],
                 stor_recv_port
             );
-            msg = net->recv_packet();
+            char* msg = net->recv_packet();
 
             if (end_thread) {
                 return ERROR;
@@ -679,15 +698,6 @@ void CorfuClient::wait_to_cooldown() {
 
 bool CorfuClient::experiment_status() {
     return !end_thread;
-}
-
-int CorfuClient::get_eth_type(uint64_t pkt_type) {
-    if (PacketType(pkt_type) == PacketType::append) {
-	spdlog::debug("Eth type is ETH_APPEND_REQ.");
-        return ETH_APPEND_REQ;
-    }
-    spdlog::critical("No ethernet type found!");
-    return -1; // no ethernet type found
 }
 
 uint64_t CorfuClient::getTail() {

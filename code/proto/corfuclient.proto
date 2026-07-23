@@ -3,7 +3,7 @@ syntax="proto3";
 package corfuclient;
 
 message Payload {
-    int64  packet_type = 1;
+    int64 packet_type = 1;
     int64 clientID = 2;
     int64 threadID = 3;
     optional Append append = 4;

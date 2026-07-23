@@ -3,6 +3,7 @@
 #include "spdlog/spdlog.h"
 #include "ringclient.pb.h"
 #include "structs.h"
+#include "corfu_headers.h"
 // #include "simple_client.h"
 
 /*

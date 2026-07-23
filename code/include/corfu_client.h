@@ -32,58 +32,45 @@ enum PacketType {
 
 class CorfuClient {
 protected:
-	uint64_t cid;
-	uint64_t curr_epoch = 0;
-
-	// map from map[epoch --> map[ranges --> replica sets in that extent (by ssid)]]
-	std::map<uint64_t, std::map<std::pair<uint64_t, uint64_t>, std::vector<std::vector<uint64_t>>>> auxiliary;
-    bool projection_sealed = false;
+	uint32_t cid;
+	uint32_t curr_epoch = 0;
 
 	std::shared_ptr<Network> net;
 
-	uint64_t min_matching_acks = 0;
-
-	std::mutex pkt_q_lock;
-	std::map<PacketType, std::queue<std::unique_ptr<char[]>>> pkt_q;
-	std::vector<std::string> pkt_types;
-	bool started_append = false;
-
+	// ports
 	std::string send_port;
 	std::string recv_port;
+	std::string seq_recv_port;
+	std::string stor_recv_port;
 
-	/* Protocol types */
-	SequencerType seq;
-	//StorageType stor;
+	// ips
+	std::string seq_ip;
+	std::vector<std::string> storage_ips;
 
 	std::thread recv_thread;
 	std::thread append_thread;
 	std::thread duration_thread;
-	
-	std::vector<std::thread> cli_threads;
-	std::vector<std::thread> recv_threads;
 
-	uint64_t global_thread_id;
-	uint64_t thread_id;
+	uint32_t thread_id;
+	uint32_t global_thread_id;
 
-	std::vector<int> get_pkt_eth_types();
-	int get_eth_type(uint64_t pkt_type);
+	std::unique_ptr<struct corfu_cli_header> corfu_hdr;
+	// std::unique_ptr<struct ring_append_entry> append_entry_hdr;
 
-	std::pair<uint64_t, std::vector<std::vector<uint64_t>>> map(uint64_t log_idx);
-
-	std::string seq_ip;
-	std::vector<std::string> storage_ips;
-
+	// auxiliary variables
 	uint64_t num_m_per_extent;
 	uint64_t num_m_per_rep_set;
 	uint64_t extent_size;
+	// map from map[epoch --> map[ranges --> replica sets in that extent (by ssid)]]
+	std::map<uint64_t, std::map<std::pair<uint64_t, uint64_t>, std::vector<std::vector<uint64_t>>>> auxiliary;
+    bool projection_sealed = false;
 
+	// auxiliary functions
 	void setup_auxiliary();
+	std::pair<uint64_t, std::vector<std::vector<uint64_t>>> map(uint64_t log_idx);
 
+	// experiment stuff
 	uint64_t cnt;
-
-	std::string seq_recv_port;
-	std::string stor_recv_port;
-
 	bool full_append;
 
 public:

@@ -80,9 +80,10 @@ protocol_name = "corfu"
 machines_per_extent = 1
 machines_per_replica_set = 1
 extent_range_size = 9999999999
-num_cli_threads = 5
+num_cli_threads = 64
 num_clients = 1
+use_performance = false
 
 
 [[experiment]]
-json_name = "pin_core_test"
+json_name = "sixtyfour_thread_no_protobuf"

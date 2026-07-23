@@ -45,6 +45,7 @@ uint64_t get_shard_switch_id(YAML::Node config);
 uint64_t get_experiment_duration(YAML::Node config);
 uint64_t get_warm_up(YAML::Node config);
 uint64_t get_cool_down(YAML::Node config);
+bool get_use_performance(YAML::Node config);
 
 uint64_t get_payload_size(YAML::Node config);
 

@@ -5,6 +5,7 @@
 #include <thread>
 #include "network.h"
 #include "trace.h"
+#include "corfu_headers.h"
 
 
 enum StorageType {
