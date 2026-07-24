@@ -132,3 +132,10 @@ experiments/client
 experiments/scripts/.venv/
 experiments/scripts/venv/*
 experiments/server
+experiments/pktgen_tests/results/
+experiments/pktgen_tests/lib/
+experiments/pktgen_tests/bin/
+experiments/pktgen_tests/include/
+experiments/pktgen_tests/share/
+experiments/pktgen_tests/lib64
+experiments/pktgen_tests/pyvenv.cfg

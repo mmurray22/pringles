@@ -1,0 +1,13 @@
+{
+    "average_latency_us": 68.12420845833823, 
+    "control_packet_latency_ns": 0.0, 
+    "num_pipelines": 2, 
+    "duration": 10, 
+    "total_number_of_control_packets": 0, 
+    "total_number_of_packets": 1016237229, 
+    "total_loopback": 1, 
+    "total_latency_ns": 69230356831520.0, 
+    "payload_size": 12, 
+    "nsperpkt": 1, 
+    "throughput_pps": 101623722.9
+}
