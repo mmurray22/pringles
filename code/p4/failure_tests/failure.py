@@ -123,6 +123,13 @@ class Tail(Packet):
                     BitField("tail_seq_no", 0, 32),
                     BitField("client_ip", 0, 32),
                     ShortField("recv_port", 0)]
+class StartViewChange(Packet):
+    fields_desc = [ ShortField("current_ring_view", 0),
+                    ShortField("old_ring_view", 0),
+                    ShortField("switch_id", 0),
+                    ShortField("num_shards", 0),
+                    BitField("highest_seen_seq_no", 0, 32)]
+
 
 bind_layers(PktgenTimerHeader, Ether)
 bind_layers(Ether, IP, type=TYPE_IP)

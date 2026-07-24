@@ -295,7 +295,6 @@ parser MyParser(packet_in packet,
     state start {
 	tofino_parser.apply(packet, standard_metadata);
 	transition select(standard_metadata.ingress_port) {
-            56      : parse_pktgen_timer; // Adjust port # for your Pipe
             68      : parse_pktgen_timer; // Adjust port # for your Pipe
             69      : parse_pktgen_timer; // Adjust port # for your Pipe
             70      : parse_pktgen_timer; // Adjust port # for your Pipe
@@ -303,7 +302,7 @@ parser MyParser(packet_in packet,
             140      : parse_pktgen_timer; // Recirculated generated packet!
             168      : parse_pktgen_timer; // Recirculated generated packet!
             172      : parse_pktgen_timer; // Recirculated generated packet!
-            180      : parse_pktgen_timer; // Recirculated generated packet!
+            188      : parse_pktgen_timer; // Recirculated generated packet!
             196      : parse_pktgen_timer; // Recirculated generated packet!
             197      : parse_pktgen_timer; // Recirculated generated packet!
             198      : parse_pktgen_timer; // Recirculated generated packet!
@@ -909,10 +908,6 @@ control MyIngress0(inout headers hdr,
 	meta.num_shards = 1; //get_num_shards.apply();
 	meta.shard_size = 1; //get_shard_size.apply();
 
-	/*if (hdr.ring_type.isValid() && !hdr.timer.isValid()) {
-	    check_switch_routing.apply();
-	}*/
-
 	bit<32> local_seq_no_reg = 0;
 	if (hdr.cntrl.isValid()) {
 		local_seq_no_reg = read_local_seq_no.execute(0);
@@ -947,115 +942,17 @@ control MyIngress0(inout headers hdr,
 	    bit<32> assign_sn = 0;
             bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
 
-	    if (hdr.append.g_idx == 0) {
-		hdr.append.cntrl_pkt_it = cntrl_pkt_it_reg;
-		hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
-		assign_sn = local_seq_no_reg; //write_local_seq_no.execute(0); // Get batchOffset
-	        hdr.append.g_idx = assign_sn;	    
-		zero_gsn.execute(cntrl_pkt_it_reg); // Get Global sequence number
-	    } else {
-		assign_sn = get_gsn.execute(hdr.append.cntrl_pkt_it); // Get Global sequence number
-	    	hdr.append.g_idx = hdr.append.g_idx + assign_sn;	    
+	    // TODO: NO SEQUENCING!!
+	    meta.circulate = 0; // TODO: Only testing sequencing right now!
+	    tot_packet_counter.count(0);
+	    bit<32> overflow = update_low_lat_cntr.execute(0);
+	    if (overflow != 0) {
+	        update_high_lat_cntr.execute(0);
 	    }
-
-	    // Routing determination
-	    if (hdr.append.cntrl_pkt_it == cntrl_pkt_it_reg) {
-		meta.circulate = 1;
-	    } else if (hdr.timer.isValid()) {
-		bit<32> cnt = update_batch_sz.execute(hdr.append.cntrl_pkt_it);
-		if (cnt == 0) {
-		    sub_batch.execute(0);
-		}
-		meta.start_ts = hdr.append.start_ts;
-	        meta.end_ts = standard_metadata.ingress_mac_tstamp;
-	        meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
-
-		meta.circulate = 0; // TODO: Only testing sequencing right now!
-	        tot_packet_counter.count(0);
-	        bit<32> overflow = update_low_lat_cntr.execute(0);
-		if (overflow != 0) {
-		    update_high_lat_cntr.execute(0);
-		}
-
-		// TODO: UNCOMMENT THIS IN A REAL DEPLOYMENT!
-		//hdr.ring_type.type = TYPE_APPEND_RESP;
-	        //recirc_packet_counter.count(0);
-		//bit<32> overflow = update_low_recirc_cntr.execute(0);
-		//if (overflow != 0) {
-		//    update_high_recirc_cntr.execute(0);
-		//}
-	    } else {
-		meta.route_to_shard = 1;
-		if (hdr.append.stream_id == 0) {
-		    hdr.ring_type.shard_id = hdr.append.g_idx;
-		} else {
-		    hdr.ring_type.shard_id = hdr.append.stream_id;
-		}
-	    }
-        } else if ((hdr.ring_type.type == TYPE_APPEND_RESP && hdr.append.isValid()) || (hdr.ring_type.type == TYPE_READ && meta.read_process == 1)) {
-            bit<32> ready_for_ack = 1;
-	    if (hdr.ring_type.type == TYPE_APPEND_RESP) {
-                bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
-		ready_for_ack = compare_gsn.execute(cntrl_pkt_it_reg);
-	    }
-	    if (ready_for_ack == 1) {
-		bit<32> slot = get_ack_idx.execute(0);
-		bit<32> ack_ready = check_ack.execute(slot);
-		if (ack_ready == 1) {
-		    if (hdr.timer.isValid()) {
-	                meta.start_ts = hdr.append.start_ts;
-	                meta.end_ts = standard_metadata.ingress_mac_tstamp;
-			meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
-	        	tot_packet_counter.count(0);
-	        	bit<32> overflow = update_low_lat_cntr.execute(0);
-			if (overflow != 0) {
-			    update_high_lat_cntr.execute(0);
-			}
-		        //meta.route_to_client = 1;
-			drop();
-		    } else if (hdr.append.isValid() && !hdr.timer.isValid()) {
-		        meta.send_acks = 1;
-		        meta.route_to_client = 1;
-		        write_replicated_seq_no.execute(0);
-		    } else if (hdr.read.isValid()) {
-		        meta.route_to_shard = 1;
-			hdr.ring_type.shard_id = hdr.read.g_idx;
-		    }
-		} else {
-		    drop();
-		}
-	    } else {
-		meta.circulate = 1; // TODO: READ???
-	    }
-	} else if (hdr.ring_type.type == TYPE_READ_RESP) {
-	    meta.route_to_client = 1; // NOTE: Currently not waiting for read quorum!
-	} else if (hdr.tail.isValid()) {
-	    bit<32> tail_seq = hdr.tail.tail_seq_no;
-	    hdr.tail.tail_seq_no = get_tail.execute(0);
-	    if (hdr.tail.tail_seq_no == 0) {
-		hdr.tail.tail_seq_no = tail_seq;
-	    }
-	    process_tail.apply();
-	} else if (hdr.start_view.isValid()) {
-            bit<16> cntrl_pkt_it_reg = latest_complete_cntrl_pkt_it.execute(0);
-	    hdr.start_view.highest_seen_seq_no = get_gsn.execute(cntrl_pkt_it_reg); 
-	    get_switch_id.apply();
-	    hdr.start_view.switch_id = meta.switch_id;
-	    get_ring_view.apply();
-	    hdr.start_view.old_ring_view = meta.ring_view;
 	}
 
 
 	/********* ROUTING LOGIC ***********/
-	/*if (hdr.timer.isValid() && meta.get_pkt_gen == 1) { // All generated packet are appends
-	    meta.start_ts = hdr.append.start_ts;
-	    meta.end_ts = standard_metadata.ingress_mac_tstamp;
-	    meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
-	    meta.nonce = hdr.append.cntrl_pkt_it; //g_idx;
-	    meta.seq_no = hdr.append.g_idx;
-	    ig_dprsr_md.digest_type = 1;
-	}*/
-
 	if (meta.route_to_client == 1) {
             ipv4_lpm.apply();
         }
@@ -1250,7 +1147,7 @@ control MyIngress1(inout headers hdr,
     };
 
     //////// Performance Statistics (Packet Gen) /////////
-    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter_pipe_one; 
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter; 
     Register<bit<32>, bit<1>>(1, 0) latency_lower; 
     RegisterAction<bit<32>, bit<1>, bit<32>>(latency_lower) update_low_lat_cntr = {
         void apply(inout bit<32> new_lat_cntr, out bit<32> overflow) {
@@ -1595,10 +1492,6 @@ control MyIngress1(inout headers hdr,
 	meta.num_shards = 1; //get_num_shards.apply();
 	meta.shard_size = 1; //get_shard_size.apply();
 
-	/*if (hdr.ring_type.isValid() && !hdr.timer.isValid()) {
-	    check_switch_routing.apply();
-	}*/
-
 	bit<32> local_seq_no_reg = 0;
 	if (hdr.cntrl.isValid()) {
 		local_seq_no_reg = read_local_seq_no.execute(0);
@@ -1633,115 +1526,17 @@ control MyIngress1(inout headers hdr,
 	    bit<32> assign_sn = 0;
             bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
 
-	    if (hdr.append.g_idx == 0) {
-		hdr.append.cntrl_pkt_it = cntrl_pkt_it_reg;
-		hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
-		assign_sn = local_seq_no_reg; //write_local_seq_no.execute(0); // Get batchOffset
-	        hdr.append.g_idx = assign_sn;	    
-		zero_gsn.execute(cntrl_pkt_it_reg); // Get Global sequence number
-	    } else {
-		assign_sn = get_gsn.execute(hdr.append.cntrl_pkt_it); // Get Global sequence number
-	    	hdr.append.g_idx = hdr.append.g_idx + assign_sn;	    
+	    // TODO: NO SEQUENCING!!
+	    meta.circulate = 0; // TODO: Only testing sequencing right now!
+	    tot_packet_counter.count(0);
+	    bit<32> overflow = update_low_lat_cntr.execute(0);
+	    if (overflow != 0) {
+	        update_high_lat_cntr.execute(0);
 	    }
-
-	    // Routing determination
-	    if (hdr.append.cntrl_pkt_it == cntrl_pkt_it_reg) {
-		meta.circulate = 1;
-	    } else if (hdr.timer.isValid()) {
-		bit<32> cnt = update_batch_sz.execute(hdr.append.cntrl_pkt_it);
-		if (cnt == 0) {
-		    sub_batch.execute(0);
-		}
-		meta.start_ts = hdr.append.start_ts;
-	        meta.end_ts = standard_metadata.ingress_mac_tstamp;
-	        meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
-
-		meta.circulate = 0; // TODO: Only testing sequencing right now!
-	        tot_packet_counter_pipe_one.count(0);
-	        bit<32> overflow = update_low_lat_cntr.execute(0);
-		if (overflow != 0) {
-		    update_high_lat_cntr.execute(0);
-		}
-
-		// TODO: UNCOMMENT THIS IN A REAL DEPLOYMENT!
-		//hdr.ring_type.type = TYPE_APPEND_RESP;
-	        //recirc_packet_counter.count(0);
-		//bit<32> overflow = update_low_recirc_cntr.execute(0);
-		//if (overflow != 0) {
-		//    update_high_recirc_cntr.execute(0);
-		//}
-	    } else {
-		meta.route_to_shard = 1;
-		if (hdr.append.stream_id == 0) {
-		    hdr.ring_type.shard_id = hdr.append.g_idx;
-		} else {
-		    hdr.ring_type.shard_id = hdr.append.stream_id;
-		}
-	    }
-        } else if ((hdr.ring_type.type == TYPE_APPEND_RESP && hdr.append.isValid()) || (hdr.ring_type.type == TYPE_READ && meta.read_process == 1)) {
-            bit<32> ready_for_ack = 1;
-	    if (hdr.ring_type.type == TYPE_APPEND_RESP) {
-                bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
-		ready_for_ack = compare_gsn.execute(cntrl_pkt_it_reg);
-	    }
-	    if (ready_for_ack == 1) {
-		bit<32> slot = get_ack_idx.execute(0);
-		bit<32> ack_ready = check_ack.execute(slot);
-		if (ack_ready == 1) {
-		    if (hdr.timer.isValid()) {
-	                meta.start_ts = hdr.append.start_ts;
-	                meta.end_ts = standard_metadata.ingress_mac_tstamp;
-			meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
-	        	tot_packet_counter_pipe_one.count(0);
-	        	bit<32> overflow = update_low_lat_cntr.execute(0);
-			if (overflow != 0) {
-			    update_high_lat_cntr.execute(0);
-			}
-		        //meta.route_to_client = 1;
-			drop();
-		    } else if (hdr.append.isValid() && !hdr.timer.isValid()) {
-		        meta.send_acks = 1;
-		        meta.route_to_client = 1;
-		        write_replicated_seq_no.execute(0);
-		    } else if (hdr.read.isValid()) {
-		        meta.route_to_shard = 1;
-			hdr.ring_type.shard_id = hdr.read.g_idx;
-		    }
-		} else {
-		    drop();
-		}
-	    } else {
-		meta.circulate = 1; // TODO: READ???
-	    }
-	} else if (hdr.ring_type.type == TYPE_READ_RESP) {
-	    meta.route_to_client = 1; // NOTE: Currently not waiting for read quorum!
-	} else if (hdr.tail.isValid()) {
-	    bit<32> tail_seq = hdr.tail.tail_seq_no;
-	    hdr.tail.tail_seq_no = get_tail.execute(0);
-	    if (hdr.tail.tail_seq_no == 0) {
-		hdr.tail.tail_seq_no = tail_seq;
-	    }
-	    process_tail.apply();
-	} else if (hdr.start_view.isValid()) {
-            bit<16> cntrl_pkt_it_reg = latest_complete_cntrl_pkt_it.execute(0);
-	    hdr.start_view.highest_seen_seq_no = get_gsn.execute(cntrl_pkt_it_reg); 
-	    get_switch_id.apply();
-	    hdr.start_view.switch_id = meta.switch_id;
-	    get_ring_view.apply();
-	    hdr.start_view.old_ring_view = meta.ring_view;
 	}
 
 
 	/********* ROUTING LOGIC ***********/
-	/*if (hdr.timer.isValid() && meta.get_pkt_gen == 1) { // All generated packet are appends
-	    meta.start_ts = hdr.append.start_ts;
-	    meta.end_ts = standard_metadata.ingress_mac_tstamp;
-	    meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
-	    meta.nonce = hdr.append.cntrl_pkt_it; //g_idx;
-	    meta.seq_no = hdr.append.g_idx;
-	    ig_dprsr_md.digest_type = 1;
-	}*/
-
 	if (meta.route_to_client == 1) {
             ipv4_lpm.apply();
         }
@@ -1767,6 +1562,7 @@ control MyIngress1(inout headers hdr,
 	}
      }
 }
+
 
 control MyIngressDeparser(
  packet_out packet,
@@ -1882,6 +1678,29 @@ parser MyEgressParser(packet_in packet,
 }
 
 control MyEgress0(inout headers hdr,
+                 inout metadata meta,
+                 in egress_intrinsic_metadata_t standard_metadata,
+		 in egress_intrinsic_metadata_from_parser_t eg_prsr_md,
+		 inout egress_intrinsic_metadata_for_deparser_t eg_dprsr_md,
+		 inout egress_intrinsic_metadata_for_output_port_t eg_oport_md) {
+
+    Register<bit<32>, bit<1>>(1, 0) queue_cnt; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(queue_cnt) curr_queue_cnt = {
+        void apply(inout bit<32> new_queue_cnt) {
+	    new_queue_cnt = meta.queue_congest;
+	}
+    };
+    apply { 
+	if (eg_dprsr_md.mirror_type != 0) {
+            hdr.ring_type.type = TYPE_SUB_RESP;
+	}
+	if (hdr.timer.isValid()) {
+            meta.queue_congest = (bit<32>)(standard_metadata.deq_qdepth);
+            curr_queue_cnt.execute(0);
+	}
+    }
+}
+control MyEgress1(inout headers hdr,
                  inout metadata meta,
                  in egress_intrinsic_metadata_t standard_metadata,
 		 in egress_intrinsic_metadata_from_parser_t eg_prsr_md,

@@ -1392,91 +1392,96 @@ class SequencingTest(BfRuntimeTest):
         
         run_setup = True
         use_pktgen = True
-        if run_setup:
-            # Initialize all 5, 21, 3, 19, 23, 7 ports (332244)
-	    self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring, pktgen_loopback_port)
 
-            ####################### SETUP MATCH-ACTION TABLES ##########################
-            global_group_id = 1
-            # if use_pktgen:
-            #     self.setup_circulate_table(target, bfrt_info, pktgen_loopback_port)
-                ##self.setup_ack_const(target, bfrt_info, 1)
-                ##self.setup_num_shard_const(self, target, bfrt_info, 1)
-                ##self.setup_shard_size_const(self, target, bfrt_info, 1)
-            #else:
-            self.setup_circulate_table(target, bfrt_info, loopback_port)
-            #self.setup_ack_const(target, bfrt_info, ack_threshold)
-            #self.setup_num_shard_const(self, target, bfrt_info, num_shards)
-            #self.setup_shard_size_const(self, target, bfrt_info, shard_size)
-            
-            # ipv4_lpm
-            self.setup_client_response_table(target, bfrt_info, client_ips) 
-            # Shard port
-            self.setup_shard_multicast_groups(target, bfrt_info, shard_to_port_gp)
-            # Check switch routing
-            #self.setup_switch_check(target, bfrt_info, size_of_ring, ports_to_ring_members)
-            # Cntrl ID -> IP
-            self.setup_cntrl_table(target, bfrt_info, in_cntrl, out_cntrl, cntrl_port)
-            # Ring View
-            #self.setup_view_check(target, bfrt_info) TODO
-            # Tail
-            self.setup_tail_table(target, bfrt_info, size_of_ring, cntrl_port)
-            # Subscription 
-            self.setup_subscribe_routing_table(target, bfrt_info, ports_to_ring_members, cpu_port)
-            # Acknowledgement tables (primarily handle subscription responses)
-            self.setup_subscriber_acks_table(target, bfrt_info)
-        
-        ######################## SETUP DATA PLANE LISTENER
-        recv_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(bfrt_info,target,cpu_interface,))
-        recv_thread.start()
-        time.sleep(2)
-        
-                # ============================================== UNIT TESTS ================================================= #
-        # Test connection SIMPLE
-        #self.test_connection(dstAddr,srcAddr,ipAddr,cpu_interface)
+	self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring, pktgen_loopback_port)
+        #self.setup_cntrl_table(target, bfrt_info, in_cntrl, out_cntrl, cntrl_port)
+        self.send_test_cntrl_packet(cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl,0)
 
-        # Multicast Test - DONE
-        # print("BEGIN MULTICAST TEST")
-        #self.send_multicast_packet(cpu_interface,dest_addr,dest_addr,ipv4_sent)
+        #if run_setup:
+        #    # Initialize all 5, 21, 3, 19, 23, 7 ports (332244)
+	#    self.setup_switch_ports(target, list_of_switch_ports, loopback_port, cntrl_port, port_speed, port_fec, size_of_ring, pktgen_loopback_port)
 
-        # Simple Ack test - DONE
-        #g_idx = 0
-        #self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr,g_idx)
-        #self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr,g_idx)
+        #    ####################### SETUP MATCH-ACTION TABLES ##########################
+        #    global_group_id = 1
+        #    # if use_pktgen:
+        #    #     self.setup_circulate_table(target, bfrt_info, pktgen_loopback_port)
+        #        ##self.setup_ack_const(target, bfrt_info, 1)
+        #        ##self.setup_num_shard_const(self, target, bfrt_info, 1)
+        #        ##self.setup_shard_size_const(self, target, bfrt_info, 1)
+        #    #else:
+        #    #self.setup_circulate_table(target, bfrt_info, loopback_port)
+        #    #self.setup_ack_const(target, bfrt_info, ack_threshold)
+        #    #self.setup_num_shard_const(self, target, bfrt_info, num_shards)
+        #    #self.setup_shard_size_const(self, target, bfrt_info, shard_size)
+        #    
+        #    # ipv4_lpm
+        #    self.setup_client_response_table(target, bfrt_info, client_ips) 
+        #    # Shard port
+        #    self.setup_shard_multicast_groups(target, bfrt_info, shard_to_port_gp)
+        #    # Check switch routing
+        #    #self.setup_switch_check(target, bfrt_info, size_of_ring, ports_to_ring_members)
+        #    # Cntrl ID -> IP
+        #    self.setup_cntrl_table(target, bfrt_info, in_cntrl, out_cntrl, cntrl_port)
+        #    # Ring View
+        #    #self.setup_view_check(target, bfrt_info) TODO
+        #    # Tail
+        #    self.setup_tail_table(target, bfrt_info, size_of_ring, cntrl_port)
+        #    # Subscription 
+        #    self.setup_subscribe_routing_table(target, bfrt_info, ports_to_ring_members, cpu_port)
+        #    # Acknowledgement tables (primarily handle subscription responses)
+        #    self.setup_subscriber_acks_table(target, bfrt_info)
+        #
+        ######################### SETUP DATA PLANE LISTENER
+        #recv_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(bfrt_info,target,cpu_interface,))
+        #recv_thread.start()
+        #time.sleep(2)
+        #
+        #        # ============================================== UNIT TESTS ================================================= #
+        ## Test connection SIMPLE
+        ##self.test_connection(dstAddr,srcAddr,ipAddr,cpu_interface)
 
-        # Subscribe test - DONE
-        #self.test_subscribe_one_switch(cpu_interface, dstAddr, srcAddr, ipAddr)
+        ## Multicast Test - DONE
+        ## print("BEGIN MULTICAST TEST")
+        ##self.send_multicast_packet(cpu_interface,dest_addr,dest_addr,ipv4_sent)
 
-        # Tail test - DONE
-        if use_pktgen:
-            self.send_test_cntrl_packet(cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl,0)
-            self.setup_timer_pkt_gen(bfrt_info, target, 1, dstAddr, srcAddr, ipAddr, payload_size, in_cntrl, cpu_interface)
-	    #pktgen_thread = threading.Thread(target=self.process_pktgen, args=(bfrt_info, target, cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl))
-            #pktgen_thread.start()
-            #pktgen_thread.join()
-	else:
-            self.test_tail(cpu_interface, dstAddr, srcAddr, ipAddr, in_cntrl)
+        ## Simple Ack test - DONE
+        ##g_idx = 0
+        ##self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr,g_idx)
+        ##self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr,g_idx)
 
-        ####### TEST 1: End-to-end sequencing test ######
-        # Send one append
-        #self.send_test_append_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
-        # Send cntrl packet (just once)
-        #self.send_test_cntrl_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
-        # Ack Test
-        #self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
-        #self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
-        
-        # Append test
-        
-        # Read test
-        
-        # Tail test
-        
-        # Subscribe test
+        ## Subscribe test - DONE
+        ##self.test_subscribe_one_switch(cpu_interface, dstAddr, srcAddr, ipAddr)
 
-        ####### TEST 2: Packet generation test ######
+        ## Tail test - DONE
+        #if use_pktgen:
+        #    self.send_test_cntrl_packet(cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl,0)
+        #    self.setup_timer_pkt_gen(bfrt_info, target, 1, dstAddr, srcAddr, ipAddr, payload_size, in_cntrl, cpu_interface)
+	#    #pktgen_thread = threading.Thread(target=self.process_pktgen, args=(bfrt_info, target, cpu_interface,dstAddr,srcAddr,ipAddr,in_cntrl))
+        #    #pktgen_thread.start()
+        #    #pktgen_thread.join()
+	#else:
+        #    self.test_tail(cpu_interface, dstAddr, srcAddr, ipAddr, in_cntrl)
 
-        # Tofino Listener join
-        print("Waiting to join threads!")
-        recv_thread.join()
+        ######## TEST 1: End-to-end sequencing test ######
+        ## Send one append
+        ##self.send_test_append_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
+        ## Send cntrl packet (just once)
+        ##self.send_test_cntrl_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
+        ## Ack Test
+        ##self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
+        ##self.send_test_ack_packet(cpu_interface,dstAddr,srcAddr,ipAddr)
+        #
+        ## Append test
+        #
+        ## Read test
+        #
+        ## Tail test
+        #
+        ## Subscribe test
+
+        ######## TEST 2: Packet generation test ######
+
+        ## Tofino Listener join
+        #print("Waiting to join threads!")
+        #recv_thread.join()
 
