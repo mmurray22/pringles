@@ -39,7 +39,7 @@ protected:
 
 	// ports
 	std::string send_port;
-	std::string recv_port;
+	uint64_t recv_port;
 	std::string seq_recv_port;
 	std::string stor_recv_port;
 

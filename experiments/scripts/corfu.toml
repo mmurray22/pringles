@@ -26,7 +26,7 @@ recv_port = "30005"
 send_port = "30004"
 
 stor_recv_port = "30003"
-seq_recv_port = "30002"
+seq_recv_port = "60008"
 
 # SSH key 
 ssh_key = "/proj/ove-PG0/colang/ssh/cloudlab"
@@ -80,10 +80,10 @@ protocol_name = "corfu"
 machines_per_extent = 1
 machines_per_replica_set = 1
 extent_range_size = 9999999999
-num_cli_threads = 64
+num_cli_threads = 16
 num_clients = 1
-use_performance = false
+use_performance = false # remember to also uncomment stuff in experiment.py
 
 
 [[experiment]]
-json_name = "sixtyfour_thread_no_protobuf"
+json_name = "sec_epic_perf_test"

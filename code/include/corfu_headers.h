@@ -24,8 +24,9 @@
 // REQUIRED FOR ALL PACKETS
 struct corfu_cli_header {
     uint16_t proto_type;
-    uint32_t client_id;
+    uint32_t client_ip;
     uint32_t thread_id;
+    uint16_t recv_port;
 };
 
 struct corfu_seq_header {

@@ -10,6 +10,10 @@
 #include "trace.h"
 #include "corfu_headers.h"
 
+#include <tbb/concurrent_vector.h>
+#include <tbb/concurrent_hash_map.h>
+#include <tbb/concurrent_unordered_set.h>
+
 #include "structs.h"
 
 #define TIMEOUT std::chrono::seconds(10)
@@ -25,18 +29,23 @@ class CorfuSequencer {
         void wait_to_finish();
 
     protected:
-        void run_sequencer_thread();
+        void run_sequencer_thread(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id);
 
     private:
         std::shared_ptr<Network> net;
         std::thread sequencer_thread;
         std::atomic<uint64_t> curr_idx;
         std::atomic<bool> terminate;
+        std::vector<int> append_socket;
+        struct in_addr addr;
 
         std::vector<std::string> cli_ips;
 
         std::unique_ptr<struct corfu_seq_header> header;
         std::unique_ptr<struct corfu_gettoken_reply> gettoken_reply;
+
+        tbb::concurrent_vector<std::thread> append_req_threads;
+	    tbb::concurrent_vector<std::thread> append_resp_threads;
 
         uint64_t send_port;
 
