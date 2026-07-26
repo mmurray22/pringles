@@ -464,6 +464,13 @@ class SequencingTest(BfRuntimeTest):
 	else:
 	    self.port_setup(target, control_port, False, port_speed, port_fec)
 
+    def setup_all_switch_ports(self, target, loop_ports, no_loop_ports, port_speed, port_fec):
+        print(loop_ports)
+        print(no_loop_ports)
+	for i in loop_ports:
+	    self.port_setup(target, i, True, port_speed, port_fec)
+        for i in no_loop_ports:
+	    self.port_setup(target, i, False, port_speed, port_fec)
 
     def port_setup(self, target, port, use_loopback, port_speed, port_fec):
         logger.info("Test Port cfg table add and read operations")
@@ -1430,6 +1437,7 @@ class SequencingTest(BfRuntimeTest):
 
         nsperpkt = data['nsperpkt']
         duration = data['duration']
+        wait_time = data['wait_time']
         warmup = 5
         cooldown = 5
         buffer_time = 10
@@ -1451,6 +1459,24 @@ class SequencingTest(BfRuntimeTest):
         self.target1 = gc.Target(device_id=0, pipe_id=0x01)
         #self.update_registers(bfrt_info)
 
+        loop_ports = set()
+        no_loop_ports = set()
+        for pipe_cfg in pipes_cfg:
+            for port in pipe_cfg['loopback_ports']:
+                loop_ports.add(port)
+            for port in pipe_cfg['ports_to_ring_members']:
+                no_loop_ports.add(port)
+            for port in pipe_cfg['switch_ports']:
+                no_loop_ports.add(port)
+            if pipe_cfg['cntrl_port_is_loopback'] == True:
+                loop_ports.add(pipe_cfg['cntrl_port'])
+            else:
+                no_loop_ports.add(pipe_cfg['cntrl_port'])
+
+
+	#self.setup_switch_ports(self.target, list_of_switch_ports, loopback_ports, cntrl_port, port_speed, port_fec, is_cntrl_pkt_loopback)
+	self.setup_all_switch_ports(self.target, loop_ports, no_loop_ports, port_speed, port_fec)
+
 	for pipe_cfg in pipes_cfg:
 	    loopback_ports = pipe_cfg['loopback_ports']
 	    ports_to_ring_members = pipe_cfg['ports_to_ring_members']
@@ -1465,7 +1491,7 @@ class SequencingTest(BfRuntimeTest):
 
 	    if run_setup:
 	        # Initialize this pipe's front-panel/loopback ports
-	        self.setup_switch_ports(self.target, list_of_switch_ports, loopback_ports, cntrl_port, port_speed, port_fec, is_cntrl_pkt_loopback)
+	        #self.setup_switch_ports(self.target, list_of_switch_ports, loopback_ports, cntrl_port, port_speed, port_fec, is_cntrl_pkt_loopback)
 
 	        ####################### SETUP MATCH-ACTION TABLES (this pipe) ##########################
 	        print("Pipe {} - Number of loopback ports: {}".format(pipe_id , len(loopback_ports)))
@@ -1482,10 +1508,11 @@ class SequencingTest(BfRuntimeTest):
 	    print("Sending control packet!")
 	    self.send_test_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, in_cntrl, 0)
 
+	time.sleep(wait_time)
         for pipe_cfg in pipes_cfg:
-            if pipe_cfg['pipe_id'] == 0: #TODO numpgen_ports should not be 2?
+            if pipe_cfg['pipe_id'] == 0 and pipe_cfg['active_pipe']: #TODO numpgen_ports should not be 2?
                 self.setup_timer_pkt_gen(bfrt_info, self.target0, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, tot_num_recirc_ports, 2, pipe_cfg['pipe_id'])
-            else:
+            elif pipe_cfg['pipe_id'] == 1 and pipe_cfg['active_pipe']:
                 self.setup_timer_pkt_gen(bfrt_info, self.target1, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, tot_num_recirc_ports, 2, pipe_cfg['pipe_id'])
 
 	## Both pipes' generators are now running concurrently -- wait once for the

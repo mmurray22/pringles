@@ -303,7 +303,6 @@ parser MyParser(packet_in packet,
             140      : parse_pktgen_timer; // Recirculated generated packet!
             168      : parse_pktgen_timer; // Recirculated generated packet!
             172      : parse_pktgen_timer; // Recirculated generated packet!
-            180      : parse_pktgen_timer; // Recirculated generated packet!
             196      : parse_pktgen_timer; // Recirculated generated packet!
             197      : parse_pktgen_timer; // Recirculated generated packet!
             198      : parse_pktgen_timer; // Recirculated generated packet!
