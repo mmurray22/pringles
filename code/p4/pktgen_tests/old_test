@@ -453,24 +453,18 @@ class SequencingTest(BfRuntimeTest):
 
     
     ###################### PORT SETUP ##############################
-    def setup_switch_ports(self, target, switch_ports, loopback_ports, control_port, port_speed, port_fec, cntrl_port_loopback):
+    def setup_switch_ports(self, target, switch_ports, loopback_ports, control_port, port_speed, port_fec, size_of_ring):
         print(switch_ports)
 	for i in switch_ports:
 	    self.port_setup(target, i, False, port_speed, port_fec)
         for recirc_port in loopback_ports:
 	    self.port_setup(target, recirc_port, True, port_speed, port_fec)
-	if cntrl_port_loopback:
+	if size_of_ring == 1:
+            print("!!!!!!!!!!!!!!!!!!!!! SIZE OF THE RING IS DEFINITELY 1!!")
 	    self.port_setup(target, control_port, True, port_speed, port_fec)
 	else:
 	    self.port_setup(target, control_port, False, port_speed, port_fec)
 
-    def setup_all_switch_ports(self, target, loop_ports, no_loop_ports, port_speed, port_fec):
-        print(loop_ports)
-        print(no_loop_ports)
-	for i in loop_ports:
-	    self.port_setup(target, i, True, port_speed, port_fec)
-        for i in no_loop_ports:
-	    self.port_setup(target, i, False, port_speed, port_fec)
 
     def port_setup(self, target, port, use_loopback, port_speed, port_fec):
         logger.info("Test Port cfg table add and read operations")
@@ -511,43 +505,22 @@ class SequencingTest(BfRuntimeTest):
                     [table_ipv4.make_key([gc.KeyTuple('hdr.ipv4.dstAddr', client_ip_and_port[0], prefix_len=32)])],
                     [table_ipv4.make_data(action_name="MyIngress.ipv4_forward", data_field_list_in=[gc.DataTuple(name="dstAddr", val=client_ip_and_port[1]), gc.DataTuple(name="port", val=int(client_ip_and_port[2]))])])
 
-    def setup_circulate_table(self, bfrt_info, recirc_ports, pipe_idx):
+    def setup_circulate_table(self, target, bfrt_info, recirc_ports):
         # Circulate_table: If meta.circulate is set to 1, send packet to the loopback port
-        # Set all pipes to be in different scopes. Also known as Single scope
-        table_circulate = bfrt_info.table_get("MyIngress{}.circulate_table".format(pipe_idx))
-        table_circulate.attribute_entry_scope_set(self.target,
-                predefined_pipe_scope=True,
-                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
-
+        table_circulate = bfrt_info.table_get("MyIngress.circulate_table")
         table_circulate.info.key_field_annotation_add("meta.port_idx", "bit<8>")
-        if pipe_idx == 0:
-            for i in range(0, len(recirc_ports)):
-                print("Recirc port idx: {} and port {}".format(i, recirc_ports[i]))
-                table_circulate.entry_add(
-                        self.target0, 
-                        [table_circulate.make_key([gc.KeyTuple('meta.port_idx', i)])],
-                        [table_circulate.make_data(action_name="MyIngress{}.circulate_port".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=recirc_ports[i])])])
-        else:
-            for i in range(0, len(recirc_ports)):
-                print("Recirc port idx: {} and port {}".format(i, recirc_ports[i]))
-                table_circulate.entry_add(
-                        self.target1, 
-                        [table_circulate.make_key([gc.KeyTuple('meta.port_idx', i)])],
-                        [table_circulate.make_data(action_name="MyIngress{}.circulate_port".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=recirc_ports[i])])])
+        for i in range(0, len(recirc_ports)):
+            print("Recirc port idx: {} and port {}".format(i, recirc_ports[i]))
+            table_circulate.entry_add(
+                    target, 
+                    [table_circulate.make_key([gc.KeyTuple('meta.port_idx', i)])],
+                    [table_circulate.make_data(action_name="MyIngress.circulate_port", data_field_list_in=[gc.DataTuple(name="port", val=recirc_ports[i])])])
     
-    def setup_recirc_port_table(self, bfrt_info, tot_num_recirc_ports,pipe_idx):
-        table_recirc = bfrt_info.table_get("MyIngress{}.num_recirc_port_table".format(pipe_idx))
-        table_recirc.attribute_entry_scope_set(self.target,
-                predefined_pipe_scope=True,
-                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
-        if pipe_idx == 0:
-            table_recirc.default_entry_set(
-                    self.target0, 
-                    table_recirc.make_data(action_name="MyIngress{}.get_num_recirc".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="num_recirc_ports", val=tot_num_recirc_ports)]))
-        else:
-            table_recirc.default_entry_set(
-                    self.target1, 
-                    table_recirc.make_data(action_name="MyIngress{}.get_num_recirc".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="num_recirc_ports", val=tot_num_recirc_ports)]))
+    def setup_recirc_port_table(self, target, bfrt_info, tot_num_recirc_ports):
+        table_recirc = bfrt_info.table_get("MyIngress.num_recirc_port_table")
+        table_recirc.default_entry_set(
+                target, 
+                table_recirc.make_data(action_name="MyIngress.get_num_recirc", data_field_list_in=[gc.DataTuple(name="num_recirc_ports", val=tot_num_recirc_ports)]))
 
     def setup_ack_const(self, target, bfrt_info, ack_threshold):
         table_ack = bfrt_info.table_get("MyIngress.get_ack_threshold")
@@ -602,26 +575,14 @@ class SequencingTest(BfRuntimeTest):
                 [table_process.make_key([gc.KeyTuple('hdr.ring_type.switch_to_process', switch_id)])],
                 [table_process.make_data(action_name="MyIngress.route_next_switch", data_field_list_in=[gc.DataTuple(name="port", val=ports_to_ring_members[i])])])
 
-    def setup_cntrl_table(self, bfrt_info, in_cntrl, out_cntrl, cntrl_port, pipe_idx):
+    def setup_cntrl_table(self, target, bfrt_info, in_cntrl, out_cntrl, cntrl_port):
         # Cntrl ID -> Send Port
-        table_cntrl = bfrt_info.table_get("MyIngress{}.cntrl_id_to_ip".format(pipe_idx))
-        table_cntrl.attribute_entry_scope_set(self.target,
-                predefined_pipe_scope=True,
-                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
-
+        table_cntrl = bfrt_info.table_get("MyIngress.cntrl_id_to_ip")
         table_cntrl.info.key_field_annotation_add("hdr.cntrl.pkt_id", "bit<32>")
-        if pipe_idx == 1:
-             table_cntrl.entry_add(
-                     self.target1, 
-                     [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.pkt_id', in_cntrl)])],
-                     [table_cntrl.make_data(action_name="MyIngress{}.cntrl_forward".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=cntrl_port), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
-        else:
-             table_cntrl.entry_add(
-                     self.target0, 
-                     [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.pkt_id', in_cntrl)])],
-                     [table_cntrl.make_data(action_name="MyIngress{}.cntrl_forward".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=cntrl_port), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
-
-
+        table_cntrl.entry_add(
+                target, 
+                [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.pkt_id', in_cntrl)])],
+                [table_cntrl.make_data(action_name="MyIngress.cntrl_forward", data_field_list_in=[gc.DataTuple(name="port", val=cntrl_port), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
 
     def setup_view_check(self, target, bfrt_info): # Is this all that needs to be done for cntrl packet view change?
         # Ring View
@@ -819,7 +780,7 @@ class SequencingTest(BfRuntimeTest):
         while (time.time() - start_time) < duration:
 	    time.sleep(1)
             # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
-            tm_queue_tbl = bfrt_info.table_get("MyEgress.queue_cnt")
+            tm_queue_tbl = bfrt_info.table_get("pipe.MyEgress.queue_cnt")
 	    queue_val = tm_queue_tbl.entry_get(
 	        target,
 	        [tm_queue_tbl.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
@@ -827,7 +788,7 @@ class SequencingTest(BfRuntimeTest):
 	    )
 	    data, _ = next(queue_val)
 	    data_dict = data.to_dict()
-            print("Queue Activities: {}".format(data_dict["MyEgress.queue_cnt.f1"][1]))
+            print("Queue Activities: {}".format(data_dict['MyEgress.queue_cnt.f1'][1]))
 
     def process_pktgen(self, bfrt_info, target, interface, in_cntrl):
         # TODO
@@ -844,7 +805,7 @@ class SequencingTest(BfRuntimeTest):
         duration = 10 # PARAMETERIZE TODO
 	time.sleep(duration)
 	# 1. Get a reference to the counter table
-	counter_table = bfrt_info.table_get("MyIngress.tot_packet_counter")
+	counter_table = bfrt_info.table_get("pipe.MyIngress.tot_packet_counter")
 	
 	# 3. Request the entry at index 0
 	# 'from_hw=True' ensures you get the latest count from the ASIC registers, 
@@ -980,7 +941,7 @@ class SequencingTest(BfRuntimeTest):
     def make_port(self, pipe, local_port):
         return (pipe << 7) | local_port
 
-    def setup_timer_pkt_gen(self, bfrt_info, target, pkt_gen_app_id, dstAddr, srcAddr, ip_addr, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, num_recircs, num_pgen_ports, pipe_id):
+    def setup_timer_pkt_gen(self, bfrt_info, target, pkt_gen_app_id, dstAddr, srcAddr, ip_addr, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, num_recircs, num_pgen_ports):
         logger.info("=============== Testing Packet Generator trigger by Timer ===============")
         pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         pktgen_pkt_buffer_table = bfrt_info.table_get("$PKTGEN_PKT_BUFFER")
@@ -1008,7 +969,7 @@ class SequencingTest(BfRuntimeTest):
         pktlen = len(raw_p) #92 bytes: ethernet + ip + udp + ring_type + append
         print("Length of the packet being sent is: {}".format(pktlen))
 
-        pgen_pipe_id = pipe_id
+        pgen_pipe_id = 1
         for i in range(0, num_pgen_ports):
             src_port = self.pgen_port(pgen_pipe_id, i)
             # B x P to emulate 100G of client traffic
@@ -1104,80 +1065,30 @@ class SequencingTest(BfRuntimeTest):
                 raise e
             finally:
                 pass
-    
-    def update_registers(self, bfrt_info):
-	counter_table = bfrt_info.table_get("MyIngress.tot_packet_counter")
-        counter_table.attribute_entry_scope_set(self.target,
-                predefined_pipe_scope=True,
-                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
 
-        low_lat_table = bfrt_info.table_get("MyIngress.latency_lower")
-        low_lat_table.attribute_entry_scope_set(self.target,
-                predefined_pipe_scope=True,
-                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
-
-        high_lat_table = bfrt_info.table_get("MyIngress.latency_higher")
-        high_lat_table.attribute_entry_scope_set(self.target,
-                predefined_pipe_scope=True,
-                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
-
-        cntrl_table = bfrt_info.table_get("MyIngress.cntrl_packet_counter")
-        cntrl_table.attribute_entry_scope_set(self.target,
-                predefined_pipe_scope=True,
-                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
-
-        cntrl_lat_table = bfrt_info.table_get("MyIngress.ring_trip_time")
-        cntrl_lat_table.attribute_entry_scope_set(self.target,
-                predefined_pipe_scope=True,
-                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
-
-    def get_final_pktgen_stats(self, bfrt_info, target, duration, nsperpkt, num_recircs, pipe_id, ingress_num, num_pipelines, payload_size):
+    def get_final_pktgen_stats(self, bfrt_info, target, duration, nsperpkt, num_recircs):
         # 1. Get a reference to the counter table
-        pkts = 0
-        pkts_tput = 0
-        print("Here is the actual pipe id: {}".format(pipe_id))
-        if pipe_id == 0:
-            counter_table = bfrt_info.table_get("MyIngress{}.tot_packet_counter".format(ingress_num))
-            # 3. Request the entry at index 0
-	    # 'from_hw=True' ensures you get the latest count from the ASIC registers, 
-	    # not a cached software value.
-	    resp = counter_table.entry_get(
-	        self.target, #TODO pay attention to this
-	        [counter_table.make_key([gc.KeyTuple('$COUNTER_INDEX', 0)])],
-	        {"from_hw": True}
-	    )
-	    
-	    # 4. Parse the response
-	    data, _ = next(resp)
-	    data_dict = data.to_dict()
-	    
-	    # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
-	    pkts = data_dict['$COUNTER_SPEC_PKTS']
-            pkts_tput = pkts/float(duration)
-	    print("======================Total Append Packets: {}".format(pkts))
-	    print("======================Append Throughput from PIPE ZERO: {}".format(pkts/float(duration)))
-        else:
-            counter_table = bfrt_info.table_get("MyIngress{}.tot_packet_counter_pipe_one".format(ingress_num))
-	    # 3. Request the entry at index 0
-	    # 'from_hw=True' ensures you get the latest count from the ASIC registers, 
-	    # not a cached software value.
-	    resp = counter_table.entry_get(
-	        self.target, #TODO pay attention to this
-	        [counter_table.make_key([gc.KeyTuple('$COUNTER_INDEX', 0)])],
-	        {"from_hw": True}
-	    )
-	    
-	    # 4. Parse the response
-	    data, _ = next(resp)
-	    data_dict = data.to_dict()
-	    
-	    # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
-	    pkts = data_dict['$COUNTER_SPEC_PKTS']
-            pkts_tput = pkts/float(duration)
-	    print("======================Total Append Packets: {}".format(pkts))
-	    print("======================Append Throughput from PIPE ONE: {}".format(pkts/float(duration)))
-
-        low_lat_table = bfrt_info.table_get("MyIngress{}.latency_lower".format(ingress_num))
+	counter_table = bfrt_info.table_get("pipe.MyIngress.tot_packet_counter")
+	
+	# 3. Request the entry at index 0
+	# 'from_hw=True' ensures you get the latest count from the ASIC registers, 
+	# not a cached software value.
+	resp = counter_table.entry_get(
+	    target,
+	    [counter_table.make_key([gc.KeyTuple('$COUNTER_INDEX', 0)])],
+	    {"from_hw": True}
+	)
+	
+	# 4. Parse the response
+	data, _ = next(resp)
+	data_dict = data.to_dict()
+	
+	# Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
+	pkts = data_dict['$COUNTER_SPEC_PKTS']
+        pkts_tput = pkts/float(duration)
+	print("======================Total Append Packets: {}".format(pkts))
+	print("======================Append Throughput: {}".format(pkts/float(duration)))
+        low_lat_table = bfrt_info.table_get("pipe.MyIngress.latency_lower")
 	low_lat_resp = low_lat_table.entry_get(
 	    target,
 	    [low_lat_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
@@ -1185,7 +1096,7 @@ class SequencingTest(BfRuntimeTest):
 	)
 	low_data, _ = next(low_lat_resp)
 	low_data_dict = low_data.to_dict()
-        high_lat_table = bfrt_info.table_get("MyIngress{}.latency_higher".format(ingress_num))
+        high_lat_table = bfrt_info.table_get("pipe.MyIngress.latency_higher")
 	high_lat_resp = high_lat_table.entry_get(
 	    target,
 	    [high_lat_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
@@ -1193,8 +1104,8 @@ class SequencingTest(BfRuntimeTest):
 	)
 	high_data, _ = next(high_lat_resp)
 	high_data_dict = high_data.to_dict()
-        low_lat = low_data_dict["MyIngress{}.latency_lower.f1".format(ingress_num)][0]
-        high_lat = high_data_dict["MyIngress{}.latency_higher.f1".format(ingress_num)][0]
+        low_lat = low_data_dict['MyIngress.latency_lower.f1'][1]
+        high_lat = high_data_dict['MyIngress.latency_higher.f1'][1]
         total_latency_ns = (high_lat << 32) + low_lat
         print("High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
         print("Aggregate Latency: {}ns".format(total_latency_ns))
@@ -1204,42 +1115,41 @@ class SequencingTest(BfRuntimeTest):
             print("======================Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
         
         ##### CNTRL PACKET
-        #cntrl_table = bfrt_info.table_get("MyIngress{}.cntrl_packet_counter".format(ingress_num))
-	#
-	## 3. Request the entry at index 0
-	## 'from_hw=True' ensures you get the latest count from the ASIC registers, 
-	## not a cached software value.
-	#resp = cntrl_table.entry_get(
-	#    target,
-	#    [cntrl_table.make_key([gc.KeyTuple('$COUNTER_INDEX', 0)])],
-	#    {"from_hw": True}
-	#)
-	#
-	## 4. Parse the response
-	#data, _ = next(resp)
-	#data_dict = data.to_dict()
-	#
-	## Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
-	#cntrl_pkts = data_dict['$COUNTER_SPEC_PKTS']
-	#print("Total Control Packets: {}".format(cntrl_pkts))
+        cntrl_table = bfrt_info.table_get("pipe.MyIngress.cntrl_packet_counter")
+	
+	# 3. Request the entry at index 0
+	# 'from_hw=True' ensures you get the latest count from the ASIC registers, 
+	# not a cached software value.
+	resp = cntrl_table.entry_get(
+	    target,
+	    [cntrl_table.make_key([gc.KeyTuple('$COUNTER_INDEX', 0)])],
+	    {"from_hw": True}
+	)
+	
+	# 4. Parse the response
+	data, _ = next(resp)
+	data_dict = data.to_dict()
+	
+	# Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
+	cntrl_pkts = data_dict['$COUNTER_SPEC_PKTS']
+	print("Total Control Packets: {}".format(cntrl_pkts))
 
-        #cntrl_lat_table = bfrt_info.table_get("MyIngress{}.ring_trip_time".format(ingress_num))
-	#cntrl_lat_resp = cntrl_lat_table.entry_get(
-	#    target,
-	#    [cntrl_lat_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
-	#    {"from_hw": True}
-	#)
-	#lat_data, _ = next(cntrl_lat_resp)
-	#data_dict = lat_data.to_dict()
-        #cntrl_agg_lat = data_dict["MyIngress{}.ring_trip_time.f1".format(ingress_num)][0]
-        #print("Control Packet Aggregate latency: {}".format(cntrl_agg_lat))
-        cntrl_pkts = 0
-        cntrl_agg_lat = 0
-        target_dest = "/root/pipe{}_{}_nsperpkt.json".format(pipe_id, nsperpkt)
-        self.write_experiment_telemetry(target_dest, pkts, pkts_tput, total_latency_ns, avg_lat, cntrl_pkts, cntrl_agg_lat, duration, nsperpkt, num_recircs, num_pipelines, payload_size)
+        cntrl_lat_table = bfrt_info.table_get("pipe.MyIngress.ring_trip_time")
+	cntrl_lat_resp = cntrl_lat_table.entry_get(
+	    target,
+	    [cntrl_lat_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
+	    {"from_hw": True}
+	)
+	lat_data, _ = next(cntrl_lat_resp)
+	data_dict = lat_data.to_dict()
+        cntrl_agg_lat = data_dict['MyIngress.ring_trip_time.f1'][1]
+        print("Control Packet Aggregate latency: {}".format(data_dict['MyIngress.ring_trip_time.f1'][1]))
+         
+        target_dest = "/root/{}_nsperpkt.json".format(nsperpkt)
+        self.write_experiment_telemetry(target_dest, pkts, pkts_tput, total_latency_ns, avg_lat, cntrl_pkts, cntrl_agg_lat, duration, nsperpkt, num_recircs)
         
 
-    def write_experiment_telemetry(self, file_path, total_pkts, throughput, total_lat, avg_lat, total_cntrl, cntrl_lat, duration, nsperpkt, num_recircs, num_pipelines, payload_size):
+    def write_experiment_telemetry(self, file_path, total_pkts, throughput, total_lat, avg_lat, total_cntrl, cntrl_lat, duration, nsperpkt, num_recircs):
         """
         Serializes benchmarking telemetry safely into a standardized JSON payload structure.
         """
@@ -1253,9 +1163,7 @@ class SequencingTest(BfRuntimeTest):
             "control_packet_latency_ns": float(cntrl_lat),
             "nsperpkt": int(nsperpkt),
             "duration": int(duration),
-            "total_loopback": int(num_recircs),
-            "num_pipelines": int(num_pipelines),
-            "payload_size": int(payload_size)
+            "total_loopback": int(num_recircs)
         }
         
         # 2. Open and write out using a safe with context block
@@ -1385,13 +1293,11 @@ class SequencingTest(BfRuntimeTest):
 	data = self.load_config(filepath)
 	os.system("taskset -p -c 1 {}".format(os.getpid()))
 	dev_number = data['device_number']
-
-	# Device-wide startup (once per physical switch -- these resources are shared
-	# across both pipes, NOT duplicated per pipe: PRE/multicast lives in the Traffic
-	# Manager, not in a specific pipe, and there is only one bfrt_info session for
-	# this whole ASIC).
+       
+	# Device startup 
+	target = gc.Target(device_id=0, pipe_id=0xffff)
 	bfrt_info = self.interface.bfrt_info_get(p4_program_name)
-
+        
         self.port_table = bfrt_info.table_get("$PORT")
         self.port_hdl_info_table = bfrt_info.table_get("$PORT_HDL_INFO")
         self.port_fp_idx_info_table = bfrt_info.table_get("$PORT_FP_IDX_INFO")
@@ -1407,7 +1313,7 @@ class SequencingTest(BfRuntimeTest):
         self.prune_table = bfrt_info.table_get("$pre.prune")
         self.mirror_cfg_table = bfrt_info.table_get("$mirror.cfg")
         
-        # Setup some of the multicast tables (device-wide, shared across both pipes)
+        # Setup some of the multicast tables
         self.global_group_id = 1
         self.sid = 1
         self.stream_sub_dict = {}
@@ -1422,10 +1328,20 @@ class SequencingTest(BfRuntimeTest):
 	port_speed = data['port_speed']
 	port_fec = data['port_fec']
 
+	loopback_ports = data['loopback_ports']
+        pktgen_loopback_port = 169
+        ports_to_ring_members = data['ports_to_ring_members']
+        tot_num_recirc_ports = data['total_recirc_ports']
+	list_of_switch_ports = data['switch_ports']
+        print(ports_to_ring_members)
+
 	cpu_interface = data['cpu_interface']
+
+	cntrl_port = data['cntrl_port']
 	cpu_port = data['cpu_port']
 	in_cntrl = data['in_cntrl']
 	out_cntrl = data['out_cntrl']
+        send_cntrl = data['send_cntrl_pkt']
 	size_of_ring = data['size_of_ring']
         #use_stor = data['use_stor'] TODO add in eventually?
         self.view = data['start_view']
@@ -1433,103 +1349,54 @@ class SequencingTest(BfRuntimeTest):
         cntrl_timeout = data['cntrl_timeout']
         ack_threshold = data['ack_threshold'] # NEW
         payload_size = data['payload_size'] # NEW
-	switch_send_cntrl = data['send_cntrl_pkt']
 
         nsperpkt = data['nsperpkt']
         duration = data['duration']
-        wait_time = data['wait_time']
         warmup = 5
         cooldown = 5
         buffer_time = 10
         total_time = duration + warmup + cooldown + buffer_time
-
+        
         run_setup = True
         use_pktgen = True
 
-	# NEW: per-pipe sections. Each entry describes everything that is genuinely
-	# scoped to ONE pipe: which devport is used for cntrl forwarding, which ports
-	# are held in loopback, which front-panel ports belong to that pipe, how many
-	# recirc ports are active, and whether this pipe is the one that kicks off the
-	# ring's first control packet.
-	pipes_cfg = data['pipes']
+        if run_setup:
+            # Initialize all 5, 21, 3, 19, 23, 7 ports (332244)
+	    self.setup_switch_ports(target, list_of_switch_ports, loopback_ports, cntrl_port, port_speed, port_fec, size_of_ring)
 
-	tm_threads = []
-        self.target = gc.Target(device_id=0, pipe_id=0xffff)
-        self.target0 = gc.Target(device_id=0, pipe_id=0x00)
-        self.target1 = gc.Target(device_id=0, pipe_id=0x01)
-        #self.update_registers(bfrt_info)
+            ####################### SETUP MATCH-ACTION TABLES ##########################
+            global_group_id = 1
+            print("Number of loopback ports: {}".format(len(loopback_ports)))
+            print("Control port: {}, with in port {} and out port {}".format(cntrl_port, in_cntrl, out_cntrl))
+            self.setup_recirc_port_table(target, bfrt_info, len(loopback_ports)) # TODO tot_num_recirc_ports?
+            self.setup_circulate_table(target, bfrt_info, loopback_ports)
+            self.setup_cntrl_table(target, bfrt_info, in_cntrl, out_cntrl, cntrl_port)
+        
+        ######################## SETUP DATA PLANE LISTENER
+        #recv_thread = threading.Thread(target=self.receive_pkt_from_tofino, args=(bfrt_info,target,cpu_interface,total_time))
+        #recv_thread.start()
+        #time.sleep(2)
+        #batch_check_thread = threading.Thread(target=self.batch_check, args=(bfrt_info, target, cpu_interface, total_time,))
+        #batch_check_thread.start()
+        # ============================================== PACKET GEN TEST ================================================= #
 
-        loop_ports = set()
-        no_loop_ports = set()
-        for pipe_cfg in pipes_cfg:
-            for port in pipe_cfg['loopback_ports']:
-                loop_ports.add(port)
-            for port in pipe_cfg['ports_to_ring_members']:
-                no_loop_ports.add(port)
-            for port in pipe_cfg['switch_ports']:
-                no_loop_ports.add(port)
-            if pipe_cfg['cntrl_port_is_loopback'] == True:
-                loop_ports.add(pipe_cfg['cntrl_port'])
-            else:
-                no_loop_ports.add(pipe_cfg['cntrl_port'])
+        if send_cntrl:
+            print("Sending control packet!")
+            self.send_test_cntrl_packet(cpu_interface,CONST_MAC_DST,CONST_MAC_SRC,in_cntrl,0)
+        
+        tm_q_thread = threading.Thread(target=self.get_tm_queue, args=(bfrt_info, target, cpu_interface, total_time,))
+        tm_q_thread.start()
 
-
-	#self.setup_switch_ports(self.target, list_of_switch_ports, loopback_ports, cntrl_port, port_speed, port_fec, is_cntrl_pkt_loopback)
-	self.setup_all_switch_ports(self.target, loop_ports, no_loop_ports, port_speed, port_fec)
-
-	for pipe_cfg in pipes_cfg:
-	    loopback_ports = pipe_cfg['loopback_ports']
-	    ports_to_ring_members = pipe_cfg['ports_to_ring_members']
-	    tot_num_recirc_ports = pipe_cfg['total_recirc_ports']
-	    list_of_switch_ports = pipe_cfg['switch_ports']
-	    cntrl_port = pipe_cfg['cntrl_port']
-            is_cntrl_pkt_loopback = pipe_cfg['cntrl_port_is_loopback']
-            pipe_id = pipe_cfg['pipe_id']
-
-
-	    print("Pipe {} - ports to ring members: {}".format(pipe_id, ports_to_ring_members))
-
-	    if run_setup:
-	        # Initialize this pipe's front-panel/loopback ports
-	        #self.setup_switch_ports(self.target, list_of_switch_ports, loopback_ports, cntrl_port, port_speed, port_fec, is_cntrl_pkt_loopback)
-
-	        ####################### SETUP MATCH-ACTION TABLES (this pipe) ##########################
-	        print("Pipe {} - Number of loopback ports: {}".format(pipe_id , len(loopback_ports)))
-	        print("Pipe {} - Control port: {}, with in port {} and out port {}".format(pipe_id, cntrl_port, in_cntrl, out_cntrl))
-	        self.setup_recirc_port_table(bfrt_info, len(loopback_ports), pipe_id)
-	        self.setup_circulate_table(bfrt_info, loopback_ports, pipe_id)
-	        self.setup_cntrl_table(bfrt_info, in_cntrl, out_cntrl, cntrl_port, pipe_id)
-
-	    #tm_q_thread = threading.Thread(target=self.get_tm_queue, args=(bfrt_info, self.target, cpu_interface, total_time))
-	    #tm_q_thread.start()
-	    #tm_threads.append(tm_q_thread)
-
-        if switch_send_cntrl:
-	    print("Sending control packet!")
-	    self.send_test_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, in_cntrl, 0)
-
-	time.sleep(wait_time)
-        for pipe_cfg in pipes_cfg:
-            if pipe_cfg['pipe_id'] == 0 and pipe_cfg['active_pipe']: #TODO numpgen_ports should not be 2?
-                self.setup_timer_pkt_gen(bfrt_info, self.target0, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, tot_num_recirc_ports, 2, pipe_cfg['pipe_id'])
-            elif pipe_cfg['pipe_id'] == 1 and pipe_cfg['active_pipe']:
-                self.setup_timer_pkt_gen(bfrt_info, self.target1, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, tot_num_recirc_ports, 2, pipe_cfg['pipe_id'])
-
-	## Both pipes' generators are now running concurrently -- wait once for the
-	## shared experiment duration rather than once per pipe.
-	time.sleep(duration)
-        num_pipelines = len(pipes_cfg)
-
-	for pipe_cfg in pipes_cfg:
-	    pipe_id = pipe_cfg['pipe_id']
-	    tot_num_recirc_ports = pipe_cfg['total_recirc_ports']
-            print("Processing pipe {} info!".format(pipe_id))
-            if pipe_id == 0:
-                self.get_final_pktgen_stats(bfrt_info, self.target0, duration, nsperpkt, tot_num_recirc_ports, pipe_id, 0, num_pipelines, payload_size)
-            else:
-                self.get_final_pktgen_stats(bfrt_info, self.target1, duration, nsperpkt, tot_num_recirc_ports, pipe_id, 1, num_pipelines, payload_size)
+        self.setup_timer_pkt_gen(bfrt_info, target, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, tot_num_recirc_ports, 2)
+        time.sleep(duration)
+        self.get_final_pktgen_stats(bfrt_info, target, duration, nsperpkt, tot_num_recirc_ports)
+	#pktgen_thread = threading.Thread(target=self.process_pktgen, args=(bfrt_info, target, cpu_interface,in_cntrl))
+        #pktgen_thread.start()
+        #pktgen_thread.join()
 
         # Tofino Listener join
         print("Waiting to join threads!")
-	#for t in tm_threads:
-	#    t.join()
+        #recv_thread.join()
+        tm_q_thread.join()
+        #batch_check_thread.join()
+
