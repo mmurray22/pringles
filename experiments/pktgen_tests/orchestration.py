@@ -155,9 +155,15 @@ class ExperimentConfig:
     # from 1 through len(ring_topo).
     ring_sizes_to_test: Optional[List[int]] = None
     duration: int = 30
+    wait_time: int = 5
     jumpbox: Optional[str] = None
     primary_switch_id: int = 3
     primary_pipe_id: int = 0
+    # How long (in whatever units test.py's pktgen-start logic expects, e.g. seconds)
+    # every NON-primary switch should wait before beginning packet generation, to
+    # give it time to be fully up before the primary switch sends the control packet.
+    # The primary switch itself always gets wait_time=0 in its generated YAML.
+    non_primary_wait_time: int = 0
     payload_size: int = 100
     acks_required: int = 1
     sde_path: str = "/root/bf-sde-9.4.0/"
@@ -351,6 +357,13 @@ class RemoteBenchmarkOrchestrator:
                     node_log, node.switch_id, pipe_id, cntrl_port_override=override
                 )
 
+        # active_pipe tells test.py whether this pipe's packet generator should
+        # actually be turned on -- true only for pipes genuinely present in this
+        # run's ring_topo, false for a pipe that just got a harmless placeholder
+        # config so its tables could be set up (see cntrl_port_override above).
+        for pipe_id in (0, 1):
+            pipes_cfg[pipe_id]["active_pipe"] = (pipe_id in active_pipes)
+
         config_dict = {
             "num_switches": num_ring_members,
             "cntrl_timeout": 10,
@@ -375,6 +388,7 @@ class RemoteBenchmarkOrchestrator:
             "p4_program_dir": self.config.p4_program_dir,
             "switch_id": node.switch_id,
             "is_primary": node.is_primary,
+            "wait_time": 0 if node.is_primary else self.config.non_primary_wait_time,
             "switch_ip": node.mgmt_ip,
             "nsperpkt": self.current_nsperpkt,
             "send_cntrl_pkt": 1 if is_designated_primary else 0,
@@ -425,7 +439,10 @@ class RemoteBenchmarkOrchestrator:
                 future.result()
 
         log.info("Launching data plane switch daemons across remote cluster...")
-        for idx, node in enumerate(self.nodes):
+        # Non-primary switches must be fully up before the primary switch sends the
+        # control packet -- launch every non-primary node first, primary node last.
+        launch_order = [n for n in self.nodes if not n.is_primary] + [n for n in self.nodes if n.is_primary]
+        for idx, node in enumerate(launch_order):
             node_log = NodeLoggerAdapter(logger, {'node': f"Switch-{node.switch_id}"})
             dp_cmd = (
                 f"nohup {self.config.sde_path}/run_switchd.sh "
@@ -437,7 +454,7 @@ class RemoteBenchmarkOrchestrator:
             res = self._execute_remote_cmd(node, dp_cmd)
             node.dp_pid = int(res.stdout.strip())
             node_log.info(f"Data plane active in background. Tracked Remote PID: {node.dp_pid}")
-            if idx < len(self.nodes) - 1:
+            if idx < len(launch_order) - 1:
                 node_log.info("Pacing activation cycle: Holding 15 seconds for target ASIC initialization...")
                 time.sleep(15)
 
@@ -446,8 +463,8 @@ class RemoteBenchmarkOrchestrator:
             self._execute_remote_cmd(node, f"kill -0 {node.dp_pid}")
             NodeLoggerAdapter(logger, {'node': f"Switch-{node.switch_id}"}).info("Data plane verified stable.")
 
-        log.info("Deploying control plane rule engines...")
-        for node in self.nodes:
+        log.info("Deploying control plane rule engines (non-primary switches first, primary last)...")
+        for node in launch_order:
             node_log = NodeLoggerAdapter(logger, {'node': f"Switch-{node.switch_id}"})
             try:
                 check_res = self._execute_remote_cmd(node, f"ls -l {self.remote_yaml_path}")
