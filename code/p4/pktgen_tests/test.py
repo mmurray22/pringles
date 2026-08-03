@@ -467,6 +467,8 @@ class SequencingTest(BfRuntimeTest):
     def setup_all_switch_ports(self, target, loop_ports, no_loop_ports, port_speed, port_fec):
         print(loop_ports)
         print(no_loop_ports)
+        print(port_speed)
+        print(port_fec)
 	for i in loop_ports:
 	    self.port_setup(target, i, True, port_speed, port_fec)
         for i in no_loop_ports:
@@ -479,24 +481,21 @@ class SequencingTest(BfRuntimeTest):
             self.port_table.entry_add(
                 target,
                 [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port)])],
-                [self.port_table.make_data([gc.DataTuple('$SPEED', str_val=port_speed), # TODO parameterize!
+                [self.port_table.make_data([gc.DataTuple('$SPEED', str_val=port_speed),
                                             gc.DataTuple('$FEC', str_val=port_fec),
                                             gc.DataTuple('$TX_MTU', 9000),
                                             gc.DataTuple('$RX_MTU', 9000),
                                             gc.DataTuple('$PORT_ENABLE', bool_val=True),
                                             gc.DataTuple('$LOOPBACK_MODE', str_val="BF_LPBK_MAC_NEAR")])])
         else:
-            print(port)
-            print(port_speed)
-            print(port_fec)
             self.port_table.entry_add(
                 target,
                 [self.port_table.make_key([gc.KeyTuple('$DEV_PORT', port)])],
-                [self.port_table.make_data([gc.DataTuple('$PORT_ENABLE', bool_val=True),
-                                            gc.DataTuple('$SPEED', str_val=port_speed),
+                [self.port_table.make_data([gc.DataTuple('$SPEED', str_val=port_speed),
+                                            gc.DataTuple('$FEC', str_val=port_fec),
                                             gc.DataTuple('$TX_MTU', 9000),
                                             gc.DataTuple('$RX_MTU', 9000),
-                                            gc.DataTuple('$FEC', str_val=port_fec)])])
+                                            gc.DataTuple('$PORT_ENABLE', bool_val=True)])])
 					    #gc.DataTuple('$N_LANES', 4)])])
     
     ###################### MATCH ACTION TABLE ##############################
@@ -1503,12 +1502,11 @@ class SequencingTest(BfRuntimeTest):
 	    #tm_q_thread = threading.Thread(target=self.get_tm_queue, args=(bfrt_info, self.target, cpu_interface, total_time))
 	    #tm_q_thread.start()
 	    #tm_threads.append(tm_q_thread)
-
+        time.sleep(wait_time)
         if switch_send_cntrl:
 	    print("Sending control packet!")
 	    self.send_test_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, in_cntrl, 0)
 
-	time.sleep(wait_time)
         for pipe_cfg in pipes_cfg:
             if pipe_cfg['pipe_id'] == 0 and pipe_cfg['active_pipe']: #TODO numpgen_ports should not be 2?
                 self.setup_timer_pkt_gen(bfrt_info, self.target0, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, tot_num_recirc_ports, 2, pipe_cfg['pipe_id'])
