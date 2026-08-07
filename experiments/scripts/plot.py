@@ -48,7 +48,8 @@ def main():
 
     # Convert to Pandas DataFrame and sort by the x-axis so lines draw correctly (left-to-right)
     df = pd.DataFrame(data)
-    df = df.sort_values(by='timestamp')
+    # df = df.sort_values(by='timestamp')
+    df = df.sort_values(by=args.y_key)
 
     # Plotting Setup
     plt.figure(figsize=(12, 7), dpi=150)

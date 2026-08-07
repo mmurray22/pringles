@@ -290,6 +290,11 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
             'stor_id': entity_id
         })
 
+    else:
+        yaml_config.update({
+            'append_req_threads': exp_params['append_req_threads']
+        })
+
     return yaml_config
 
 def kill_process(process_name, ssh_key, ssh_user, ip):
@@ -600,6 +605,7 @@ def get_perf_files(binary_name, hosts, username, key, target_dir):
         print(perf_cmd)
         execute_arbitrary_remote_command(host, username, key, perf_cmd)
 
+        # run_remote_command_sync(host, perf_cmd, key, username)
         debug_cmd = f"ssh -i {key} {username}@{host} 'ls -lh /users/colang/{binary_name}_{i}.perf'"
         print(debug_cmd)
         debug_result = subprocess.run(debug_cmd, shell=True, capture_output=True, text=True)
@@ -798,6 +804,7 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
         "payload_size": base_config['experiment_parameters']['message_size'],
         "num_servers": num_servers,
         "full_append": base_config['experiment_parameters']['full_append'],
+        "num_sequencer_threads": base_config['experiment_parameters']['append_req_threads'],
         "system_name": system_name
     }
     print(final_results)
@@ -812,6 +819,123 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
         print(str(source_path))
         target_path = local_indiv_json_dir
         shutil.move(str(source_path), str(target_path))
+        print(f"Moved: {source_path.name} to {str(target_path)}")
+    patterns = ['*.txt', '*.log', '*.perf']
+    files_to_move = chain.from_iterable(Path(local_target_dir).glob(pattern) for pattern in patterns)
+    for file_path in files_to_move:
+        source_path = Path(local_target_dir) / file_path
+        target_path = local_indiv_json_dir
+        shutil.move(str(source_path), str(target_path))
+        print(f"Moved: {source_path.name}")
+    # Write the final aggregated JSON file named [json_name].json
+    output_filename = f"{json_name}.json"
+    output_filepath = os.path.join(local_target_dir, output_filename)
+    #print(f"Moved: {json_file.name}")  
+
+    try:
+        with open(output_filepath, 'w') as f:
+            json.dump(final_results, f, indent=4)
+        print(f"Summary for {json_name} written to: {output_filepath}")
+    except IOError as e:
+        print(f"Error: Failed to write final summary JSON to {output_filepath}: {e}")
+
+def process_and_aggregate_baseline_results(local_target_dir, json_name, system_name, base_config, system_config):
+    """
+    Reads all JSON files in the target directory, calculates aggregate throughput and 
+    total average latency PER JSON_NAME, and writes a summary JSON file for each group.
+    """
+    # Find all JSON files in the directory
+    all_files = os.listdir(local_target_dir)
+    # Filter out files that look like aggregated summaries (ends with just .json)
+    result_files = [f for f in all_files if f.endswith('.json') and len(f.split('_')) > 1]
+
+    if not result_files:
+        print(f"Warning: No raw client result JSON files found in {local_target_dir} for aggregation. Cannot aggregate.")
+        return
+
+    print(f"\n--- Aggregating Results for this experiment group ---")
+    it = 0
+    total_agg_tput = 0.0
+    total_avg_latency_sum = 0.0
+    total_sub_lat_sum = 0.0
+    file_count = 0
+    batch_size = 0 
+    num_clients = 0
+
+    for filename in result_files:
+        filepath = os.path.join(local_target_dir, filename)
+        data = None
+
+        try:
+            with open(filepath, 'r') as f:
+                content = f.read().strip()
+
+            # Robust JSON Decoding
+            start_index = content.find('{')
+            end_index = content.rfind('}')
+
+            if start_index != -1 and end_index != -1 and end_index > start_index:
+                json_string = content[start_index:end_index + 1]
+                data = json.loads(json_string)
+            else:
+                print(f"Error: File {filename} does not contain a valid JSON object. Skipping.")
+                continue
+
+            # Aggregate Throughput
+            throughput = data.get('throughput')
+            if isinstance(throughput, (int, float)):
+                total_agg_tput += throughput
+
+            clients = data.get('num_clients')
+            if isinstance(clients, (int, float)):
+                num_clients += clients
+
+            # Aggregate Latency
+            avg_latency = data.get('avg_latency')
+            if isinstance(avg_latency, (int, float)):
+                total_avg_latency_sum += avg_latency
+                file_count += 1
+            batch_size = data.get('batch_size')
+
+            # Aggregate Time-to-first-Subscribe
+        except json.JSONDecodeError:
+            print(f"Error: Failed to decode JSON from file: {filename}. Skipping.")
+        except IOError as e:
+            print(f"Error: Failed to read file {filename}: {e}. Skipping.")
+
+    # Calculate Final Average Latency
+    final_avg_latency = total_avg_latency_sum / file_count if file_count > 0 else 0.0
+    print("=========== FINAL STATS")
+    # Construct Final Output
+    num_switches = 0
+    if system_name == "pringles":
+        num_switches = len(system_config['experiment_parameters']['switches_in_ring'])
+
+    final_results = {
+        "agg_tput": total_agg_tput,
+        "total_avg_latency": final_avg_latency,
+        "num_clients": num_clients,
+        "batch_size": batch_size,
+        "payload_size": base_config['experiment_parameters']['message_size'],
+        "git_hash": base_config['experiment_parameters']['git_hash'],
+        "system_name": system_name
+    }
+    print(final_results)
+
+    # Iterate over all .json files in the source directory
+    local_indiv_json_dir = Path(local_target_dir) /  json_name #os.path.join(local_target_dir, json_name) # NEW
+    print(str(local_indiv_json_dir))
+    local_indiv_json_dir.mkdir(parents=True, exist_ok=True)
+    print(result_files)
+    for json_file in result_files:
+        source_path = Path(local_target_dir) / json_file
+        print(str(source_path))
+        target_path = local_indiv_json_dir
+        try:
+            shutil.move(str(source_path), str(target_path))
+        except shutil.Error as e:
+            print("shutil error occured! Investigate later")
+            continue
         print(f"Moved: {source_path.name} to {str(target_path)}")
     patterns = ['*.txt', '*.log', '*.perf']
     files_to_move = chain.from_iterable(Path(local_target_dir).glob(pattern) for pattern in patterns)
@@ -1298,6 +1422,148 @@ def setup_switches(config):
         # Cleanup
         target_client.close()
         jump_client.close()
+
+
+# To be executed for each experiment
+def run_experiment_cycle_baseline(base_config, benchmark_config_file, idx, local_results_dir, system_name):
+    """Runs a single, full experiment cycle based on the merged configuration."""
+    try:
+        with open(benchmark_config_file, 'r') as f:
+            full_config = toml.load(f)
+    except FileNotFoundError:
+        print(f"Error: Configuration file '{benchmark_config_file}' not found.")
+        return
+    except toml.TomlDecodeError as e:
+        print(f"Error: Failed to parse TOML file: {e}")
+        return
+
+    # Extract the list of experiments to run and remove it from the base config
+    experiments_to_run = full_config.pop('experiment', [])
+    if not experiments_to_run:
+        print("Warning: No '[[experiment]]' sections found. Running only the default configuration once.")
+        default_params = full_config.get('experiment_parameters', {})
+        experiments_to_run.append(default_params)
+
+    # The remaining dictionary is the base configuration
+    config = full_config.copy() 
+
+    for exp_index, exp_params in enumerate(experiments_to_run): 
+        # Merge experiment-specific parameters (overrides)
+        for key, value in exp_params.items():
+            print(key)
+            print(value)
+            if key in config.get('experiment_parameters', {}):
+                config['experiment_parameters'][key] = value
+        
+        # Extract run-specific parameters from the merged config
+        ssh_key = os.path.expanduser(config['network_setup']['ssh_key'])
+        ssh_user = config['network_setup']['ssh_user']
+        client_ips = config['network_setup']['cli_ips'] # TODO SEQ make plural?
+        cli_net_ifs = config['network_setup']['cli_net_ifs'] # TODO SEQ make plural?
+        switch_ip = config['network_setup']['switch_ip']
+        switch_net_if = config['network_setup']['switch_net_if']
+        all_server_ips = config['network_setup']['stor_ips']
+        server_net_ifs = config['network_setup']['stor_net_ifs']
+        path_client = f"{pringles_base}" + config['program_paths']['path_client']
+        path_server = f"{pringles_base}" + config['program_paths']['path_server']
+        path_switch = f"{pringles_base}" + config['program_paths']['path_switch']
+
+        general_json_output_name = base_config['experiment_parameters']['general_json_name']
+        json_output_name = general_json_output_name + "-" + config['experiment_parameters']['json_name']
+
+        print(f"\n========================================================")
+        print(f"   RUNNING EXPERIMENT {exp_index + 1}: {json_output_name}")
+        print(f"   Client Threads: {base_config['experiment_parameters']['num_client_threads']}")
+        print(f"========================================================")
+
+        server_processes = []
+        client_log_files = []
+        client_processes = []
+        server_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
+        switch_processes = []
+        switch_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
+        server_ips = []
+
+        try:
+            # --- 6. Wait for Servers to Initialize ---
+            print(f"\nWaiting {SERVER_START_DELAY} seconds for storage servers to initialize...")
+
+            # Start remote process
+            switch_exec = os.path.basename(path_switch) # Use the basename remotely
+            kill_process(switch_exec, ssh_key, ssh_user, switch_ip)
+            time.sleep(3)
+            if not transfer_file(path_switch, switch_ip, ssh_user, ssh_key):
+                raise Exception("Benchmark switch not successfully transfered!")
+            exec_switch_filepath = "~/" + switch_exec
+
+            #num_stor_threads = config['experiment_parameters']['num_servers_per_shard'] * config['experiment_parameters']['num_shards']
+            remote_command = f"{exec_switch_filepath}"
+            switch_process = execute_arbitrary_remote_command(switch_ip, ssh_user, ssh_key, remote_command)
+            if not switch_process:
+                raise Exception("Benchmark switch not successfully started.")
+
+            # --- 9. Generate Client Configuration and Start Process ---
+            print("\n--- Starting Client ---")
+            for i, ip in enumerate(client_ips):
+                client_exec = os.path.basename(path_client) # Use the basename remotely
+                kill_process(client_exec, ssh_key, ssh_user, ip)
+                if not transfer_file(path_client, ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer server binary to server {ip}")
+
+                #cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name) TODO
+                cli_exec_file = "~/" + client_exec
+                prefix = "client"
+                num_client_threads = base_config['experiment_parameters']['num_client_threads']
+                duration = base_config["experiment_parameters"]["experiment_duration"]
+                remote_command = f"{cli_exec_file} {duration} {num_client_threads} {ip} {switch_ip} {json_output_name}"
+                client_process = execute_arbitrary_remote_command(ip, ssh_user, ssh_key, remote_command)
+            
+                if client_process:
+                    print(f"\nExperiment initiated. Client running with PID: {client_process.pid}")
+                    print("This script is now waiting for the client process to finish...")
+                    client_processes.append(client_process)
+                else: # TODO more error handling?
+                    raise Exception("Failed to start client process.")
+            i = 0 
+
+            for proc in client_processes: 
+                # Wait for the client process to finish
+                print("Waiting for the client process {proc.id} to finish!")
+                proc.wait()
+                print(f"Trying to copy json results with name {json_output_name} back!")
+
+                # --- 8. Copy JSON Results Back ---
+                copy_results_back(
+                    client_ips[i], 
+                    ssh_user, 
+                    ssh_key, 
+                    json_output_name, 
+                    local_results_dir
+                )
+
+                # NEW: Copy Client Log File Back
+                i += 1
+
+        except Exception as e:
+            print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
+
+        finally:
+            # --- 10. Kill all server processes and retrieve logs ---
+
+            # MODIFIED: Copy Server Log Files Back (for all servers)
+            print("Server processes are assumed to exit on their own after the client terminates.")
+            try:
+                if switch_process.poll() is None:
+                    print(f"Terminating server process (PID: {proc.pid})...")
+                    switch_process.kill()
+                    kill_process(switch_exec, ssh_key, ssh_user, switch_ip)
+                # The nohup process is difficult to kill via Popen.terminate(). 
+                # Relying on the server timeout is safer.
+                #pass 
+            except Exception as e:
+                print(f"Could not check on switch process: {e}")
+            print("Switch processes are assumed to exit on their own after the client terminates.") # TODO
+            process_and_aggregate_baseline_results(local_results_dir, json_output_name, system_name, base_config, config)
 
 # To be executed for each experiment
 def run_experiment_cycle_pringles(base_config, pringles_config_file, exp_index, local_results_dir, system_name, with_tunnel=False):
@@ -2057,66 +2323,67 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
         seq_log_files = {} # MODIFIED: Dictionary to store the log file name for each server
 
         try:
+            use_storage = config['experiment_parameters']['use_storage']
+            if use_storage:
             # --- 5. Generate Server Configurations and Start Processes ---
-            print("\n--- Starting Storage Servers ---")
+                print("\n--- Starting Storage Servers ---")
 
 
-            for i, ip in enumerate(all_server_ips):
-                print(ip)
-                config_filename = f"server_config_{json_output_name}_{i}.yaml" # Unique filename
-                port_offset = i * 2
-                print(config_filename)
-                stor_interface = server_net_ifs[i] if i < len(server_net_ifs) else server_net_ifs[0]
-                port_offset = i * 2
-                server_config = generate_corfu_yaml_config(
-                    base_config=base_config,
-                    entity_ip=ip,
-                    entity_type="server",
-                    port_offset=port_offset,
-                    send_port=send_port,
-                    recv_port=recv_port,
-                    network_interface=stor_interface,
-                    entity_id=i
-                )
-                print("Done with the YAML file!")
-                    
+                for i, ip in enumerate(all_server_ips):
+                    print(ip)
+                    config_filename = f"server_config_{json_output_name}_{i}.yaml" # Unique filename
+                    port_offset = i * 2
+                    print(config_filename)
+                    stor_interface = server_net_ifs[i] if i < len(server_net_ifs) else server_net_ifs[0]
+                    port_offset = i * 2
+                    server_config = generate_corfu_yaml_config(
+                        base_config=base_config,
+                        entity_ip=ip,
+                        entity_type="server",
+                        port_offset=port_offset,
+                        send_port=send_port,
+                        recv_port=recv_port,
+                        network_interface=stor_interface,
+                        entity_id=i
+                    )
+                    print("Done with the YAML file!")
+                        
 
-                server_exec = os.path.basename(path_server) # Use the basename remotely
-                kill_process(server_exec, ssh_key, ssh_user, ip)
+                    server_exec = os.path.basename(path_server) # Use the basename remotely
+                    kill_process(server_exec, ssh_key, ssh_user, ip)
 
-                # Write YAML file locally
-                with open(config_filename, 'w') as f:
-                    yaml.dump(server_config, f, default_flow_style=False)
-                print(f"Generated server config: {config_filename}")
-                print(f"Server binary to copy: {path_server}")
+                    # Write YAML file locally
+                    with open(config_filename, 'w') as f:
+                        yaml.dump(server_config, f, default_flow_style=False)
+                    print(f"Generated server config: {config_filename}")
+                    print(f"Server binary to copy: {path_server}")
 
-                # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
-                if not transfer_file(config_filename, ip, ssh_user, ssh_key):
-                    raise Exception(f"Failed to transfer config to server {ip}")
-                if not transfer_file(path_server, ip, ssh_user, ssh_key):
-                    raise Exception(f"Failed to transfer server binary to server {ip}")
+                    # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+                    if not transfer_file(config_filename, ip, ssh_user, ssh_key):
+                        raise Exception(f"Failed to transfer config to server {ip}")
+                    if not transfer_file(path_server, ip, ssh_user, ssh_key):
+                        raise Exception(f"Failed to transfer server binary to server {ip}")
 
-                # Start remote process
-                print(path_server)
-                exec_filepath = "sudo ~/" + server_exec
-                prefix = "server"
-                #execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix)
-                # Second, execute the command
-                process, log_filename = execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
-                print("Done executing the server!")
-                if process:
-                    server_processes.append(process)
-                    server_log_files[ip] = log_filename # MODIFIED: Store log filename
-                else:
-                    raise Exception(f"Failed to start server process on {ip}")
+                    # Start remote process
+                    print(path_server)
+                    exec_filepath = "sudo ~/" + server_exec
+                    prefix = "server"
+                    # Second, execute the command
+                    process, log_filename = execute_remote_command(ip, exec_filepath, config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
+                    print("Done executing the server!")
+                    if process:
+                        server_processes.append(process)
+                        server_log_files[ip] = log_filename # MODIFIED: Store log filename
+                    else:
+                        raise Exception(f"Failed to start server process on {ip}")
 
 
-            if not server_processes:
-                raise Exception("No servers were successfully started.")
+                if not server_processes:
+                    raise Exception("No servers were successfully started.")
 
-            # --- 6. Wait for Servers to Initialize ---
-            print(f"\nWaiting {SERVER_START_DELAY} seconds for storage servers to initialize...")
-            time.sleep(SERVER_START_DELAY)
+                # --- 6. Wait for Servers to Initialize ---
+                print(f"\nWaiting {SERVER_START_DELAY} seconds for storage servers to initialize...")
+                time.sleep(SERVER_START_DELAY)
 
             # --- 7. Generate Sequencer Configuration and Start Process --- # TODO
             print("\n--- Starting Sequencer ---")
@@ -2176,7 +2443,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                     base_config=base_config,
                     entity_ip=ip,
                     entity_type="client",
-                    port_offset=port_offset,
+                    port_offset=client_port_offset,
                     send_port=send_port,
                     recv_port=recv_port,
                     json_name=json_output_name,
@@ -2221,10 +2488,10 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
 
             #PERF HERE
             # cli_perf_duration = 10
-            # seq_perf_duration = 10
+            seq_perf_duration = 10
             # client_exec = os.path.basename(path_client) # Use the basename remotely
-            # seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
-            # run_perf(seq_exec, [seq_ip], seq_perf_duration, ssh_user, ssh_key)
+            seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
+            run_perf(seq_exec, [seq_ip], seq_perf_duration, ssh_user, ssh_key)
             # run_perf(client_exec, client_ips, cli_perf_duration, ssh_user, ssh_key)
 
             for proc in client_processes: 
@@ -2258,15 +2525,16 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
             # --- 10. Kill all server processes and retrieve logs ---
             print("\n--- Experiment finished. Retrieving server logs and cleaning up ---")
 
+            if use_storage:
             # MODIFIED: Copy Server Log Files Back (for all servers)
-            for ip, log_filename in server_log_files.items():
-                copy_log_file_back(
-                    ip,
-                    ssh_user,
-                    ssh_key,
-                    log_filename,
-                    local_results_dir
-                )
+                for ip, log_filename in server_log_files.items():
+                    copy_log_file_back(
+                        ip,
+                        ssh_user,
+                        ssh_key,
+                        log_filename,
+                        local_results_dir
+                    )
 
             for ip, log_filename in seq_log_files.items():
                 copy_log_file_back(
@@ -2277,21 +2545,22 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                     local_results_dir
                 )
 
-            for proc in server_processes:
-                try:
-                    if proc.poll() is None:
-                        print(f"Terminating server process (PID: {proc.pid})...")
-                        proc.kill()
-                    # The nohup process is difficult to kill via Popen.terminate(). 
-                    # Relying on the server timeout is safer.
-                    #pass 
-                except Exception as e:
-                    print(f"Could not check on server process: {e}")
+            if use_storage:
+                for proc in server_processes:
+                    try:
+                        if proc.poll() is None:
+                            print(f"Terminating server process (PID: {proc.pid})...")
+                            proc.kill()
+                        # The nohup process is difficult to kill via Popen.terminate(). 
+                        # Relying on the server timeout is safer.
+                        #pass 
+                    except Exception as e:
+                        print(f"Could not check on server process: {e}")
 
 
             #PERF HERE
             # get_perf_files(client_exec, client_ips, ssh_user, ssh_key, local_results_dir)
-            # get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
+            get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
             print("Server processes are assumed to exit on their own after the client terminates.")
             for proc in seq_processes:
                 try:
@@ -2641,6 +2910,7 @@ def run_experiment_cycle_speclog(base_config, exp_index, local_results_dir, syst
 
 EXPERIMENT_CYCLE_FNS = {
     'pringles': run_experiment_cycle_pringles,
+    'baseline': run_experiment_cycle_baseline,
     'pringles_hardware': run_experiment_cycle_hardware,
     'scalog':   run_experiment_cycle_scalog,
     'speclog':  run_experiment_cycle_speclog,

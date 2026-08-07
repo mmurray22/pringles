@@ -29,7 +29,7 @@ class CorfuSequencer {
         void wait_to_finish();
 
     protected:
-        void run_sequencer_thread(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id);
+        void append_request(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id);
 
     private:
         std::shared_ptr<Network> net;
@@ -45,7 +45,7 @@ class CorfuSequencer {
         std::unique_ptr<struct corfu_gettoken_reply> gettoken_reply;
 
         tbb::concurrent_vector<std::thread> append_req_threads;
-	    tbb::concurrent_vector<std::thread> append_resp_threads;
+        uint64_t num_append_req_threads;
 
         uint64_t send_port;
 

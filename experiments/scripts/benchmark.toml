@@ -16,7 +16,7 @@ stor_net_ifs = ["eno1d1"] #["enp65s0f0np0"] #, "enp65s0f0np0", "enp65s0f0np0","e
 # This is the mac address of every client machine
 cli_macs = ["0c:42:a1:dd:5c:50", "0c:42:a1:dd:59:bc", "0c:42:a1:dd:58:94"]
 # This is the IP address of every client machine
-cli_ips = ["10.10.1.2", "10.10.1.4", "10.10.1.5", "10.10.1.6", "10.10.1.7", "10.10.1.8", "10.10.1.9", "10.10.1.10", "10.10.1.11", "10.10.1.12"] #, "10.10.1.13", "10.10.1.14"]
+cli_ips = ["10.10.1.2", "10.10.1.5"]#, "10.10.1.5", "10.10.1.6", "10.10.1.7", "10.10.1.8", "10.10.1.9", "10.10.1.10", "10.10.1.11", "10.10.1.12"] #, "10.10.1.13", "10.10.1.14"]
 # This is the network interface the client machines use to send/receive
 cli_net_ifs = ["eno1d1", "eno1d1", "eno1d1", "eno1d1", "eno1d1", "eno1d1", "eno1d1", "eno1d1", "eno1d1", "eno1d1"]
 #cli_net_ifs = ["enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0","enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0", "enp65s0f0np0"] #, "enp65s0f0np0","enp65s0f0np0"]
@@ -36,30 +36,33 @@ switch_mac = "0c:42:a1:dd:5b:84"
 ###### Authentication Information for the switch #######
 # NOTE: I don't know if I need this if ssh key forwarding is used? Might deprecate TODO
 # SSH key 
-ssh_key = "/proj/ove-PG0/murray/ssh/cloudlab"
+ssh_key = "/proj/ove-PG0/colang/ssh/cloudlab"
 # SSH username
-ssh_user = "murray22" # Added for complete SSH command
+ssh_user = "colang" # Added for complete SSH command
 
 ######## Should contain the necessary information to figure out what programs are being run where (and also the setup script?) #######
 [program_paths]
 # This is the full path to the client binary that will be run on all clients
-path_client = "pringles/experiments/benchmarks/bench_client"
+path_client = "/pringles/experiments/benchmarks/bench_client"
 # Name of the actual client binary 
 client_binary = "bench_client"
 # This is the full path to the storage server binary that will be run on all storage servers
-path_server = "pringles/experiments/benchmarks/bench_storage"
+path_server = "/pringles/experiments/benchmarks/bench_storage"
 # Name of the actual storage binary 
 server_binary = "bench_storage"
 # This is the full path to the software switch binary that will be run on all software switches
-path_switch = "pringles/experiments/benchmarks/bench_storage"
+path_switch = "/pringles/experiments/benchmarks/bench_storage"
 switch_binary = "bench_storage"
 # Boolean indicating whether the install script should be run to install packages on all machines
 # Generally safe to set to "False"
+
+[setup]
 run_setup_script = "False"
 
 ######## Defines variables necessary for experiments #######
 [experiment_parameters]
-json_name = "default"
+json_name = "fitty"
+general_json_name = "baseline"
 # Supposed to be the git hash of the code that we are using for this experiment
 git_hash = "1b0aec5ee4e12df008d835842cafe794b9e77615" # TODO
 # Boolean indicates whether the current experiments use the switch or not (if not then cli <-> storage servers)
@@ -70,3 +73,10 @@ use_store = 0
 batch_size = 1 # Number of packets
 # Whether batching will be used or not...
 batch_on = true
+experiment_name = "baseline"
+protocol_name = "baseline"
+num_client_threads = 50
+experiment_duration = 60
+warm_up = 5
+cool_down = 5
+message_size = 4000

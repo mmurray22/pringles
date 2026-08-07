@@ -8,7 +8,7 @@
 #include "yaml-cpp/yaml.h"
 
 void run_append_client(std::string input_file, uint64_t i) {
-    pin_current_thread_linux(i);
+    // pin_current_thread_linux(i);
     CorfuClient corfu_cli = CorfuClient(input_file, i);
 
     corfu_cli.launch_append_execute();

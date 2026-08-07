@@ -41,11 +41,17 @@ uint64_t get_log_level(YAML::Node config) {
 }
 
 void pin_current_thread_linux(int core_id) {
+    long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    if (num_cores <= 0) {
+        num_cores = 1; // Fallback sanity check
+    }
+
     // Create a CPU set structure and clear it
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     // Add the desired core to the CPU set
-    int final_core_id = core_id % 32;
+    // int final_core_id = core_id % 32;
+    int final_core_id = core_id % num_cores;
     CPU_SET(final_core_id, &cpuset);
 
     // Get the native handle of the current C++ thread

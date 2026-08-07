@@ -1,0 +1,9 @@
+{
+    "agg_tput": 1111750.6166659999,
+    "total_avg_latency": 0.089674,
+    "num_clients": 100,
+    "batch_size": 1,
+    "payload_size": 4000,
+    "git_hash": "1b0aec5ee4e12df008d835842cafe794b9e77615",
+    "system_name": "baseline"
+}
