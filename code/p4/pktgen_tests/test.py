@@ -41,7 +41,8 @@ import bfrt_grpc.bfruntime_pb2 as bfruntime_pb2
 from ptf.thriftutils import *
 
 
-p4_program_name = "sequencing_only"
+#p4_program_name = "sequencing_only"
+p4_program_name = "pktgen"
 
 #loopback_port=68
 cpu_pcie_port=192 # dunno what the ptf test script is doing
@@ -56,6 +57,7 @@ TYPE_IP= 0x800
 TCP_PROTOCOL = 0x6
 UDP_PROTOCOL = 0x11
 TYPE_APPEND = 0x0860
+TYPE_APPEND_WAIT = 0x0862
 TYPE_APPEND_RESP = 0x0861
 TYPE_READ = 0x0870
 TYPE_READ_RESP = 0x0871
@@ -94,14 +96,15 @@ class RingType(Packet):
                     BitField("shard_id", 0, 32),
                     BitField("switch_to_process", 1, 32)]
 class Append(Packet):
-    fields_desc = [ BitField("nonce", 0, 32),
+    fields_desc = [ BitField("nonce", 0, 16),
                     BitField("payload_size", 0, 16),
                     BitField("stream_id", 0, 32),
                     BitField("g_idx", 0, 32), # TODO: 64
                     BitField("cntrl_pkt_it", 0, 16), # TODO: 64
                     BitField("client_ip", 0, 32),
                     ShortField("recv_port", 0),
-                    BitField("start_ts", 0, 48)]
+                    BitField("start_ts", 0, 48),
+                    BitField("exp_type", 0, 16)]
 class Read(Packet):
     fields_desc = [ BitField("nonce", 0, 32),
                     BitField("payload_size", 0, 32),
@@ -130,6 +133,7 @@ bind_layers(Ether, IP, type=TYPE_IP)
 bind_layers(IP, UDP)
 bind_layers(UDP, RingType)
 bind_layers(RingType, Append, type=TYPE_APPEND)
+bind_layers(RingType, Append, type=TYPE_APPEND_WAIT)
 bind_layers(RingType, Append, type=TYPE_APPEND_RESP)
 bind_layers(RingType, Append, type=TYPE_SUB_RESP)
 bind_layers(RingType, Read, type=TYPE_READ)
@@ -453,17 +457,6 @@ class SequencingTest(BfRuntimeTest):
 
     
     ###################### PORT SETUP ##############################
-    def setup_switch_ports(self, target, switch_ports, loopback_ports, control_port, port_speed, port_fec, cntrl_port_loopback):
-        print(switch_ports)
-	for i in switch_ports:
-	    self.port_setup(target, i, False, port_speed, port_fec)
-        for recirc_port in loopback_ports:
-	    self.port_setup(target, recirc_port, True, port_speed, port_fec)
-	if cntrl_port_loopback:
-	    self.port_setup(target, control_port, True, port_speed, port_fec)
-	else:
-	    self.port_setup(target, control_port, False, port_speed, port_fec)
-
     def setup_all_switch_ports(self, target, loop_ports, no_loop_ports, port_speed, port_fec):
         print(loop_ports)
         print(no_loop_ports)
@@ -534,6 +527,31 @@ class SequencingTest(BfRuntimeTest):
                         [table_circulate.make_key([gc.KeyTuple('meta.port_idx', i)])],
                         [table_circulate.make_data(action_name="MyIngress{}.circulate_port".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=recirc_ports[i])])])
     
+    def setup_wait_table(self, bfrt_info, wait_ports, pipe_idx):
+        # Circulate_table: If meta.circulate is set to 1, send packet to the loopback port
+        # Set all pipes to be in different scopes. Also known as Single scope
+        table_wait = bfrt_info.table_get("MyIngress{}.wait_table".format(pipe_idx))
+        table_wait.attribute_entry_scope_set(self.target,
+                predefined_pipe_scope=True,
+                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
+
+        table_wait.info.key_field_annotation_add("meta.port_idx", "bit<8>")
+        if pipe_idx == 0:
+            for i in range(0, len(wait_ports)):
+                print("Wait port idx: {} and port {}".format(i, wait_ports[i]))
+                table_wait.entry_add(
+                        self.target0, 
+                        [table_wait.make_key([gc.KeyTuple('meta.port_idx', i)])],
+                        [table_wait.make_data(action_name="MyIngress{}.wait_port".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=wait_ports[i])])])
+        else:
+            for i in range(0, len(wait_ports)):
+                print("Wait port idx: {} and port {}".format(i, wait_ports[i]))
+                table_wait.entry_add(
+                        self.target1, 
+                        [table_wait.make_key([gc.KeyTuple('meta.port_idx', i)])],
+                        [table_wait.make_data(action_name="MyIngress{}.wait_port".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=wait_ports[i])])])
+    
+
     def setup_recirc_port_table(self, bfrt_info, tot_num_recirc_ports,pipe_idx):
         table_recirc = bfrt_info.table_get("MyIngress{}.num_recirc_port_table".format(pipe_idx))
         table_recirc.attribute_entry_scope_set(self.target,
@@ -547,6 +565,20 @@ class SequencingTest(BfRuntimeTest):
             table_recirc.default_entry_set(
                     self.target1, 
                     table_recirc.make_data(action_name="MyIngress{}.get_num_recirc".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="num_recirc_ports", val=tot_num_recirc_ports)]))
+            
+    def setup_wait_port_table(self, bfrt_info, tot_num_wait_ports, pipe_idx):
+        table_wait = bfrt_info.table_get("MyIngress{}.num_wait_port_table".format(pipe_idx))
+        table_wait.attribute_entry_scope_set(self.target,
+                predefined_pipe_scope=True,
+                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
+        if pipe_idx == 0:
+            table_wait.default_entry_set(
+                    self.target0, 
+                    table_wait.make_data(action_name="MyIngress{}.get_num_wait".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="num_wait_ports", val=tot_num_wait_ports)]))
+        else:
+            table_wait.default_entry_set(
+                    self.target1, 
+                    table_wait.make_data(action_name="MyIngress{}.get_num_wait".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="num_wait_ports", val=tot_num_wait_ports)]))
 
     def setup_ack_const(self, target, bfrt_info, ack_threshold):
         table_ack = bfrt_info.table_get("MyIngress.get_ack_threshold")
@@ -619,8 +651,25 @@ class SequencingTest(BfRuntimeTest):
                      self.target0, 
                      [table_cntrl.make_key([gc.KeyTuple('hdr.cntrl.pkt_id', in_cntrl)])],
                      [table_cntrl.make_data(action_name="MyIngress{}.cntrl_forward".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=cntrl_port), gc.DataTuple(name="pkt_id", val=out_cntrl)])])
+    
+    def setup_check_dur_table(self, bfrt_info, lower_bound, upper_bound, pipe_idx):
+        # Cntrl ID -> Send Port
+        table_check_dur = bfrt_info.table_get("MyIngress{}.check_duration".format(pipe_idx))
+        table_check_dur.attribute_entry_scope_set(self.target,
+                predefined_pipe_scope=True,
+                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
+        table_check_dur.info.key_field_annotation_add("meta.wait_time", "bit<16>")
 
-
+        if pipe_idx == 1:
+            table_check_dur.entry_add(
+                self.target1, 
+                [table_check_dur.make_key([gc.KeyTuple('meta.wait_time', low=lower_bound, high=upper_bound)])],
+                [table_check_dur.make_data([], "MyIngress{}.update_type".format(pipe_idx))])
+        else:
+            table_check_dur.entry_add(
+                self.target0, 
+                [table_check_dur.make_key([gc.KeyTuple('meta.wait_time', low=lower_bound, high=upper_bound)])],
+                [table_check_dur.make_data([], "MyIngress{}.update_type".format(pipe_idx))])
 
     def setup_view_check(self, target, bfrt_info): # Is this all that needs to be done for cntrl packet view change?
         # Ring View
@@ -978,21 +1027,15 @@ class SequencingTest(BfRuntimeTest):
     
     def make_port(self, pipe, local_port):
         return (pipe << 7) | local_port
-
-    def setup_timer_pkt_gen(self, bfrt_info, target, pkt_gen_app_id, dstAddr, srcAddr, ip_addr, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, num_recircs, num_pgen_ports, pipe_id):
+    
+    def setup_e2e_pktgen(self, bfrt_info, target, pkt_gen_app_id, dstAddr, srcAddr, ip_addr, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, num_recircs, num_pgen_ports, pipe_id, exp_type):
         logger.info("=============== Testing Packet Generator trigger by Timer ===============")
         pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         pktgen_pkt_buffer_table = bfrt_info.table_get("$PKTGEN_PKT_BUFFER")
         pktgen_port_cfg_table = bfrt_info.table_get("$PKTGEN_PORT_CFG")
 
-
         # timer pktgen app_id = 1 one shot 0
         app_id = 0 #pkt_gen_app_id
-
-        # Assuming not including the pkt gen header
-        # Assuming in bytes
-
-        # build expected generated packets
         nonce = 33
         payload = "P" * payload_size
         packed_ip = socket.inet_aton(ip_addr)
@@ -1003,6 +1046,126 @@ class SequencingTest(BfRuntimeTest):
 	    RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1)/ \
             Append(nonce=nonce,payload_size=payload_size,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0)/ \
             Raw(load=payload)
+        raw_p = bytes(p)
+        pktlen = len(raw_p) #92 bytes: ethernet + ip + udp + ring_type + append
+        print("Length of the packet being sent is: {}".format(pktlen))
+
+        pgen_pipe_id = pipe_id
+        for i in range(0, num_pgen_ports):
+            src_port = self.pgen_port(pgen_pipe_id, i)
+            # B x P to emulate 100G of client traffic
+            p_count = 1 #132 #99 # packets per batch
+            b_count = 1 # batch number
+            buff_offset = 144 + (i * ((pktlen + 15) // 16) * 16) 
+            #buff_offset = 144 + (i * pktlen)  # generated packets' payload will be taken from the offset in buffer
+            out_port = 192 #swports[0]
+            try:
+                logger.info("configure forwarding table")
+
+                # Enable packet generation on the port
+                logger.info("enable pktgen port")
+	        #port_target = gc.Target(device_id=0, pipe_id=0x1)
+                pktgen_port_cfg_table.entry_add(
+                    target,
+                    [pktgen_port_cfg_table.make_key([gc.KeyTuple('dev_port', src_port)])],
+                    [pktgen_port_cfg_table.make_data([gc.DataTuple('pktgen_enable', bool_val=True)])])
+
+                # Configure the packet generation timer application
+                logger.info("configure pktgen application")
+                data = pktgen_app_cfg_table.make_data([gc.DataTuple('timer_nanosec', nsperpkt), #1000000), #10000), #3333), #1000
+                                                       gc.DataTuple('app_enable', bool_val=False),
+                                                       gc.DataTuple('pkt_len', pktlen),
+                                                       gc.DataTuple('pkt_buffer_offset', buff_offset),
+                                                       gc.DataTuple('pipe_local_source_port', (src_port & 0x7F)),
+                                                       gc.DataTuple('increment_source_port', bool_val=False),
+                                                       gc.DataTuple('batch_count_cfg', b_count-1),
+                                                       gc.DataTuple('packets_per_batch_cfg', p_count-1),
+                                                       gc.DataTuple('ibg', 0),
+                                                       gc.DataTuple('ibg_jitter', 0),
+                                                       gc.DataTuple('ipg', 0),
+                                                       gc.DataTuple('ipg_jitter', 0),
+                                                       gc.DataTuple('batch_counter', 0),
+                                                       gc.DataTuple('pkt_counter', 0),
+                                                       gc.DataTuple('trigger_counter', 0)],
+                                                      '$PKTGEN_TRIGGER_TIMER_PERIODIC') # ONE_SHOT
+                pktgen_app_cfg_table.entry_add(
+                    target,
+                    [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', i)])],
+                    [data])
+                logger.info("configure packet buffer")
+                pktgen_pkt_buffer_table.entry_add(
+                    target,
+                    [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
+                                                       gc.KeyTuple('pkt_buffer_size', pktlen)])],
+                    [pktgen_pkt_buffer_table.make_data([gc.DataTuple('buffer', raw_p)])])
+                logger.info("enable pktgen")
+                pktgen_app_cfg_table.entry_mod(
+                    target,
+                    [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', i)])],
+                    [pktgen_app_cfg_table.make_data([gc.DataTuple('app_enable', bool_val=True)],
+                                                     '$PKTGEN_TRIGGER_TIMER_PERIODIC')]
+                )
+                
+                # Use the per-app counters to wait for all packets to be generated.
+                #start_time = time.time()
+                #while (time.time() - start_time) < duration:
+                #    # verify pktgen related counters
+                #    resp = pktgen_app_cfg_table.entry_get(
+                #        target,
+                #        [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
+                #        {"from_hw": True},
+                #        pktgen_app_cfg_table.make_data([gc.DataTuple('batch_counter'),
+                #                                        gc.DataTuple('pkt_counter'),
+                #                                        gc.DataTuple('trigger_counter')],
+                #                                       '$PKTGEN_TRIGGER_TIMER_PERIODIC', get=True)
+                #    )
+                #    data_dict = next(resp)[0].to_dict()
+                #    tri_value = data_dict["trigger_counter"]
+                #    if tri_value != 1:
+                #        logger.info("Triggered %d times", tri_value)
+                #        # Wait for packets to be generated
+                #        time.sleep(2)
+                #        continue
+                #    batch_value = data_dict["batch_counter"]
+                #    if batch_value != b_count:
+                #        logger.info("Generated %d of %d batches", batch_value, b_count)
+                #        # Wait for packets to be generated
+                #        time.sleep(2)
+                #        continue
+                #    pkt_value = data_dict["pkt_counter"]
+                #    if pkt_value != b_count * p_count:
+                #        logger.info("Generated %d of %d packets", pkt_value, b_count * p_count)
+                #        # Wait for packets to be generated
+                #        time.sleep(2)
+                #        continue
+                #    break
+                # Verify generated packets
+                # verify_multiple_packets(self, out_port, pkt_lst, pkt_len, tmo=5)
+            except gc.BfruntimeRpcException as e:
+                print(e)
+                raise e
+            finally:
+                pass
+
+    def setup_timer_pkt_gen(self, bfrt_info, target, pkt_gen_app_id, dstAddr, srcAddr, ip_addr, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, num_pgen_ports, pipe_id, exp_type):
+        logger.info("=============== Testing Packet Generator trigger by Timer ===============")
+        pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
+        pktgen_pkt_buffer_table = bfrt_info.table_get("$PKTGEN_PKT_BUFFER")
+        pktgen_port_cfg_table = bfrt_info.table_get("$PKTGEN_PORT_CFG")
+
+        # timer pktgen app_id = 1 one shot 0
+        app_id = 0 #pkt_gen_app_id
+        nonce = 33
+        payload = "P" * payload_size
+        packed_ip = socket.inet_aton(ip_addr)
+        ip_int = struct.unpack("!I", packed_ip)[0]
+	p = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
+            IP(dst=ip_addr)/ \
+	    UDP(dport=1234, sport=5678)/ \
+	    RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1)/ \
+            Append(nonce=nonce,payload_size=payload_size,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0,exp_type=exp_type)/ \
+            Raw(load=payload)
+        p.show()
         raw_p = bytes(p)
         pktlen = len(raw_p) #92 bytes: ethernet + ip + udp + ring_type + append
         print("Length of the packet being sent is: {}".format(pktlen))
@@ -1175,6 +1338,46 @@ class SequencingTest(BfRuntimeTest):
             pkts_tput = pkts/float(duration)
 	    print("======================Total Append Packets: {}".format(pkts))
 	    print("======================Append Throughput from PIPE ONE: {}".format(pkts/float(duration)))
+            ##### CNTRL PACKET
+            cntrl_table = bfrt_info.table_get("MyIngress1.cntrl_packet_counter_pipe_one")
+    	
+            # 3. Request the entry at index 0
+            # 'from_hw=True' ensures you get the latest count from the ASIC registers, 
+            # not a cached software value.
+            resp = cntrl_table.entry_get(
+                self.target,
+                [cntrl_table.make_key([gc.KeyTuple('$COUNTER_INDEX', 0)])],
+                {"from_hw": True}
+            )
+            
+            # 4. Parse the response
+            data, _ = next(resp)
+            data_dict = data.to_dict()
+    	    
+    	    # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
+    	    cntrl_pkts = data_dict['$COUNTER_SPEC_PKTS']
+    	    print("Total Control Packets: {}".format(cntrl_pkts))
+
+            ##### CNTRL PACKET
+            actual_cntrl_table = bfrt_info.table_get("MyIngress1.actual_cntrl_packet_counter_pipe_one")
+    	
+            # 3. Request the entry at index 0
+            # 'from_hw=True' ensures you get the latest count from the ASIC registers, 
+            # not a cached software value.
+            resp = actual_cntrl_table.entry_get(
+                self.target,
+                [actual_cntrl_table.make_key([gc.KeyTuple('$COUNTER_INDEX', 0)])],
+                {"from_hw": True}
+            )
+            
+            # 4. Parse the response
+            data, _ = next(resp)
+            data_dict = data.to_dict()
+    	    
+    	    # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
+    	    cntrl_pkts = data_dict['$COUNTER_SPEC_PKTS']
+    	    print("Dummy Control Packets Counter: {}".format(cntrl_pkts))
+
 
         low_lat_table = bfrt_info.table_get("MyIngress{}.latency_lower".format(ingress_num))
 	low_lat_resp = low_lat_table.entry_get(
@@ -1202,27 +1405,7 @@ class SequencingTest(BfRuntimeTest):
 	    avg_lat = (total_latency_ns/float(pkts))/float(1000)
             print("======================Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
         
-        ##### CNTRL PACKET
-        #cntrl_table = bfrt_info.table_get("MyIngress{}.cntrl_packet_counter".format(ingress_num))
-	#
-	## 3. Request the entry at index 0
-	## 'from_hw=True' ensures you get the latest count from the ASIC registers, 
-	## not a cached software value.
-	#resp = cntrl_table.entry_get(
-	#    target,
-	#    [cntrl_table.make_key([gc.KeyTuple('$COUNTER_INDEX', 0)])],
-	#    {"from_hw": True}
-	#)
-	#
-	## 4. Parse the response
-	#data, _ = next(resp)
-	#data_dict = data.to_dict()
-	#
-	## Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
-	#cntrl_pkts = data_dict['$COUNTER_SPEC_PKTS']
-	#print("Total Control Packets: {}".format(cntrl_pkts))
-
-        #cntrl_lat_table = bfrt_info.table_get("MyIngress{}.ring_trip_time".format(ingress_num))
+                #cntrl_lat_table = bfrt_info.table_get("MyIngress{}.ring_trip_time".format(ingress_num))
 	#cntrl_lat_resp = cntrl_lat_table.entry_get(
 	#    target,
 	#    [cntrl_lat_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
@@ -1425,7 +1608,7 @@ class SequencingTest(BfRuntimeTest):
 	cpu_port = data['cpu_port']
 	in_cntrl = data['in_cntrl']
 	out_cntrl = data['out_cntrl']
-	size_of_ring = data['size_of_ring']
+        size_of_ring = data['size_of_ring']
         #use_stor = data['use_stor'] TODO add in eventually?
         self.view = data['start_view']
 
@@ -1437,6 +1620,11 @@ class SequencingTest(BfRuntimeTest):
         nsperpkt = data['nsperpkt']
         duration = data['duration']
         wait_time = data['wait_time']
+        # Range of time to wait before forwarding packet to storage section
+        lower_time_bound = data['lower_time_bound']
+        upper_time_bound = data['upper_time_bound']
+        experiment_type = data['experiment_type']
+	
         warmup = 5
         cooldown = 5
         buffer_time = 10
@@ -1451,6 +1639,8 @@ class SequencingTest(BfRuntimeTest):
 	# recirc ports are active, and whether this pipe is the one that kicks off the
 	# ring's first control packet.
 	pipes_cfg = data['pipes']
+        experiment_type = data['experiment_type']
+        print("Experiment type: {}".format(experiment_type))
 
 	tm_threads = []
         self.target = gc.Target(device_id=0, pipe_id=0xffff)
@@ -1463,6 +1653,8 @@ class SequencingTest(BfRuntimeTest):
         for pipe_cfg in pipes_cfg:
             for port in pipe_cfg['loopback_ports']:
                 loop_ports.add(port)
+            for port in pipe_cfg['wait_ports']:
+                loop_ports.add(port)
             for port in pipe_cfg['ports_to_ring_members']:
                 no_loop_ports.add(port)
             for port in pipe_cfg['switch_ports']:
@@ -1472,12 +1664,11 @@ class SequencingTest(BfRuntimeTest):
             else:
                 no_loop_ports.add(pipe_cfg['cntrl_port'])
 
-
-	#self.setup_switch_ports(self.target, list_of_switch_ports, loopback_ports, cntrl_port, port_speed, port_fec, is_cntrl_pkt_loopback)
 	self.setup_all_switch_ports(self.target, loop_ports, no_loop_ports, port_speed, port_fec)
 
 	for pipe_cfg in pipes_cfg:
 	    loopback_ports = pipe_cfg['loopback_ports']
+	    wait_ports = pipe_cfg['wait_ports']
 	    ports_to_ring_members = pipe_cfg['ports_to_ring_members']
 	    tot_num_recirc_ports = pipe_cfg['total_recirc_ports']
 	    list_of_switch_ports = pipe_cfg['switch_ports']
@@ -1497,7 +1688,12 @@ class SequencingTest(BfRuntimeTest):
 	        print("Pipe {} - Control port: {}, with in port {} and out port {}".format(pipe_id, cntrl_port, in_cntrl, out_cntrl))
 	        self.setup_recirc_port_table(bfrt_info, len(loopback_ports), pipe_id)
 	        self.setup_circulate_table(bfrt_info, loopback_ports, pipe_id)
+
+                self.setup_wait_port_table(bfrt_info, len(wait_ports), pipe_id)
+	        self.setup_wait_table(bfrt_info, wait_ports, pipe_id)
+	        
 	        self.setup_cntrl_table(bfrt_info, in_cntrl, out_cntrl, cntrl_port, pipe_id)
+                self.setup_check_dur_table(bfrt_info, lower_time_bound, upper_time_bound, pipe_id)
 
 	    #tm_q_thread = threading.Thread(target=self.get_tm_queue, args=(bfrt_info, self.target, cpu_interface, total_time))
 	    #tm_q_thread.start()
@@ -1509,9 +1705,9 @@ class SequencingTest(BfRuntimeTest):
 
         for pipe_cfg in pipes_cfg:
             if pipe_cfg['pipe_id'] == 0 and pipe_cfg['active_pipe']: #TODO numpgen_ports should not be 2?
-                self.setup_timer_pkt_gen(bfrt_info, self.target0, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, tot_num_recirc_ports, 2, pipe_cfg['pipe_id'])
+                self.setup_timer_pkt_gen(bfrt_info, self.target0, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, 2, pipe_cfg['pipe_id'], experiment_type)
             elif pipe_cfg['pipe_id'] == 1 and pipe_cfg['active_pipe']:
-                self.setup_timer_pkt_gen(bfrt_info, self.target1, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, tot_num_recirc_ports, 2, pipe_cfg['pipe_id'])
+                self.setup_timer_pkt_gen(bfrt_info, self.target1, 1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, 2, pipe_cfg['pipe_id'], experiment_type)
 
 	## Both pipes' generators are now running concurrently -- wait once for the
 	## shared experiment duration rather than once per pipe.
