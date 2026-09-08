@@ -112,6 +112,9 @@ header ring_type_t {
     bit<32> shard_id;
     // Switch ID - to be filled in by switch
     bit<32> switch_to_process;
+    bit<48> start_ts;
+    bit<48> end_ts;
+    bit<16> raw_elapsed_time;
 }
 
 // AppendEntry header
@@ -359,7 +362,6 @@ parser MyParser(packet_in packet,
         transition accept;
     }
 
-    
     state parse_tail {
         packet.extract(hdr.tail);
         transition accept;
@@ -378,15 +380,6 @@ parser MyParser(packet_in packet,
 }
 
 /*************************************************************************
-************   C H E C K S U M    V E R I F I C A T I O N   *************
-*************************************************************************/
-
-control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
-    apply {  }
-}
-
-
-/*************************************************************************
 **************  I N G R E S S   P R O C E S S I N G   *******************
 *************************************************************************/
 control MyIngress0(inout headers hdr,
@@ -395,7 +388,8 @@ control MyIngress0(inout headers hdr,
 		  in ingress_intrinsic_metadata_from_parser_t ig_prsr_md,
 		  inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
 		  inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
-   
+ 
+
     /******** Registers *********/
     /*
      * List of registers:
@@ -571,7 +565,7 @@ control MyIngress0(inout headers hdr,
 
 
     //////// Performance Statistics (Packet Gen) /////////
-    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter; 
+
     Register<bit<32>, bit<1>>(1, 0) latency_lower; 
     RegisterAction<bit<32>, bit<1>, bit<32>>(latency_lower) update_low_lat_cntr = {
         void apply(inout bit<32> new_lat_cntr, out bit<32> overflow) {
@@ -589,6 +583,21 @@ control MyIngress0(inout headers hdr,
 	    new_lat_cntr = new_lat_cntr + 1; //meta.overflow;
 	}
     };
+
+    /*Register<bit<32>, bit<1>>(1, 0) start_ts; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(start_ts) update_start_ts = {
+        void apply(inout bit<32> new_lat_cntr, out bit<32> overflow) {
+	    new_lat_cntr = meta.start_ts;
+	}
+    };
+
+    Register<bit<32>, bit<1>>(1, 0) end_ts; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(end_ts) update_end_ts = {
+        void apply(inout bit<32> new_lat_cntr, out bit<32> overflow) {
+	    new_lat_cntr = meta.end_ts;
+	}
+    };*/
+
 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) recirc_packet_counter; 
 
@@ -939,26 +948,14 @@ control MyIngress0(inout headers hdr,
 
 
     /**** DONE WITH MATCH ACTION TABLES *****/
-    action update_type() {
-	hdr.ring_type.type = TYPE_APPEND_RESP;
-    }
     
-    table check_duration {
-	key = {
-            meta.wait_time: range;
-	}
-	actions = {
-	    update_type;
-	    NoAction;
-	}
-	size = 64;
-	default_action = NoAction;
-    }
-
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter; 
+    
 
     /* Start of Ingress Pipeline */
     apply {
 	meta.circulate = 0;
+	meta.wait = 0;
 	meta.is_cntrl = 0;
 	meta.route_to_shard = 0;
 	meta.route_to_client = 0;
@@ -969,8 +966,6 @@ control MyIngress0(inout headers hdr,
 	meta.num_shards = 1; //get_num_shards.apply();
 	meta.shard_size = 1; //get_shard_size.apply();
 
-
-        	    	
 	/*if (hdr.ring_type.isValid() && !hdr.timer.isValid()) {
 	    check_switch_routing.apply();
 	}*/
@@ -1030,7 +1025,6 @@ control MyIngress0(inout headers hdr,
 		    sub_batch.execute(0);
 		}
 		if (hdr.append.exp_type == 1) { // Sequencing Only test! -- TODO should be a table
-		    
 		    // Get latency timestamps
 		    /*meta.start_ts = hdr.append.start_ts;
 	            meta.end_ts = standard_metadata.ingress_mac_tstamp;
@@ -1038,18 +1032,14 @@ control MyIngress0(inout headers hdr,
 		    
 		    meta.circulate = 0; // TODO: Only testing sequencing right now!
 		    tot_packet_counter.count(0);
-	            bit<32> overflow = update_low_lat_cntr.execute(0);
+	            /*bit<32> overflow = update_low_lat_cntr.execute(0);
 		    if (overflow != 0) {
 		        update_high_lat_cntr.execute(0);
-		    }
+		    }*/
 		} else {
-		    hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
+		    hdr.ring_type.start_ts = standard_metadata.ingress_mac_tstamp;
+		    hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
 		    hdr.ring_type.type = TYPE_APPEND_WAIT;
-	            recirc_packet_counter.count(0);
-		    bit<32> overflow = update_low_recirc_cntr.execute(0);
-		    if (overflow != 0) {
-		        update_high_recirc_cntr.execute(0);
-		    }
 		    meta.wait = 1;
 		}
 	    } else {
@@ -1061,8 +1051,7 @@ control MyIngress0(inout headers hdr,
 		}
 	    }
 	} else if (hdr.append.isValid() && hdr.ring_type.type == TYPE_APPEND_WAIT) {
-	    meta.wait_time = (bit<16>)(standard_metadata.ingress_mac_tstamp - hdr.append.start_ts);
-            check_duration.apply();
+	    hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
 	    meta.wait = 1;
 	} else if ((hdr.ring_type.type == TYPE_APPEND_RESP && hdr.append.isValid()) || (hdr.ring_type.type == TYPE_READ && meta.read_process == 1)) {
             bit<32> ready_for_ack = 1;
@@ -1075,10 +1064,8 @@ control MyIngress0(inout headers hdr,
 		bit<32> ack_ready = check_ack.execute(slot);
 		if (ack_ready == 1) {
 		    if (hdr.timer.isValid()) {
-	                /*meta.start_ts = hdr.append.start_ts;
-	                meta.end_ts = standard_metadata.ingress_mac_tstamp;
-			meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);*/
 	        	tot_packet_counter.count(0);
+			meta.duration = (bit<32>)(standard_metadata.ingress_mac_tstamp - hdr.ring_type.start_ts);
 	        	bit<32> overflow = update_low_lat_cntr.execute(0);
 			if (overflow != 0) {
 			    update_high_lat_cntr.execute(0);
@@ -1152,7 +1139,6 @@ control MyIngress1(inout headers hdr,
 		  in ingress_intrinsic_metadata_from_parser_t ig_prsr_md,
 		  inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
 		  inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
-   
     /******** Registers *********/
     /*
      * List of registers:
@@ -1299,7 +1285,7 @@ control MyIngress1(inout headers hdr,
 	}
     };
 
-    //////// Performance Statistics (Packet Gen) /////////
+    //////// Ports for recirculation of data /////////
     Register<bit<8>, bit<1>>(1, 0) recirc_port_idx;
     RegisterAction<bit<8>, bit<1>, bit<8>>(recirc_port_idx) get_recirc_idx = {
         void apply(inout bit<8> curr_recirc_idx, out bit<8> recirc_idx) {
@@ -1312,7 +1298,7 @@ control MyIngress1(inout headers hdr,
 	    }
 	}
     };
-    
+
     Register<bit<8>, bit<1>>(1, 0) wait_port_idx;
     RegisterAction<bit<8>, bit<1>, bit<8>>(wait_port_idx) get_wait_idx = {
         void apply(inout bit<8> curr_wait_idx, out bit<8> wait_idx) {
@@ -1326,17 +1312,18 @@ control MyIngress1(inout headers hdr,
 	}
     };
 
+
     //////// Performance Statistics (Packet Gen) /////////
-    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter_pipe_one; 
+    const bit<32> LATENCY_INIT_VAL = 2147483647; // This only stores SIGNED 32 bit integers...even though it's an unsigned uint32
     Register<bit<32>, bit<1>>(1, 0) latency_lower; 
     RegisterAction<bit<32>, bit<1>, bit<32>>(latency_lower) update_low_lat_cntr = {
         void apply(inout bit<32> new_lat_cntr, out bit<32> overflow) {
-	    new_lat_cntr = new_lat_cntr + meta.duration;
-	    if (new_lat_cntr < meta.duration) {
+	    if (new_lat_cntr > (LATENCY_INIT_VAL - meta.duration)) {
 		overflow = 1;
 	    } else {
 		overflow = 0;
 	    }
+	    new_lat_cntr = new_lat_cntr + meta.duration;
 	}
     };
     Register<bit<32>, bit<1>>(1, 0) latency_higher; 
@@ -1345,6 +1332,21 @@ control MyIngress1(inout headers hdr,
 	    new_lat_cntr = new_lat_cntr + 1; //meta.overflow;
 	}
     };
+
+    /*Register<bit<32>, bit<1>>(1, 0) start_ts; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(start_ts) update_start_ts = {
+        void apply(inout bit<32> new_lat_cntr, out bit<32> overflow) {
+	    new_lat_cntr = meta.start_ts;
+	}
+    };
+
+    Register<bit<32>, bit<1>>(1, 0) end_ts; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(end_ts) update_end_ts = {
+        void apply(inout bit<32> new_lat_cntr, out bit<32> overflow) {
+	    new_lat_cntr = meta.end_ts;
+	}
+    };*/
+
 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) recirc_packet_counter; 
 
@@ -1374,13 +1376,19 @@ control MyIngress1(inout headers hdr,
 	}
     };
 
-    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) cntrl_packet_counter_pipe_one; 
-    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) actual_cntrl_packet_counter_pipe_one; 
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) cntrl_packet_counter; 
     Register<bit<32>, bit<1>>(1, 0) ring_trip_time; 
     RegisterAction<bit<32>, bit<1>, bit<32>>(ring_trip_time) update_ring_trip_cntr = {
         void apply(inout bit<32> new_lat_cntr) {
 	    new_lat_cntr = new_lat_cntr + meta.duration;
 	}
+    };
+
+    Register<bit<16>, bit<1>>(1, 0) wait_duration; // TODO: This is a heuristic, 100 is arbitrary
+    RegisterAction<bit<16>, bit<1>, bit<16>>(wait_duration) get_duration = {
+        void apply(inout bit<16> cur_wait_dur, out bit<16> ret_wait_dur) {
+	    ret_wait_dur = (bit<16>)(standard_metadata.ingress_mac_tstamp - hdr.append.start_ts);
+        }
     };
 
 
@@ -1395,6 +1403,7 @@ control MyIngress1(inout headers hdr,
      * - process_tail
      */    
 
+    
     /**** ROUTING *****/
     
     action switch_id(bit<16> id) {
@@ -1490,7 +1499,7 @@ control MyIngress1(inout headers hdr,
         size = 64;
         default_action = drop();
     }
-    
+
     /* Wait port */
     action wait_port(egressSpec_t port) {
         ig_tm_md.ucast_egress_port = port;
@@ -1509,7 +1518,8 @@ control MyIngress1(inout headers hdr,
         default_action = drop();
     }
 
-    /* Recirculation ports */
+    
+    /* Recirculation ports - for logic */
     action get_num_recirc(bit<8> num_recirc_ports) {
         meta.num_recirc_ports = num_recirc_ports;
     }
@@ -1522,7 +1532,7 @@ control MyIngress1(inout headers hdr,
         size = 64;
         default_action = get_num_recirc(1);
     }
-    
+
     /* Recirculation ports - for arbitrary waiting */
     action get_num_wait(bit<8> num_wait_ports) {
         meta.num_wait_ports = num_wait_ports;
@@ -1686,18 +1696,16 @@ control MyIngress1(inout headers hdr,
 	default_action = NoAction;
     }
 
-
-    /**** DONE WITH MATCH ACTION TABLES *****/
-    action update_type() {
+    action here() {
 	hdr.ring_type.type = TYPE_APPEND_RESP;
     }
     
-    table check_duration {
+    table testing_here {
 	key = {
-            meta.wait_time: range;
+            hdr.ring_type.type : exact;
 	}
 	actions = {
-	    update_type;
+	    here;
 	    NoAction;
 	}
 	size = 64;
@@ -1705,9 +1713,16 @@ control MyIngress1(inout headers hdr,
     }
 
 
+    /**** DONE WITH MATCH ACTION TABLES *****/
+    
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter_pipe_one; 
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) cntrl_packet_counter_pipe_one; 
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) actual_cntrl_packet_counter_pipe_one; 
+
     /* Start of Ingress Pipeline */
     apply {
 	meta.circulate = 0;
+	meta.wait = 0;
 	meta.is_cntrl = 0;
 	meta.route_to_shard = 0;
 	meta.route_to_client = 0;
@@ -1717,6 +1732,7 @@ control MyIngress1(inout headers hdr,
 	meta.ack_threshold = 1; //get_ack_threshold.apply();
 	meta.num_shards = 1; //get_num_shards.apply();
 	meta.shard_size = 1; //get_shard_size.apply();
+	testing_here.apply();
 
 	/*if (hdr.ring_type.isValid() && !hdr.timer.isValid()) {
 	    check_switch_routing.apply();
@@ -1729,10 +1745,6 @@ control MyIngress1(inout headers hdr,
 		local_seq_no_reg = write_local_seq_no.execute(0); 
 	}
         
-        if (hdr.cntrl.isValid() && hdr.cntrl.global_seq_no == 0) {
-	            cntrl_packet_counter_pipe_one.count(0);
-	}
-
 	if (hdr.cntrl.isValid()) {
             // Step 0: Check if the control packet's view is outdated TODO
 	    //check_cntrl_view.apply();
@@ -1741,13 +1753,7 @@ control MyIngress1(inout headers hdr,
 	        add_gsn.execute(cntrl_pkt_it_reg);
                 hdr.cntrl.global_seq_no = hdr.cntrl.global_seq_no + local_seq_no_reg;
 
-		/*meta.start_ts = hdr.cntrl.start_ts;
-	    	meta.end_ts = standard_metadata.ingress_mac_tstamp;
-	    	meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);*/
-	    	update_ring_trip_cntr.execute(0);
-	    	//hdr.cntrl.start_ts = standard_metadata.ingress_mac_tstamp;
-
-		
+	    	//update_ring_trip_cntr.execute(0); TODO
 		meta.batch_size = local_seq_no_reg;
 		add_batch.execute(0);
 		set_batch_sz.execute(cntrl_pkt_it_reg);
@@ -1755,16 +1761,14 @@ control MyIngress1(inout headers hdr,
                 bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
 	        add_gsn.execute(cntrl_pkt_it_reg);
 	    }
-
 	    meta.is_cntrl = 1;
         } else if (hdr.ring_type.type == TYPE_APPEND && meta.append_process == 1) {
 	    bit<32> assign_sn = 0;
             bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
-
 	    if (hdr.append.g_idx == 0) {
+		hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
 		hdr.append.cntrl_pkt_it = cntrl_pkt_it_reg;
-		//hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
-		assign_sn = local_seq_no_reg; //write_local_seq_no.execute(0); // Get batchOffset
+		assign_sn = local_seq_no_reg; // Get batchOffset
 	        hdr.append.g_idx = assign_sn;	    
 		zero_gsn.execute(cntrl_pkt_it_reg); // Get Global sequence number
 	    } else {
@@ -1780,23 +1784,23 @@ control MyIngress1(inout headers hdr,
 		if (cnt == 0) {
 		    sub_batch.execute(0);
 		}
-		if (hdr.append.exp_type == 1) { // Sequencing Only test!
+		if (hdr.append.exp_type == 1) { // Sequencing Only test! -- TODO should be a table
 		    // Get latency timestamps
-		    /*meta.start_ts = hdr.append.start_ts;
+		    meta.start_ts = hdr.append.start_ts;
 	            meta.end_ts = standard_metadata.ingress_mac_tstamp;
-	            meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);*/
+	            meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);
 		    
 		    meta.circulate = 0; // TODO: Only testing sequencing right now!
-	            
 		    tot_packet_counter_pipe_one.count(0);
 	            bit<32> overflow = update_low_lat_cntr.execute(0);
 		    if (overflow != 0) {
 		        update_high_lat_cntr.execute(0);
 		    }
 		} else {
-		    hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
+		    hdr.ring_type.start_ts = standard_metadata.ingress_mac_tstamp;
+		    hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
 		    hdr.ring_type.type = TYPE_APPEND_WAIT;
-		    meta.wait = 1; // TODO change back to meta.wait
+		    meta.wait = 1;
 		}
 	    } else {
 		meta.route_to_shard = 1;
@@ -1807,12 +1811,12 @@ control MyIngress1(inout headers hdr,
 		}
 	    }
         } else if (hdr.ring_type.type == TYPE_APPEND_WAIT) {
-	    meta.wait_time = (bit<16>)(standard_metadata.ingress_mac_tstamp - hdr.append.start_ts);
-            check_duration.apply();
 	    meta.wait = 1;
+	    hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
 	} else if ((hdr.ring_type.type == TYPE_APPEND_RESP && hdr.append.isValid()) || (hdr.ring_type.type == TYPE_READ && meta.read_process == 1)) {
             bit<32> ready_for_ack = 1;
 	    actual_cntrl_packet_counter_pipe_one.count(0);
+
 	    if (hdr.ring_type.type == TYPE_APPEND_RESP) {
                 bit<16> cntrl_pkt_it_reg = get_cntrl_pkt_it.execute(0);
 		ready_for_ack = compare_gsn.execute(cntrl_pkt_it_reg);
@@ -1823,14 +1827,14 @@ control MyIngress1(inout headers hdr,
 
 		if (ack_ready == 1) {
 		    if (hdr.timer.isValid()) {
-	                /*meta.start_ts = hdr.append.start_ts;
-	                meta.end_ts = standard_metadata.ingress_mac_tstamp;
-			meta.duration = (bit<32>)(meta.end_ts - meta.start_ts);*/
+			meta.duration = (bit<32>)(standard_metadata.ingress_mac_tstamp - hdr.ring_type.start_ts);
 	        	tot_packet_counter_pipe_one.count(0);
+
 	        	bit<32> overflow = update_low_lat_cntr.execute(0);
 			if (overflow != 0) {
 			    update_high_lat_cntr.execute(0);
 			}
+
 		        //meta.route_to_client = 1;
 			drop();
 		    } else if (hdr.append.isValid() && !hdr.timer.isValid()) {
@@ -1904,9 +1908,6 @@ control MyIngressDeparser(
     Mirror() mirror;
 
     apply {
-	/*if (ig_dprsr_md.digest_type == 1) {
-	    digest_append.pack({ig_md.start_ts, ig_md.end_ts, ig_md.nonce, ig_md.seq_no});
-	}*/
 	if (ig_dprsr_md.mirror_type == MIRROR_TYPE_I2E) {
 	    mirror.emit<mirror_h>(ig_md.ing_mir_ses, {ig_md.pkt_type});
 	}
@@ -2021,6 +2022,23 @@ control MyEgress0(inout headers hdr,
 	    new_queue_cnt = meta.queue_congest;
 	}
     };
+
+    action update_type() {
+	hdr.ring_type.type = TYPE_APPEND_RESP;
+    }
+    
+    table check_duration {
+	key = {
+            hdr.ring_type.raw_elapsed_time: range;
+	}
+	actions = {
+	    update_type;
+	    NoAction;
+	}
+	size = 64;
+	default_action = NoAction;
+    }
+
     apply { 
 	if (eg_dprsr_md.mirror_type != 0) {
             hdr.ring_type.type = TYPE_SUB_RESP;
@@ -2029,6 +2047,11 @@ control MyEgress0(inout headers hdr,
             meta.queue_congest = (bit<32>)(standard_metadata.deq_qdepth);
             curr_queue_cnt.execute(0);
 	}
+	if (hdr.ring_type.type == TYPE_APPEND_WAIT) {
+	    hdr.ring_type.raw_elapsed_time = (bit<16>)(hdr.ring_type.end_ts - hdr.ring_type.start_ts);
+            check_duration.apply();
+	} 
+
     }
 }
 
@@ -2045,6 +2068,25 @@ control MyEgress1(inout headers hdr,
 	    new_queue_cnt = meta.queue_congest;
 	}
     };
+
+    action update_type() {
+	hdr.ring_type.type = TYPE_APPEND_RESP;
+    }
+    
+    table check_duration {
+	key = {
+            hdr.ring_type.raw_elapsed_time: range;
+	}
+	actions = {
+	    update_type;
+	    NoAction;
+	}
+	size = 64;
+	default_action = NoAction;
+    }
+
+    
+
     apply { 
 	if (eg_dprsr_md.mirror_type != 0) {
             hdr.ring_type.type = TYPE_SUB_RESP;
@@ -2053,6 +2095,11 @@ control MyEgress1(inout headers hdr,
             meta.queue_congest = (bit<32>)(standard_metadata.deq_qdepth);
             curr_queue_cnt.execute(0);
 	}
+	if (hdr.ring_type.type == TYPE_APPEND_WAIT) {
+	    hdr.ring_type.raw_elapsed_time = (bit<16>)(hdr.ring_type.end_ts - hdr.ring_type.start_ts);
+            check_duration.apply();
+	} 
+
     }
 }
 
