@@ -116,7 +116,7 @@ struct metadata {
     bit<32> duration;
     int<32> overflow;
     int<32> diff;
-    int<32> output;
+    bit<32> output;
     bit<32> seq_no;
     bit<32> ack_threshold;
 
@@ -142,17 +142,17 @@ struct headers {
 /*************************************************************************
 *********************** P A R S E R  ***********************************
 *************************************************************************/
-
-parser MyParser(packet_in packet,
+parser MyParser0(packet_in packet,
                 out headers hdr,
                 out metadata meta,
                 out ingress_intrinsic_metadata_t standard_metadata) {
-    
+    value_set<bit<9>>(64) recirculation_ports; 
     TofinoIngressParser() tofino_parser;
 
     state start {
 	tofino_parser.apply(packet, standard_metadata);
 	transition select(standard_metadata.ingress_port) {
+	    recirculation_ports: parse_pktgen_timer;
             12      : parse_pktgen_timer; // Adjust port # for your Pipe
             20      : parse_pktgen_timer; // Adjust port # for your Pipe
             56      : parse_pktgen_timer; // Adjust port # for your Pipe
@@ -163,6 +163,59 @@ parser MyParser(packet_in packet,
             140      : parse_pktgen_timer; // Recirculated generated packet!
             168      : parse_pktgen_timer; // Recirculated generated packet!
             172      : parse_pktgen_timer; // Recirculated generated packet!
+            184      : parse_pktgen_timer; // Recirculated generated packet!
+            196      : parse_pktgen_timer; // Recirculated generated packet!
+            197      : parse_pktgen_timer; // Recirculated generated packet!
+            198      : parse_pktgen_timer; // Recirculated generated packet!
+            199      : parse_pktgen_timer; // Recirculated generated packet!
+            default : parse_ethernet;      // Normal clients
+    	}
+    }
+    
+    state parse_pktgen_timer {
+	packet.extract(hdr.timer);
+	transition parse_ethernet;
+    }
+
+    state parse_ethernet {
+        packet.extract(hdr.ethernet);
+	transition parse_ipv4;
+    }
+    
+    state parse_ipv4 {
+        packet.extract(hdr.ipv4);
+        packet.extract(hdr.udp);
+	transition parse_ring_type;
+    }
+
+    state parse_ring_type {
+	packet.extract(hdr.ring_type);
+	transition accept;
+    }
+}
+
+parser MyParser1(packet_in packet,
+                out headers hdr,
+                out metadata meta,
+                out ingress_intrinsic_metadata_t standard_metadata) {
+    value_set<bit<9>>(64) recirculation_ports; 
+    TofinoIngressParser() tofino_parser;
+
+    state start {
+	tofino_parser.apply(packet, standard_metadata);
+	transition select(standard_metadata.ingress_port) {
+	    recirculation_ports: parse_pktgen_timer;
+            12      : parse_pktgen_timer; // Adjust port # for your Pipe
+            20      : parse_pktgen_timer; // Adjust port # for your Pipe
+            56      : parse_pktgen_timer; // Adjust port # for your Pipe
+            68      : parse_pktgen_timer; // Adjust port # for your Pipe
+            69      : parse_pktgen_timer; // Adjust port # for your Pipe
+            70      : parse_pktgen_timer; // Adjust port # for your Pipe
+            71      : parse_pktgen_timer; // Adjust port # for your Pipe
+            140      : parse_pktgen_timer; // Recirculated generated packet!
+            168      : parse_pktgen_timer; // Recirculated generated packet!
+            172      : parse_pktgen_timer; // Recirculated generated packet!
+            184      : parse_pktgen_timer; // Recirculated generated packet!
             196      : parse_pktgen_timer; // Recirculated generated packet!
             197      : parse_pktgen_timer; // Recirculated generated packet!
             198      : parse_pktgen_timer; // Recirculated generated packet!
@@ -249,28 +302,28 @@ control MyIngress0(inout headers hdr,
 
 
     //////// Performance Statistics (Packet Gen) /////////
-    const int<32> LATENCY_INIT_VAL = 65535; // DEBUG: This only stores SIGNED 32 bit integers...even though it's an unsigned uint32
     Register<int<32>, bit<1>>(1, 0) latency_lower; 
     RegisterAction<int<32>, bit<1>, int<32>>(latency_lower) update_low_lat_cntr = {
         void apply(inout int<32> new_lat_cntr, out int<32> overflow) {
 	    overflow = new_lat_cntr;
-	    new_lat_cntr = new_lat_cntr + (int<32>)meta.duration;
+	    if (new_lat_cntr < 0) {
+	        new_lat_cntr = (int<32>)meta.duration;
+	    } else {
+	        new_lat_cntr = new_lat_cntr + (int<32>)meta.duration;
+	    }
+
 	}
     };
-    Register<int<32>, bit<1>>(1, 0) prev_latency_lower; 
-    RegisterAction<int<32>, bit<1>, int<32>>(prev_latency_lower) get_prev_low_lat = {
-        void apply(inout int<32> lat_cntr, out int<32> low_lat) {
-	    low_lat = lat_cntr;
-	}
-    };
+
     Register<bit<32>, bit<1>>(1, 0) latency_higher; 
     RegisterAction<bit<32>, bit<1>, bit<32>>(latency_higher) update_high_lat_cntr = {
         void apply(inout bit<32> new_lat_cntr) {
-	    if (meta.output < 0) {
-		new_lat_cntr = new_lat_cntr + 1;
+	    if (meta.overflow < 0) {
+	        new_lat_cntr = new_lat_cntr + 1;
 	    }
 	}
     };
+
     Register<int<32>, bit<1>>(1, 0) raw_duration; 
     RegisterAction<int<32>, bit<1>, int<32>>(raw_duration) update_raw_duration = {
         void apply(inout int<32> raw_cntr) {
@@ -368,7 +421,29 @@ control MyIngress0(inout headers hdr,
     /**** DONE WITH MATCH ACTION TABLES *****/
      
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter; 
+    /***  Measuring total number of packets ***/ 
+    Register<bit<32>, bit<1>>(1, 1) total_pkt_cnt_lower; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(total_pkt_cnt_lower) update_low_pkt_cntr = {
+        void apply(inout bit<32> new_pkt_cntr, out bit<32> overflow) {
+	    overflow = new_pkt_cntr;
+	    new_pkt_cntr = new_pkt_cntr + 1;
+	    /*if (new_pkt_cntr < 0) {
+	        new_pkt_cntr = 2;
+	    } else {
+	        new_pkt_cntr = new_pkt_cntr + 1;
+	    }*/
 
+	}
+    };
+
+    Register<bit<32>, bit<1>>(1, 0) total_pkt_cnt_higher; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(total_pkt_cnt_higher) update_high_pkt_cntr = {
+        void apply(inout bit<32> new_pkt_cntr) {
+	    if (meta.output == 0) {
+	        new_pkt_cntr = new_pkt_cntr + 1;
+	    }
+	}
+    };
     /* Start of Ingress Pipeline */
     apply {
 	meta.circulate = 0;
@@ -382,7 +457,12 @@ control MyIngress0(inout headers hdr,
 		meta.circulate = 1;
 	    } else if (hdr.ring_type.exp_type == 1) {
 		// Get latency timestamps
+
 		tot_packet_counter.count(0);
+		meta.output = update_low_pkt_cntr.execute(0);
+		update_high_pkt_cntr.execute(0);
+
+
 		drop();
 	    } else {
 		hdr.ring_type.start_ts = standard_metadata.ingress_mac_tstamp;
@@ -396,11 +476,12 @@ control MyIngress0(inout headers hdr,
 	} else if (hdr.ring_type.type == TYPE_APPEND_RESP) {
             bit<32> ready_for_ack = 1;
 	    if (ready_for_ack == 1) {
-	        tot_packet_counter.count(0);
+		tot_packet_counter.count(0);
+		meta.output = update_low_pkt_cntr.execute(0);
+		update_high_pkt_cntr.execute(0);
+
 	    	meta.duration = (bit<32>)(standard_metadata.ingress_mac_tstamp - hdr.ring_type.start_ts);
-	        meta.overflow = update_low_lat_cntr.execute(0);
-		meta.diff = get_prev_low_lat.execute(0);
-		meta.output = meta.diff - meta.overflow;
+		meta.overflow = update_low_lat_cntr.execute(0);
 		update_high_lat_cntr.execute(0);
 
 		update_raw_duration.execute(0);
@@ -467,13 +548,11 @@ control MyIngress1(inout headers hdr,
 
 
     //////// Performance Statistics (Packet Gen) /////////
-    const int<32> LATENCY_INIT_VAL = 2147483647; // DEBUG: This only stores SIGNED 32 bit integers...even though it's an unsigned uint32
     Register<int<32>, bit<1>>(1, 0) latency_lower; 
     RegisterAction<int<32>, bit<1>, int<32>>(latency_lower) update_low_lat_cntr = {
         void apply(inout int<32> new_lat_cntr, out int<32> overflow) {
 	    overflow = new_lat_cntr;
 	    if (new_lat_cntr < 0) {
-		//int<32> temp = new_lat_cntr ^ LATENCY_INIT_VAL;
 	        new_lat_cntr = (int<32>)meta.duration;
 	    } else {
 	        new_lat_cntr = new_lat_cntr + (int<32>)meta.duration;
@@ -485,11 +564,12 @@ control MyIngress1(inout headers hdr,
     Register<bit<32>, bit<1>>(1, 0) latency_higher; 
     RegisterAction<bit<32>, bit<1>, bit<32>>(latency_higher) update_high_lat_cntr = {
         void apply(inout bit<32> new_lat_cntr) {
-	    if (meta.output < 0) {
+	    if (meta.overflow < 0) {
 	        new_lat_cntr = new_lat_cntr + 1;
 	    }
 	}
     };
+
     Register<int<32>, bit<1>>(1, 0) raw_duration; 
     RegisterAction<int<32>, bit<1>, int<32>>(raw_duration) update_raw_duration = {
         void apply(inout int<32> raw_cntr) {
@@ -589,6 +669,31 @@ control MyIngress1(inout headers hdr,
      
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter; 
 
+    /***  Measuring total number of packets ***/ 
+    Register<bit<32>, bit<1>>(1, 1) total_pkt_cnt_lower; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(total_pkt_cnt_lower) update_low_pkt_cntr = {
+        void apply(inout bit<32> new_pkt_cntr, out bit<32> overflow) {
+	    overflow = new_pkt_cntr;
+	    new_pkt_cntr = new_pkt_cntr + 1;
+	    /*if (new_pkt_cntr < 0) {
+	        new_pkt_cntr = 2;
+	    } else {
+	        new_pkt_cntr = new_pkt_cntr + 1;
+	    }*/
+
+	}
+    };
+
+    Register<bit<32>, bit<1>>(1, 0) total_pkt_cnt_higher; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(total_pkt_cnt_higher) update_high_pkt_cntr = {
+        void apply(inout bit<32> new_pkt_cntr) {
+	    //if (meta.output == ) {
+	    if (meta.output == 0) {
+	        new_pkt_cntr = new_pkt_cntr + 1;
+	    }
+	}
+    };
+
     /* Start of Ingress Pipeline */
     apply {
 	meta.circulate = 0;
@@ -604,6 +709,10 @@ control MyIngress1(inout headers hdr,
 	    } else if (hdr.ring_type.exp_type == 1) {
 		// Get latency timestamps
 		tot_packet_counter.count(0);
+		meta.output = update_low_pkt_cntr.execute(0);
+		update_high_pkt_cntr.execute(0);
+
+
 		drop();
 	    } else {
 		hdr.ring_type.start_ts = standard_metadata.ingress_mac_tstamp;
@@ -617,9 +726,14 @@ control MyIngress1(inout headers hdr,
 	} else if (hdr.ring_type.type == TYPE_APPEND_RESP) {
             bit<32> ready_for_ack = 1;
 	    if (ready_for_ack == 1) {
-	        tot_packet_counter.count(0);
+
+		tot_packet_counter.count(0);
+		meta.output = update_low_pkt_cntr.execute(0);
+		update_high_pkt_cntr.execute(0);
+
+
 	    	meta.duration = (bit<32>)(standard_metadata.ingress_mac_tstamp - hdr.ring_type.start_ts);
-	        meta.output = update_low_lat_cntr.execute(0);
+	        meta.overflow = update_low_lat_cntr.execute(0);
 		update_high_lat_cntr.execute(0);
 
 		update_raw_duration.execute(0);
@@ -856,7 +970,7 @@ control MyDeparser(packet_out packet,
 *************************************************************************/
 
 Pipeline(
-	MyParser(),
+	MyParser0(),
 	MyIngress0(),
 	MyIngressDeparser(),
 	MyEgressParser(),
@@ -865,7 +979,7 @@ Pipeline(
 ) pipe0;
 
 Pipeline(
-	MyParser(),
+	MyParser1(),
 	MyIngress1(),
 	MyIngressDeparser(),
 	MyEgressParser(),
