@@ -201,10 +201,10 @@ num_client_threads = 1
 # Number of packets in the batch
 batch_size = 1
 # JSON Name of the specific 
-json_name = "shardtwo"
+json_name = "testing"
 # indices of the switches active in the ring, list of unique values, each val 0 <= v <= MAX_NUM_SWITCHES
-switches_in_ring = [3] 
-num_servers_per_shard = 2
+#switches_in_ring = [3] 
+#num_servers_per_shard = 2
 
 #[[experiment]]
 ## Vary the number of client threads for this experiment

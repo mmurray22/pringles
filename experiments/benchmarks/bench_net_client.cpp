@@ -11,9 +11,12 @@
 #include <fstream>
 #include <iomanip>
 
+#include <linux/perf_event.h>
+#include <sys/syscall.h>
+
 #define SERVER_PORT 8888
 #define STORAGE_PORT 9999
-#define PAYLOAD_SIZE 100
+#define PAYLOAD_SIZE 13
 
 struct ThreadStats {
     long long total_packets = 0;
@@ -21,11 +24,53 @@ struct ThreadStats {
     long long invalid_responses = 0;
 };
 
+// void configure_event(struct perf_event_attr *pe, uint32_t type, uint64_t config){
+//     memset(pe, 0, sizeof(struct perf_event_attr));
+//     pe->type = type;
+//     pe->size = sizeof(struct perf_event_attr);
+//     pe->config = config;
+//     pe->read_format = PERF_FORMAT_GROUP | PERF_FORMAT_ID;
+//     pe->sample_freq = 1000;
+//     pe->freq = 1;
+//     pe->disabled = 1;
+//     pe->sample_type = PERF_SAMPLE_IP | PERF_SAMPLE_CALLCHAIN;
+//     pe->exclude_kernel = 0;
+//     pe->exclude_user = 0;
+//     pe->exclude_hv = 1;
+//     pe->wakeup_events = 1; // TODO: wake us up for every 1 sample event?
+// }
+
+// int setup_perf(pid_t tid) {
+//      (void) tid;
+//     //int flags = 0;
+//     int fd;
+//     //long long count;
+//     struct perf_event_attr pe;
+//     configure_event(&pe, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK);
+
+//     int cpu = -1; // We want to measure perf for this tid on any CPU
+//     int group_fd = -1;
+
+//     fd = syscall(SYS_perf_event_open, &pe, tid, cpu, group_fd, 0);
+//     return fd;
+// }
+
 void client_worker(int duration, ThreadStats& stats, int thread_id, std::string self_ip, std::string server_ip) {
     int sockfd;
     struct sockaddr_in server_addr, client_addr;
 
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) return;
+
+    // std::cout << "APPEND REQUEST thread starting with tid = " << thread_id << std::endl;
+
+    // // PERF HERE
+    // pid_t tid = syscall(SYS_gettid);
+    // int perf_fd = setup_perf(tid);
+    // if (perf_fd < 0) {
+    //     perror("Error opening perf event");
+    //     // Ensure /proc/sys/kernel/perf_event_paranoid allows non-root access if this fails
+    //     exit(EXIT_FAILURE);
+    // }
 
     struct timeval tv = {1, 0};
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
@@ -55,7 +100,7 @@ void client_worker(int duration, ThreadStats& stats, int thread_id, std::string 
     memcpy(&payload[4], &my_ip, sizeof(my_ip));
     memcpy(&payload[8], &my_port, sizeof(my_port));
 
-    char buffer[1024];
+    char buffer[8192];
     auto start_time = std::chrono::steady_clock::now();
     auto end_time = start_time + std::chrono::seconds(duration);
 
@@ -63,7 +108,7 @@ void client_worker(int duration, ThreadStats& stats, int thread_id, std::string 
         payload[0] = 0xAA;
 
         auto send_time = std::chrono::steady_clock::now();
-        sendto(sockfd, payload, PAYLOAD_SIZE, MSG_CONFIRM, (const struct sockaddr *)&server_addr, sizeof(server_addr));
+        sendto(sockfd, payload, PAYLOAD_SIZE, 0, (const struct sockaddr *)&server_addr, sizeof(server_addr));
 
 	struct sockaddr_in reply_addr;
         socklen_t len = sizeof(reply_addr);
@@ -71,13 +116,14 @@ void client_worker(int duration, ThreadStats& stats, int thread_id, std::string 
 
         if (n > 0) {
             auto recv_time = std::chrono::steady_clock::now();
-            if ((unsigned char)buffer[0] == 0xBB) {
+            // if ((unsigned char)buffer[0] == 0xBB) {
                 std::chrono::duration<double, std::milli> rtt = recv_time - send_time;
                 stats.total_rtt_ms += rtt.count();
                 stats.total_packets++;
-            } else {
-                stats.invalid_responses++;
-            }
+            // } 
+            // else {
+            //     stats.invalid_responses++;
+            // }
         }
     }
     close(sockfd);

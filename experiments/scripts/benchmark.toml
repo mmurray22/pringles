@@ -55,14 +55,11 @@ path_switch = "/pringles/experiments/benchmarks/bench_storage"
 switch_binary = "bench_storage"
 # Boolean indicating whether the install script should be run to install packages on all machines
 # Generally safe to set to "False"
-
-[setup]
 run_setup_script = "False"
 
 ######## Defines variables necessary for experiments #######
 [experiment_parameters]
-json_name = "fitty"
-general_json_name = "baseline"
+json_name = "baseline"
 # Supposed to be the git hash of the code that we are using for this experiment
 git_hash = "1b0aec5ee4e12df008d835842cafe794b9e77615" # TODO
 # Boolean indicates whether the current experiments use the switch or not (if not then cli <-> storage servers)
@@ -73,10 +70,3 @@ use_store = 0
 batch_size = 1 # Number of packets
 # Whether batching will be used or not...
 batch_on = true
-experiment_name = "baseline"
-protocol_name = "baseline"
-num_client_threads = 50
-experiment_duration = 60
-warm_up = 5
-cool_down = 5
-message_size = 4000

@@ -205,12 +205,13 @@ def generate_yaml_config(base_config, pringles_config, entity_type, entity_ip, p
             'all_shards': total_shards,
             'all_shards_multicast': total_shards_multicast,
             'append_req_threads': general_exp_params['append_req_threads'],
+            'append_resp_threads': general_exp_params['append_resp_threads'],
             'shard_multicast_addr': QuotedString(dummy)
         })
 
     return yaml_config
 
-def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset, send_port, recv_port, json_name=None, network_interface=None, entity_id=None):
+def generate_corfu_yaml_config(base_config, corfu_config, entity_ip, entity_type, port_offset, send_port, recv_port, json_name=None, network_interface=None, entity_id=None):
     """
     Generates the configuration dictionary for a Corfu entity mapping variables 
     from the provided TOML base_config.
@@ -218,8 +219,8 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
 
     # Extract required parameters from the fully merged base_config
     general_exp_params = base_config['experiment_parameters']
-    net_params = base_config.get('network_setup', {})
-    exp_params = base_config.get('experiment_parameters', {})
+    net_params = corfu_config.get('network_setup', {})
+    exp_params = corfu_config.get('experiment_parameters', {})
 
     # Calculate experiment duration, adding a delay for servers (Feature 3)
     exp_duration = general_exp_params['experiment_duration']
@@ -246,7 +247,7 @@ def generate_corfu_yaml_config(base_config, entity_ip, entity_type, port_offset,
         'seq_ip': seq_ip,
         'send_port': QuotedString(send_port),
         'recv_port': QuotedString(recv_port),
-        'num_client_threads': exp_params['num_cli_threads'],
+        'num_client_threads': general_exp_params['num_client_threads'],
         # WRAPPED: Ensures 'RAW' or 'UDP' is quoted
         'socket_type': QuotedString(exp_params['socket_type']),
         # WRAPPED: Ensures self_ip is quoted
@@ -803,8 +804,8 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
         "batch_size": batch_size,
         "payload_size": base_config['experiment_parameters']['message_size'],
         "num_servers": num_servers,
-        "full_append": base_config['experiment_parameters']['full_append'],
-        "num_sequencer_threads": base_config['experiment_parameters']['append_req_threads'],
+        "full_append": system_config['experiment_parameters']['full_append'],
+        "num_sequencer_threads": system_config['experiment_parameters']['append_req_threads'],
         "system_name": system_name
     }
     print(final_results)
@@ -1526,9 +1527,14 @@ def run_experiment_cycle_baseline(base_config, benchmark_config_file, idx, local
                     raise Exception("Failed to start client process.")
             i = 0 
 
+            #PERF HERE
+            # storage_exec = os.path.basename(path_server)
+            # cli_perf_duration = 10
+            # run_perf(storage_exec, [switch_ip], cli_perf_duration, ssh_user, ssh_key)
+
             for proc in client_processes: 
                 # Wait for the client process to finish
-                print("Waiting for the client process {proc.id} to finish!")
+                print(f"Waiting for the client process {proc.pid} to finish!")
                 proc.wait()
                 print(f"Trying to copy json results with name {json_output_name} back!")
 
@@ -1551,6 +1557,8 @@ def run_experiment_cycle_baseline(base_config, benchmark_config_file, idx, local
             # --- 10. Kill all server processes and retrieve logs ---
 
             # MODIFIED: Copy Server Log Files Back (for all servers)
+            #PERF HERE
+            # get_perf_files(storage_exec, [switch_ip], ssh_user, ssh_key, local_results_dir)            
             print("Server processes are assumed to exit on their own after the client terminates.")
             try:
                 if switch_process.poll() is None:
@@ -2338,6 +2346,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                     port_offset = i * 2
                     server_config = generate_corfu_yaml_config(
                         base_config=base_config,
+                        corfu_config=config,
                         entity_ip=ip,
                         entity_type="server",
                         port_offset=port_offset,
@@ -2392,6 +2401,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
 
             seq_config = generate_corfu_yaml_config(
                 base_config=base_config,
+                corfu_config=config,
                 entity_ip=seq_ip,
                 entity_type="sequencer",
                 port_offset=seq_port_offset,
@@ -2441,6 +2451,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                 interface = cli_net_ifs[i] if i < len(cli_net_ifs) else cli_net_ifs[0]
                 client_config = generate_corfu_yaml_config(
                     base_config=base_config,
+                    corfu_config=config,
                     entity_ip=ip,
                     entity_type="client",
                     port_offset=client_port_offset,
@@ -2488,10 +2499,10 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
 
             #PERF HERE
             # cli_perf_duration = 10
-            seq_perf_duration = 10
+            # seq_perf_duration = 10
             # client_exec = os.path.basename(path_client) # Use the basename remotely
-            seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
-            run_perf(seq_exec, [seq_ip], seq_perf_duration, ssh_user, ssh_key)
+            # seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
+            # run_perf(seq_exec, [seq_ip], seq_perf_duration, ssh_user, ssh_key)
             # run_perf(client_exec, client_ips, cli_perf_duration, ssh_user, ssh_key)
 
             for proc in client_processes: 
@@ -2560,7 +2571,7 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
 
             #PERF HERE
             # get_perf_files(client_exec, client_ips, ssh_user, ssh_key, local_results_dir)
-            get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
+            # get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
             print("Server processes are assumed to exit on their own after the client terminates.")
             for proc in seq_processes:
                 try:
