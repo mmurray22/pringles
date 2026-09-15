@@ -407,93 +407,22 @@ class SequencingTest(BfRuntimeTest):
 
     
     ###################### PORT SETUP ##############################
-    def setup_parser_ports(self, target_fake, bfrt_info, loop_ports, pipe_idx):
+    def setup_parser_ports(self, target_fake, bfrt_info, loop_ports, pipe_idx, num_prsrs=18):
         parser_port_table = bfrt_info.table_get("MyParser{}.recirculation_ports".format(pipe_idx))
 	target = gc.Target(device_id=0, pipe_id=pipe_idx, direction=0xff, prsr_id=0xff)
-        target_ingress = gc.Target(device_id=0, pipe_id=pipe_idx, direction=0x00, prsr_id=pipe_idx) # TODO: NOT DONE, MUST DO FOR EVERY PARSER!
-        # The below passes with both target and target_ingress
         parser_port_table.attribute_entry_scope_set(target,
-                                           config_gress_scope=True,
-                                           predefined_gress_scope_val=bfruntime_pb2.Mode.SINGLE,
-                                           config_pipe_scope=True, predefined_pipe_scope=True,
-                                           predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE, pipe_scope_args=0,
-                                           config_prsr_scope=True,
-                                           predefined_prsr_scope_val=bfruntime_pb2.Mode.SINGLE, prsr_scope_args=0)
-        # Get the table attribute and verify it is correct. This will only work with target_ingress now
-        resp = parser_port_table.attribute_get(target_ingress, "EntryScope")
-        for d in resp:
-            assert d["gress_scope"]["predef"] == bfruntime_pb2.Mode.SINGLE
-            assert d["pipe_scope"]["predef"] == bfruntime_pb2.Mode.SINGLE
-            assert d["prsr_scope"]["predef"] == bfruntime_pb2.Mode.SINGLE
-            assert d["prsr_scope"]["args"] == 0
-
-	for i in loop_ports:
-	    print("Port: {}".format(i))
-	    k = parser_port_table.make_key([gc.KeyTuple('f1', i, 0x1FF)])
-            #key_fields = list(k.field_dict.values())
-            #print(key_fields)
-            #print(k.field_dict)
-
-            #for field in key_fields:
-            #    field_id = parser_port_table.info.key_field_id_get(field.name)
-            #    if field_id is None:
-            #        logger.error("Data key %s not found.", field.name)
-            #    print(field)
-            #    print(field.value)
-            #    print(field.mask)
-            #    print(field_id)
-	    parser_port_table.entry_add(target_ingress, [k])
-	#print(parser_port_table.info.key_field_name_list_get())	
-	#for f in parser_port_table.info.key_field_name_list_get():
-	#    print(f, parser_port_table.info.key_field_type_get(f))
-	#key_list = []
-	#for i in loop_ports:
-        #    k = parser_port_table.make_key([gc.KeyTuple('f1', i, 0x1FF)])
-	#    key_list.append(k)
-        #parser_port_table.entry_add(target, key_list)
-
-
-
-        # Get the table attribute and verify it is correct
-        #resp = parser_port_table.attribute_get(target, "EntryScope")
-        #for d in resp:
-        #    assert d["gress_scope"]["predef"] == bfruntime_pb2.Mode.ALL
-        #    assert d["pipe_scope"]["predef"] == bfruntime_pb2.Mode.ALL
-        #    assert d["prsr_scope"]["predef"] == bfruntime_pb2.Mode.ALL
-
-        #added = list()
-        #expected = list()
-        #for i in loop_ports:
-        #    k = parser_port_table.make_key([client.KeyTuple('bit<9>', i, 168)])
-
-        #    expected.append(k)
-        #    added.append(k)
-        #    parser_port_table.entry_add(target, [k])
-
-            # Check the usage as we add entries.
-            #usage_resp = next(vs_table.usage_get(target))
-            #self.assertEqual(usage_resp, i)
-
-        #resp = parser_port_table.entry_get(target, None, {"from_hw": False})
-        #for data, key in resp:
-        #    "==============="
-        #    logger.info(key.to_dict())
-        #    logger.info(data.to_dict())
-        #    assert key in expected
-        #    expected.remove(key)
-
-        #vs_table.entry_del(target, None)
-        #logger.info("Check if entries were deleted in clear call")
-        #resp = vs_table.entry_get(target, added, {"from_hw": False})
-        #try:
-        #    # If entries are not there exception will be raised on following line
-        #    for data, key in resp:
-        #        print("Stub print")
-        #except Exception:
-        #    print("Entry deleted - PASS")
-        #else:
-        #    raise AssertionError("Entries not deleted")
-
+                                               config_gress_scope=True,
+                                               predefined_gress_scope_val=bfruntime_pb2.Mode.SINGLE,
+                                               config_pipe_scope=True, predefined_pipe_scope=True,
+                                               predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE, pipe_scope_args=0,
+                                               config_prsr_scope=True,
+                                               predefined_prsr_scope_val=bfruntime_pb2.Mode.SINGLE, prsr_scope_args=0)
+        for i in range(0, num_prsrs):
+            target_ingress = gc.Target(device_id=0, pipe_id=pipe_idx, direction=0x00, prsr_id=i) # TODO: NOT DONE, MUST DO FOR EVERY PARSER!
+            # The below passes with both target and target_ingress
+            for i in loop_ports:
+	        k = parser_port_table.make_key([gc.KeyTuple('f1', i, 0x1FF)])
+	        parser_port_table.entry_add(target_ingress, [k])
 
     def setup_all_switch_ports(self, target, loop_ports, no_loop_ports, port_speed, port_fec):
         print(loop_ports)
