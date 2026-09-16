@@ -142,18 +142,21 @@ struct headers {
 /*************************************************************************
 *********************** P A R S E R  ***********************************
 *************************************************************************/
+struct pktgen_port_t {
+
+}
 parser MyParser0(packet_in packet,
                 out headers hdr,
                 out metadata meta,
                 out ingress_intrinsic_metadata_t standard_metadata) {
-    value_set<bit<9>>(64) recirculation_ports; 
+    value_set<PortId_t>(64) pktgen_ports; 
     TofinoIngressParser() tofino_parser;
 
     state start {
 	tofino_parser.apply(packet, standard_metadata);
 	transition select(standard_metadata.ingress_port) {
-	    recirculation_ports: parse_pktgen_timer;
-            12      : parse_pktgen_timer; // Adjust port # for your Pipe
+	    pktgen_ports: parse_pktgen_timer;
+	    12      : parse_pktgen_timer; // Adjust port # for your Pipe
             20      : parse_pktgen_timer; // Adjust port # for your Pipe
             56      : parse_pktgen_timer; // Adjust port # for your Pipe
             68      : parse_pktgen_timer; // Adjust port # for your Pipe
@@ -198,13 +201,13 @@ parser MyParser1(packet_in packet,
                 out headers hdr,
                 out metadata meta,
                 out ingress_intrinsic_metadata_t standard_metadata) {
-    value_set<bit<9>>(64) recirculation_ports; 
+    value_set<PortId_t>(64) pktgen_ports; 
     TofinoIngressParser() tofino_parser;
 
     state start {
 	tofino_parser.apply(packet, standard_metadata);
 	transition select(standard_metadata.ingress_port) {
-	    recirculation_ports: parse_pktgen_timer;
+	    pktgen_ports: parse_pktgen_timer;
             12      : parse_pktgen_timer; // Adjust port # for your Pipe
             20      : parse_pktgen_timer; // Adjust port # for your Pipe
             56      : parse_pktgen_timer; // Adjust port # for your Pipe
@@ -303,11 +306,12 @@ control MyIngress0(inout headers hdr,
 
     //////// Performance Statistics (Packet Gen) /////////
     Register<int<32>, bit<1>>(1, 0) latency_lower; 
+    MathUnit<bit<32>>(MathOp_t.MUL, 2) mult;
     RegisterAction<int<32>, bit<1>, int<32>>(latency_lower) update_low_lat_cntr = {
         void apply(inout int<32> new_lat_cntr, out int<32> overflow) {
 	    overflow = new_lat_cntr;
 	    if (new_lat_cntr < 0) {
-	        new_lat_cntr = (int<32>)meta.duration;
+	        new_lat_cntr = (int<32>)(mult.execute(meta.duration));
 	    } else {
 	        new_lat_cntr = new_lat_cntr + (int<32>)meta.duration;
 	    }
@@ -427,12 +431,6 @@ control MyIngress0(inout headers hdr,
         void apply(inout bit<32> new_pkt_cntr, out bit<32> overflow) {
 	    overflow = new_pkt_cntr;
 	    new_pkt_cntr = new_pkt_cntr + 1;
-	    /*if (new_pkt_cntr < 0) {
-	        new_pkt_cntr = 2;
-	    } else {
-	        new_pkt_cntr = new_pkt_cntr + 1;
-	    }*/
-
 	}
     };
 
