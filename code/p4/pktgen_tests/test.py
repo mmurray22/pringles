@@ -264,7 +264,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         register_entry_name = register_name + ".f1"
         return reg_data_dict[register_entry_name][0]
      
-    def get_final_pktgen_stats(self, bfrt_info, target, duration, nsperpkt, num_recircs, pipe_id, num_pipelines, payload_size):
+    def get_final_pktgen_stats(self, bfrt_info, target, duration, nsperpkt, num_recircs, pipe_id, num_pipelines, payload_size, exp_type, lower_time_bound, upper_time_bound, time_interval_ms):
         # 1. Get a reference to the counter table
         pkts = 0
         pkts_tput = 0
@@ -301,7 +301,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         avg_lat = 0
         if pkts != 0:
 	    avg_lat = (total_latency_ns/float(pkts))/float(1000)
-            logger.info("======================Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
+            logger.info("======================Average latency: {} microseconds".format(avg_lat))
        
         raw_dur_reg_name = "MyIngress{}.raw_duration".format(pipe_id)
         raw_dur_lat = self.get_register_number(bfrt_info, target, raw_dur_reg_name)
@@ -310,37 +310,36 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
         raw_et_lat = self.get_register_number(bfrt_info, target, raw_et_reg_name)
         logger.info("Raw elapsed time: {}ns".format(raw_et_lat))
-        total_latency_ns = 0
         
-        avg_lat = 0
-        if pkts != 0:
-	    avg_lat = (total_latency_ns/float(pkts))/float(1000)
         target_dest = "/root/pipe{}_{}_nsperpkt.json".format(pipe_id, nsperpkt)
-        self.write_experiment_telemetry(target_dest, pkts, pkts_tput, total_latency_ns, avg_lat, duration, nsperpkt, num_recircs, num_pipelines, payload_size)
-     
-    def write_experiment_telemetry(self, file_path, total_pkts, throughput, total_lat, avg_lat, duration, nsperpkt, num_recircs, num_pipelines, payload_size):
-        """
-        Serializes benchmarking telemetry safely into a standardized JSON payload structure.
-        """
-        # 1. Map data directly into a standard Python dictionary layout
         telemetry_payload = {
-            "total_number_of_packets": int(total_pkts),
-            "throughput_pps": float(throughput),
-            "total_latency_ns": float(total_lat),
-            "average_latency_us": float(avg_lat),
+            "total_number_of_packets": int(pkts),
+            "throughput_pps": float(pkts_tput),
+            "total_latency_ns": float(total_latency_ns),
+            "average_latency_us": avg_lat,
             "nsperpkt": int(nsperpkt),
             "duration": int(duration),
             "total_loopback": int(num_recircs),
             "num_pipelines": int(num_pipelines),
             "payload_size": int(payload_size),
-            "elapsed_time_timeseries": self.raw_et_over_time,
-            "queue_count_timeseries": self.queue_cnt_over_time,
-            "avg_lat_timeseries": self.avg_lat_over_time,
-            "true_gen_pkt_rate_timeseries": self.generate_pkts_over_time,
-            "tput_timeseries": self.tput_over_time,
-            "num_pkts_timeseries": self.pkts_over_time
+            "elapsed_time_timeseries": self.raw_et_over_time[pipe_id],
+            "queue_count_timeseries": self.queue_cnt_over_time[pipe_id],
+            "avg_lat_timeseries": self.avg_lat_over_time[pipe_id],
+            "true_gen_pkt_rate_timeseries": self.generate_pkts_over_time[pipe_id],
+            "tput_timeseries": self.tput_over_time[pipe_id],
+            "num_pkts_timeseries": self.pkts_over_time[pipe_id],
+            "exp_type": exp_type,
+            "lower_time_bound": lower_time_bound,
+            "upper_time_bound": upper_time_bound,
+            "pipe_id": pipe_id,
+            "timeseries_interval_ms": time_interval_ms
         }
-        
+        self.write_experiment_telemetry(target_dest, telemetry_payload)
+     
+    def write_experiment_telemetry(self, file_path, telemetry_payload):
+        """
+        Serializes benchmarking telemetry safely into a standardized JSON payload structure.
+        """
         # 2. Open and write out using a safe with context block
         try:
             with open(file_path, 'w') as json_file:
@@ -397,11 +396,22 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         lower_time_bound = data['lower_time_bound']
         upper_time_bound = data['upper_time_bound']
         experiment_type = data['experiment_type']
+        logger.info("Experiment type: {}".format(experiment_type))
 	
         warmup = 5
         cooldown = 5
         buffer_time = 10
         total_time = duration + warmup + cooldown + buffer_time
+        app_id = 0
+	pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
+         
+        self.raw_et_over_time = {0: [], 1: []}
+        self.queue_cnt_over_time = {0: [], 1: []}
+        self.avg_lat_over_time = {0: [], 1: []}
+        self.tput_over_time = {0: [], 1: []}
+        self.pkts_over_time = {0: [], 1: []}
+        self.generate_pkts_over_time = {0: [], 1: []}
+        prev_num_pkts = 0
 
         run_setup = True
 
@@ -411,11 +421,9 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
 	# recirc ports are active, and whether this pipe is the one that kicks off the
 	# ring's first control packet.
 	pipes_cfg = data['pipes']
-        experiment_type = data['experiment_type']
-        logger.info("Experiment type: {}".format(experiment_type))
+
 
     	self.setup_all_switch_ports(self.target, pipes_cfg, port_speed, port_fec, portSetup)
-
 
 	for pipe_cfg in pipes_cfg:
 	    loopback_ports = pipe_cfg['loopback_ports']
@@ -449,23 +457,12 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
 	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, in_cntrl, 0)
 
         for pipe_cfg in pipes_cfg:
-            if pipe_cfg['pipe_id'] == 0 and pipe_cfg['active_pipe']:
-                self.setup_timer_pkt_gen(bfrt_info, self.target0, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, pipe_cfg['pipe_id'], experiment_type)
-            elif pipe_cfg['pipe_id'] == 1 and pipe_cfg['active_pipe']:
-                self.setup_timer_pkt_gen(bfrt_info, self.target1, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, pipe_cfg['pipe_id'], experiment_type)
+            pipe_id = pipe_cfg['pipe_id']
+            if pipe_cfg['active_pipe']:
+                self.setup_timer_pkt_gen(bfrt_info, targets[pipe_id], CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, pipe_id, experiment_type)
 
         start_time = time.time()
-	app_id = 0
-	pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
-        
-        self.raw_et_over_time = []
-        self.queue_cnt_over_time = []
-        self.avg_lat_over_time = []
-        self.tput_over_time = []
-        self.pkts_over_time = []
-        self.generate_pkts_over_time = []
-        prev_num_pkts = 0
-        while (time.time() - start_time) < duration:
+	while (time.time() - start_time) < duration:
             # verify pktgen related counters
             for pipe_id in range(2):
                 resp = pktgen_app_cfg_table.entry_get(
@@ -484,14 +481,15 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 logger.info("Generated %d batches", batch_value)
                 pkt_value = data_dict["pkt_counter"]
                 logger.info("Generated %d packets", pkt_value)
-                logger.info("Rate of packet production is %d packets for 1 second", (pkt_value - prev_num_pkts))
-                self.generate_pkts_over_time.append(pkt_value)
+                rate_pkt_prod = pkt_value - prev_num_pkts
+                logger.info("Rate of packet production is %d packets for 1 second", rate_pkt_prod)
+                self.generate_pkts_over_time[pipe_id].append(rate_pkt_prod)
                 prev_num_pkts = pkt_value
 
                 # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
                 raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
                 raw_et_lat = self.get_register_number(bfrt_info, targets[pipe_id], raw_et_reg_name)
-                self.raw_et_over_time.append(raw_et_lat)
+                self.raw_et_over_time[pipe_id].append(raw_et_lat)
                 logger.info("[IN PROGRESS] Raw elapsed time: {}ns".format(raw_et_lat))
  
                 # measure total number of packets 
@@ -507,8 +505,8 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 #logger.info("[IN PROGRESS] Upper Append Packets: {} and Lower Append Packets: {}".format(high_num_tot_pkts, low_num_tot_pkts))
 	        logger.info("[IN PROGRESS] Total Append Packets: {}".format(pkts))
 	        logger.info("[IN PROGRESS] Append Throughput from PIPE {}: {}".format(pipe_id, pkts_tput))
-                self.pkts_over_time.append(pkts)
-                self.tput_over_time.append(pkts_tput)
+                self.pkts_over_time[pipe_id].append(pkts)
+                self.tput_over_time[pipe_id].append(pkts_tput)
 
                 # measure average latency at this time period
                 low_lat_reg_name = "MyIngress{}.latency_lower".format(pipe_id)
@@ -522,21 +520,18 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 if pkts != 0:
 	            avg_lat = (total_latency_ns/float(pkts))/float(1000)
                     logger.info("[IN PROGRESS] Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
-                self.avg_lat_over_time.append(avg_lat)
+                self.avg_lat_over_time[pipe_id].append(avg_lat)
 
                 # measure queue size at this time period
                 q_name = "MyEgress{}.queue_cnt".format(pipe_id)
                 q_res = self.get_register_number(bfrt_info, targets[pipe_id], q_name)
                 logger.info("[IN PROGRESS] Num of packets in the egress queue: {}".format(q_res))
-                self.queue_cnt_over_time.append(q_res)
+                self.queue_cnt_over_time[pipe_id].append(q_res)
 	    time.sleep(1)
         num_pipelines = len(pipes_cfg)
 
 	for pipe_cfg in pipes_cfg:
 	    pipe_id = pipe_cfg['pipe_id']
-	    tot_num_recirc_ports = pipe_cfg['total_recirc_ports']
+	    num_recirc_ports = pipe_cfg['total_recirc_ports']
             logger.info("Processing pipe {} info!".format(pipe_id))
-            if pipe_id == 0:
-                self.get_final_pktgen_stats(bfrt_info, self.target0, duration, nsperpkt, tot_num_recirc_ports, pipe_id, num_pipelines, payload_size)
-            else:
-                self.get_final_pktgen_stats(bfrt_info, self.target1, duration, nsperpkt, tot_num_recirc_ports, pipe_id, num_pipelines, payload_size)
+            self.get_final_pktgen_stats(bfrt_info, targets[pipe_id], duration, nsperpkt, num_recirc_ports, pipe_id, num_pipelines, payload_size, experiment_type, lower_time_bound, upper_time_bound, 1000)
