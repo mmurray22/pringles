@@ -263,6 +263,18 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
 	reg_data_dict = reg_data.to_dict()
         register_entry_name = register_name + ".f1"
         return reg_data_dict[register_entry_name][0]
+
+    def get_full_register(self, bfrt_info, target, register_name):
+        reg_table = bfrt_info.table_get(register_name)
+	table_resp = reg_table.entry_get(
+	    target,
+	    [reg_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
+	    {"from_hw": True}
+	)
+	reg_data, _ = next(table_resp)
+	reg_data_dict = reg_data.to_dict()
+        register_entry_name = register_name + ".f1"
+        return reg_data_dict[register_entry_name]
      
     def get_final_pktgen_stats(self, bfrt_info, target, duration, nsperpkt, num_recircs, pipe_id, num_pipelines, payload_size, exp_type, lower_time_bound, upper_time_bound, time_interval_ms):
         # 1. Get a reference to the counter table
@@ -407,6 +419,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
          
         self.raw_et_over_time = {0: [], 1: []}
         self.queue_cnt_over_time = {0: [], 1: []}
+        self.ack_cnt_over_time = {0: [], 1: []}
         self.avg_lat_over_time = {0: [], 1: []}
         self.tput_over_time = {0: [], 1: []}
         self.pkts_over_time = {0: [], 1: []}
@@ -461,6 +474,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
             if pipe_cfg['active_pipe']:
                 self.setup_timer_pkt_gen(bfrt_info, targets[pipe_id], CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, pipe_id, experiment_type)
 
+        time_interval_s = .1
         start_time = time.time()
 	while (time.time() - start_time) < duration:
             # verify pktgen related counters
@@ -527,11 +541,18 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 q_res = self.get_register_number(bfrt_info, targets[pipe_id], q_name)
                 logger.info("[IN PROGRESS] Num of packets in the egress queue: {}".format(q_res))
                 self.queue_cnt_over_time[pipe_id].append(q_res)
-	    time.sleep(1)
+
+                # measure size of ack count table
+                #ack_name = "MyIngress{}.ack_array".format(pipe_id)
+                #ack_res = self.get_full_register(bfrt_info, targets[pipe_id], ack_name)
+                #logger.info("[IN PROGRESS] Number of pending acks: {}".format(ack_res))
+                #self.ack_cnt_over_time[pipe_id].append(ack_res)
+
+	    time.sleep(time_interval_s)
         num_pipelines = len(pipes_cfg)
 
 	for pipe_cfg in pipes_cfg:
 	    pipe_id = pipe_cfg['pipe_id']
 	    num_recirc_ports = pipe_cfg['total_recirc_ports']
             logger.info("Processing pipe {} info!".format(pipe_id))
-            self.get_final_pktgen_stats(bfrt_info, targets[pipe_id], duration, nsperpkt, num_recirc_ports, pipe_id, num_pipelines, payload_size, experiment_type, lower_time_bound, upper_time_bound, 1000)
+            self.get_final_pktgen_stats(bfrt_info, targets[pipe_id], duration, nsperpkt, num_recirc_ports, pipe_id, num_pipelines, payload_size, experiment_type, lower_time_bound, upper_time_bound, time_interval_s*1000)
