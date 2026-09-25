@@ -31,8 +31,8 @@ class Cntrl(Packet):
                     BitField("ring_view", 0, 16),
                     BitField("pkt_id", 0, 16)]
 
-class Cntrl_Check(Packet):
-    fields_desc = [ IntField("switch_global_seq_no", 0)]
+class Canary(Packet):
+    fields_desc = [ BitField("magic", 165, 8)]
 
 class Hello(Packet):
     fields_desc = [ BitField("hello", 0, 32)]
@@ -91,3 +91,8 @@ bind_layers(RingType, Read, type=TYPE_READ_RESP)
 bind_layers(RingType, Subscribe, type=TYPE_SUB)
 bind_layers(RingType, Tail, type=TYPE_TAIL)
 bind_layers(Ether, Cntrl, type=TYPE_CONTROL)
+bind_layers(Cntrl, Canary)
+bind_layers(Append, Canary)
+bind_layers(Read, Canary)
+bind_layers(Subscribe, Canary)
+bind_layers(Tail, Canary)

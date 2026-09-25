@@ -167,6 +167,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
 	    UDP(dport=1234, sport=5678)/ \
 	    RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1)/ \
             Append(nonce=nonce,payload_size=payload_size,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0,exp_type=exp_type)/ \
+            Canary(magic=165)/ \
             Raw(load=payload)
         p.show()
         raw_p = bytes(p)
@@ -340,6 +341,8 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
             "true_gen_pkt_rate_timeseries": self.generate_pkts_over_time[pipe_id],
             "tput_timeseries": self.tput_over_time[pipe_id],
             "num_pkts_timeseries": self.pkts_over_time[pipe_id],
+            "pipeline_time_timeseries": self.pipeline_time[pipe_id],
+            "timestamps": self.timestamps,
             "exp_type": exp_type,
             "lower_time_bound": lower_time_bound,
             "upper_time_bound": upper_time_bound,
@@ -363,8 +366,10 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
     
     def send_cntrl_packet(self, interface, dstAddr, srcAddr, in_cntrl, seq_no):
         pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_CONTROL)/ \
-              Cntrl(global_seq_no=seq_no, ring_view=1, pkt_id=in_cntrl)
-        logger.info("CONTROL PACKET WE ARE SENDING: {}".format(pkt.show()))
+              Cntrl(global_seq_no=seq_no, ring_view=1, pkt_id=in_cntrl)/ \
+              Canary(magic=165)
+        logger.info("CONTROL PACKET WE ARE SENDING:")
+        pkt.show()
         sendp(pkt, iface=interface, verbose=True)
 
     def runTest(self):
@@ -383,7 +388,11 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         self.target0 = gc.Target(device_id=0, pipe_id=0x00)
         self.target1 = gc.Target(device_id=0, pipe_id=0x01)
         targets = [self.target0, self.target1]
-
+	pipe_id = 1
+        cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
+        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+        logger.info("[BEFORE PORT SETUP] Ingress Canary count: {}".format(cntrl_cnt))
+ 
         portSetup = PortSetup() 
         portSetup.initialize_ports(bfrt_info, logger) 
 
@@ -409,7 +418,11 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         upper_time_bound = data['upper_time_bound']
         experiment_type = data['experiment_type']
         logger.info("Experiment type: {}".format(experiment_type))
-	
+	pipe_id = 1
+        cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
+        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+        logger.info("[EVEN EARLIER] Ingress Canary count: {}".format(cntrl_cnt))
+         
         warmup = 5
         cooldown = 5
         buffer_time = 10
@@ -423,8 +436,10 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         self.avg_lat_over_time = {0: [], 1: []}
         self.tput_over_time = {0: [], 1: []}
         self.pkts_over_time = {0: [], 1: []}
+        self.pipeline_time = {0: [], 1: []}
         self.generate_pkts_over_time = {0: [], 1: []}
-        prev_num_pkts = 0
+        self.timestamps = []
+        prev_num_pkts = [0, 0]
 
         run_setup = True
 
@@ -437,7 +452,11 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
 
 
     	self.setup_all_switch_ports(self.target, pipes_cfg, port_speed, port_fec, portSetup)
-
+        pipe_id = 1
+        cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
+        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+        logger.info("[BEFORE EVERYTHING] Ingress Canary count: {}".format(cntrl_cnt))
+                
 	for pipe_cfg in pipes_cfg:
 	    loopback_ports = pipe_cfg['loopback_ports']
 	    wait_ports = pipe_cfg['wait_ports']
@@ -468,6 +487,28 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         if switch_send_cntrl:
 	    logger.info("Sending control packet!")
 	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, in_cntrl, 0)
+        #start_time = time.time()
+        #while (time.time() - start_time) < 2:
+        #    # Get cntrl packet counter
+        #    for pipe_id in (1, 1):
+        #        cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter".format(pipe_id)
+        #        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+        #        logger.info("[IN PROGRESS] Control count: {}".format(cntrl_cnt))
+        #        cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
+        #        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+        #        logger.info("[IN PROGRESS] Ingress Canary count: {}".format(cntrl_cnt))
+        #        if pipe_id == 1:
+        #            cntrl_cnt_reg_name = "MyIngress{}.true_magic_val".format(pipe_id)
+        #            cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
+        #            logger.info("[IN PROGRESS] Canary magic value: {}".format(cntrl_cnt))
+        #            cntrl_cnt_reg_name = "MyIngress{}.pesky_ether_type".format(pipe_id)
+        #            cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
+        #            logger.info("[IN PROGRESS] Ether type value: {}".format(cntrl_cnt))
+        #        
+        #        cntrl_cnt_reg_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
+        #        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+        #        logger.info("[IN PROGRESS] Egress Canary count: {}".format(cntrl_cnt))
+        #return # TODO TODO
 
         for pipe_cfg in pipes_cfg:
             pipe_id = pipe_cfg['pipe_id']
@@ -477,8 +518,29 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         time_interval_s = .1
         start_time = time.time()
 	while (time.time() - start_time) < duration:
+            print("=======================================================================")
             # verify pktgen related counters
+            curr_time = time.time() - start_time
+            self.timestamps.append(curr_time)
             for pipe_id in range(2):
+                cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter".format(pipe_id)
+                cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+                logger.info("[IN PROGRESS] Control count: {}".format(cntrl_cnt))
+                cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
+                cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+                logger.info("[IN PROGRESS] Ingress Canary count: {}".format(cntrl_cnt))
+                if pipe_id == 1:
+                    cntrl_cnt_reg_name = "MyIngress{}.true_magic_val".format(pipe_id)
+                    cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
+                    logger.info("[IN PROGRESS] Canary magic value: {}".format(cntrl_cnt))
+                    cntrl_cnt_reg_name = "MyIngress{}.pesky_ether_type".format(pipe_id)
+                    cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
+                    logger.info("[IN PROGRESS] Ether type value: {}".format(cntrl_cnt))
+                
+                cntrl_cnt_reg_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
+                cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+                logger.info("[IN PROGRESS] Egress Canary count: {}".format(cntrl_cnt))
+
                 resp = pktgen_app_cfg_table.entry_get(
                     targets[pipe_id],
                     [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', app_id)])],
@@ -495,10 +557,10 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 logger.info("Generated %d batches", batch_value)
                 pkt_value = data_dict["pkt_counter"]
                 logger.info("Generated %d packets", pkt_value)
-                rate_pkt_prod = pkt_value - prev_num_pkts
+                rate_pkt_prod = pkt_value - prev_num_pkts[pipe_id]
                 logger.info("Rate of packet production is %d packets for 1 second", rate_pkt_prod)
-                self.generate_pkts_over_time[pipe_id].append(rate_pkt_prod)
-                prev_num_pkts = pkt_value
+                self.generate_pkts_over_time[pipe_id].append(rate_pkt_prod) # TODO check this
+                prev_num_pkts[pipe_id] = pkt_value
 
                 # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
                 raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
@@ -542,12 +604,19 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 logger.info("[IN PROGRESS] Num of packets in the egress queue: {}".format(q_res))
                 self.queue_cnt_over_time[pipe_id].append(q_res)
 
+                # measure amount of time  at this time period
+                #pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
+                #pipe_res = self.get_register_number(bfrt_info, targets[pipe_id], pipe_name)
+                #logger.info("[IN PROGRESS] Time in the pipeline: {}".format(pipe_res))
+                #self.pipeline_time[pipe_id].append(pipe_res)
+
                 # measure size of ack count table
                 #ack_name = "MyIngress{}.ack_array".format(pipe_id)
                 #ack_res = self.get_full_register(bfrt_info, targets[pipe_id], ack_name)
                 #logger.info("[IN PROGRESS] Number of pending acks: {}".format(ack_res))
                 #self.ack_cnt_over_time[pipe_id].append(ack_res)
 
+            print("=======================================================================")
 	    time.sleep(time_interval_s)
         num_pipelines = len(pipes_cfg)
 
