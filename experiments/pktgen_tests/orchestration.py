@@ -147,6 +147,7 @@ class ExperimentConfig:
     # port for that pipe). Used for the same-switch hop case in ring routing.
     ports_to_pipelines_per_switch: List[List[int]]
     loopback_ports: List[List[List[int]]]
+    wait_ports: List[List[List[int]]]
     switch_ports: List[List[List[int]]]
     total_recirc_ports: List[int]  # Converted from int to List[int]
     # Which PREFIX LENGTHS of ring_topo to test, e.g. [1, 2, 4] tests
@@ -155,23 +156,25 @@ class ExperimentConfig:
     # from 1 through len(ring_topo).
     ring_sizes_to_test: Optional[List[int]] = None
     duration: int = 30
-    wait_time: int = 5
-    jumpbox: Optional[str] = None
-    primary_switch_id: int = 3
-    primary_pipe_id: int = 0
     # How long (in whatever units test.py's pktgen-start logic expects, e.g. seconds)
     # every NON-primary switch should wait before beginning packet generation, to
     # give it time to be fully up before the primary switch sends the control packet.
     # The primary switch itself always gets wait_time=0 in its generated YAML.
-    non_primary_wait_time: int = 0
+    wait_time: int = 5
+    ns_lower_bound_time: int = 5000 # 5 microseconds
+    ns_upper_bound_time: int = 10000 # 10 microseconds
+    jumpbox: Optional[str] = None
+    primary_switch_id: int = 3
+    primary_pipe_id: int = 0
     payload_size: int = 100
     acks_required: int = 1
     sde_path: str = "/root/bf-sde-9.4.0/"
-    p4_program_name: str = "sequencing_only"
+    p4_program_name: str = "pktgen"
     p4_program_dir: str = "/root/pringles/code/p4/pktgen_tests"
     remote_json_dir: str = "/root"
     local_results_dir: str = "/home/mic/Programming/PhD/pringles/experiments/pktgen_tests/results"
     nsperpkt: List[int] = None
+    exp_type: int = 1
 
 @dataclass
 class SwitchNode:
@@ -187,24 +190,52 @@ class SwitchNode:
 # --- Core Orchestration Engine ---
 
 class RemoteBenchmarkOrchestrator:
-    def __init__(self, config: ExperimentConfig, nodes: List[SwitchNode], current_nsperpkt: int, current_recirc: int, base_results_dir: str, sweep_idx: int):
+    def __init__(self, config: ExperimentConfig, nodes: List[SwitchNode], current_nsperpkt: int, current_recirc: int, current_lower_time_bound: int, base_results_dir: str):
         self.config = config
         self.nodes = nodes
         self.current_nsperpkt = current_nsperpkt
         self.current_recirc = current_recirc  # Track target recirculation value for this run iteration
+        self.current_lower_time_bound = current_lower_time_bound # Track target recirculation value for this run iteration
         self.ring_size = len(config.ring_topo)  # config passed in is already truncated to this run's prefix
         self.config_json_path = "/tmp/bench_config.json"
         self.remote_yaml_filename = "switch_config.yaml"
         self.remote_yaml_path = f"/tmp/{self.remote_yaml_filename}"
         self.local_run_dir = base_results_dir
-        self.sweep_idx = sweep_idx
 
         with open(self.config_json_path, 'w') as f:
             json.dump(asdict(self.config), f, indent=4)
 
+    def run_scp(self, node, file_to_copy, dest_path, to_local) -> subprocess.CompletedProcess: 
+        scp_cmd = ""
+        scp_base = ["scp", "-o", "StrictHostKeyChecking=no"]
+        if self.config.jumpbox:
+            scp_base += ["-J", self.config.jumpbox]
+        if node.ssh_key_path:
+            scp_base += ["-i", node.ssh_key_path]
+
+        num_times = 0
+        node_log = NodeLoggerAdapter(logger, {'node': f"SCP"})
+        for num_times in range(0, 5):
+            try:
+                if to_local:
+                    scp_cmd = scp_base + [f"{node.username}@{node.mgmt_ip}:{file_to_copy}", dest_path]
+                else:
+                    scp_cmd = scp_base + [file_to_copy, f"{node.username}@{node.mgmt_ip}:{dest_path}"]
+                printable_cmd = " ".join(f"'{arg}'" if " " in arg or ";" in arg else arg for arg in scp_cmd)
+                return subprocess.run(scp_cmd, text=True, check=True, capture_output=True, timeout=45)
+            except subprocess.CalledProcessError as e:
+                num_times += 1
+                node_log.error(f"SCP command failed: {scp_cmd}\nStderr: {e.stderr}")
+                if "MaxStartups" in e.stderr or "kex_exchange_identification" in str(e.stderr) or "Connection closed by UNKNOWN" in str(e.stderr):
+                    time.sleep(2)
+                    continue
+                else:
+                    raise e
+
+
     def _build_ssh_base(self, node: SwitchNode) -> List[str]:
         """Constructs base SSH command injection arrays handling ProxyJumps."""
-        ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "-A"]
+        ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=60", "-A"] # TODO: ConnectTimeout should be passed in
         if self.config.jumpbox:
             ssh_cmd += ["-J", self.config.jumpbox]
         if node.ssh_key_path:
@@ -217,12 +248,20 @@ class RemoteBenchmarkOrchestrator:
         full_command = self._build_ssh_base(node) + [cmd]
         printable_cmd = " ".join(f"'{arg}'" if " " in arg or ";" in arg else arg for arg in full_command)
         NodeLoggerAdapter(logger, {'node': f"Switch-{node.switch_id}"}).info(f"Executing Remote Command:\n  {printable_cmd}")
-        try:
-            return subprocess.run(full_command, capture_output=True, text=True, check=True, timeout=45)
-        except subprocess.CalledProcessError as e:
-            node_log = NodeLoggerAdapter(logger, {'node': f"Switch-{node.switch_id}"})
-            node_log.error(f"Remote command failed: {cmd}\nStderr: {e.stderr}")
-            raise e
+        num_times = 0
+        for num_times in range(0, 5):
+            try:
+                return subprocess.run(full_command, capture_output=True, text=True, check=True, timeout=45)
+            except subprocess.CalledProcessError as e:
+                num_times += 1
+                node_log = NodeLoggerAdapter(logger, {'node': f"Switch-{node.switch_id}"})
+                node_log.error(f"Remote command failed: {printable_cmd}\nStderr: {e.stderr}")
+                if "MaxStartups" in e.stderr or "kex_exchange_identification" in e.stderr or "Connection closed by UNKNOWN" in e.stderr:
+                    node_log.error(f"Retrying remote command!")
+                    time.sleep(2)
+                    continue
+                else:
+                    raise e
 
     def purge_remote_telemetry_footprints(self):
         """Proactively discovers and clears prior JSON artifacts from the target switch environment."""
@@ -251,10 +290,11 @@ class RemoteBenchmarkOrchestrator:
         used directly instead of computing this pipe's own next-hop in the ring --
         for a pipe that isn't actually part of this run's ring_topo, but whose tables
         still need to be set up on the ASIC regardless (both MyIngress0/MyIngress1
-        need SOME valid configuration). Everything else (loopback_ports, switch_ports,
+        need SOME valid configuration). Everything else (loopback_ports, wait_ports, switch_ports,
         ports_to_ring_members, recirc truncation) is still built normally."""
         num_ring_members = len(self.config.ring_topo)
 
+        # Recirculation ports
         if switch_id < len(self.config.loopback_ports) and pipe_id < len(self.config.loopback_ports[switch_id]):
             active_loopback_ports = list(self.config.loopback_ports[switch_id][pipe_id])
             active_switch_ports = self.config.switch_ports[switch_id][pipe_id]
@@ -262,6 +302,13 @@ class RemoteBenchmarkOrchestrator:
             node_log.warning(f"No specific loopback array mapped for switch {switch_id} pipe {pipe_id}. Defaulting to empty array.")
             active_loopback_ports = []
             active_switch_ports = []
+
+        # Wait ports
+        if switch_id < len(self.config.loopback_ports) and pipe_id < len(self.config.loopback_ports[switch_id]):
+            active_wait_ports = list(self.config.wait_ports[switch_id][pipe_id])
+        else:
+            node_log.warning(f"No specific wait array mapped for switch {switch_id} pipe {pipe_id}. Defaulting to empty array.")
+            active_wait_ports = []
 
         if switch_id < len(self.config.ports_to_ring_members):
             active_ring_ports = self.config.ports_to_ring_members[switch_id]
@@ -316,6 +363,7 @@ class RemoteBenchmarkOrchestrator:
             "cntrl_port": active_cntrl_port,
             "cntrl_port_is_loopback": cntrl_port_is_loopback,
             "loopback_ports": active_loopback_ports,
+            "wait_ports": active_wait_ports,
             "switch_ports": active_switch_ports,
             "ports_to_ring_members": active_ring_ports,
             "total_recirc_ports": self.current_recirc,
@@ -388,32 +436,45 @@ class RemoteBenchmarkOrchestrator:
             "p4_program_dir": self.config.p4_program_dir,
             "switch_id": node.switch_id,
             "is_primary": node.is_primary,
-            "wait_time": 0 if node.is_primary else self.config.non_primary_wait_time,
+            "wait_time": 5 if node.is_primary else self.config.wait_time,
+            "lower_time_bound": self.current_lower_time_bound,
+            "upper_time_bound": self.config.ns_upper_bound_time,
             "switch_ip": node.mgmt_ip,
             "nsperpkt": self.current_nsperpkt,
             "send_cntrl_pkt": 1 if is_designated_primary else 0,
             "pipes": pipes_cfg,
+            "experiment_type": self.config.exp_type,
         }
 
         yaml_content = "---\n# Automatically generated by P4 Switch Benchmarking Orchestrator\n" + \
             yaml.dump(config_dict, Dumper=QuotedStringDumper, default_flow_style=None, sort_keys=False)
 
         local_yaml_staging = f"/tmp/switch_test_config_{node.switch_id}.yaml"
-        with open(local_yaml_staging, "w") as y_file:
-            y_file.write(yaml_content)
 
-        scp_base = ["scp", "-o", "StrictHostKeyChecking=no"]
-        if self.config.jumpbox:
-            scp_base += ["-J", self.config.jumpbox]
-        if node.ssh_key_path:
-            scp_base += ["-i", node.ssh_key_path]
+        node_log.warning(f"Creating {local_yaml_staging} for Switch {node.switch_id}")
+        try:
+            with open(local_yaml_staging, "w") as y_file:
+                y_file.write(yaml_content)
+        except Exception as e:
+            node_log.warning(f"An error occurred: {local_yaml_staging}")
 
-        scp_yaml_cmd = scp_base + [local_yaml_staging, f"{node.username}@{node.mgmt_ip}:{self.remote_yaml_path}"]
-        subprocess.run(scp_yaml_cmd, check=True, capture_output=True, timeout=30)
-        node_log.info(f"Synchronized configuration payload to remote destination: {self.remote_yaml_path}")
+        if os.path.isfile(local_yaml_staging):
+            node_log.info("The file exists.")
 
-        scp_json_cmd = scp_base + [self.config_json_path, f"{node.username}@{node.mgmt_ip}:{self.config_json_path}"]
-        subprocess.run(scp_json_cmd, check=True, capture_output=True, timeout=30)
+        self.run_scp(node, local_yaml_staging, self.remote_yaml_path, False)
+        self.run_scp(node, self.config_json_path, self.config_json_path, False)
+        #scp_base = ["scp", "-o", "StrictHostKeyChecking=no"]
+        #if self.config.jumpbox:
+        #    scp_base += ["-J", self.config.jumpbox]
+        #if node.ssh_key_path:
+        #    scp_base += ["-i", node.ssh_key_path]
+
+        #scp_yaml_cmd = scp_base + [local_yaml_staging, f"{node.username}@{node.mgmt_ip}:{self.remote_yaml_path}"]
+        #subprocess.run(scp_yaml_cmd, check=True, capture_output=True, timeout=30)
+        #node_log.info(f"Synchronized configuration payload to remote destination: {self.remote_yaml_path}")
+
+        #scp_json_cmd = scp_base + [self.config_json_path, f"{node.username}@{node.mgmt_ip}:{self.config_json_path}"]
+        #subprocess.run(scp_json_cmd, check=True, capture_output=True, timeout=30)
 
         try:
             os.remove(local_yaml_staging)
@@ -448,7 +509,6 @@ class RemoteBenchmarkOrchestrator:
                 f"nohup {self.config.sde_path}/run_switchd.sh "
                 f"--arch tofino "
                 f"-p {self.config.p4_program_name} "
-                f"-c /root/pringles/code/p4/pktgen_tests/sequencing_only_2pipe.conf" # TODO need to parameterize this
                 f"> /tmp/p4_dataplane.log 2>&1 & echo $!"
             )
             res = self._execute_remote_cmd(node, dp_cmd)
@@ -477,6 +537,8 @@ class RemoteBenchmarkOrchestrator:
                 f"--arch tofino "
                 f"-p {self.config.p4_program_name} "
                 f"-t {self.config.p4_program_dir} "
+                f"--target hw "
+                f"--veth-exists "
                 f"> /tmp/p4_controlplane.log 2>&1 & echo $!"
             )
             res = self._execute_remote_cmd(node, cp_cmd)
@@ -496,14 +558,15 @@ class RemoteBenchmarkOrchestrator:
                                    f"machine before trusting this run's results.")
 
     def run_experiment(self):
-        log.info(f"Phase 2: Core Execution Loop Active. Runtime: {self.config.duration}s")
+        full_wait = self.config.wait_time + self.config.duration
+        log.info(f"Phase 2: Core Execution Loop Active. Runtime: {full_wait}s")
         elapsed = 0
-        while elapsed < self.config.duration:
+        while elapsed < full_wait:
             time.sleep(5)
             elapsed += 5
-            log.info(f"Telemetry Gathering Active... ({elapsed}/{self.config.duration}s)")
+            log.info(f"Telemetry Gathering Active... ({elapsed}/{full_wait}s)")
         log.info("Wait to collect all the JSON and LOG files...")
-        time.sleep(20)
+        time.sleep(10)
         log.info("Target execution duration met successfully.")
 
     def collect_telemetry_data(self):
@@ -520,23 +583,24 @@ class RemoteBenchmarkOrchestrator:
                     node_log.warning("No performance output JSON metrics discovered on target filesystem.")
                     continue
 
-                scp_pull = ["scp", "-o", "StrictHostKeyChecking=no"]
-                if self.config.jumpbox:
-                    scp_pull += ["-J", self.config.jumpbox]
-                if node.ssh_key_path:
-                    scp_pull += ["-i", node.ssh_key_path]
+                #scp_pull = ["scp", "-o", "StrictHostKeyChecking=no"]
+                #if self.config.jumpbox:
+                #    scp_pull += ["-J", self.config.jumpbox]
+                #if node.ssh_key_path:
+                #    scp_pull += ["-i", node.ssh_key_path]
 
                 for remote_file in target_files:
                     # test.py itself names each pipe's output distinctly (e.g.
                     # pipeN_<nsperpkt>_nsperpkt.json), so this prefix only needs to
                     # identify the switch and experiment index, not the pipe.
                     filename = os.path.basename(remote_file)
-                    mapped_filename = f"switch_{node.switch_id}_ringsize_{self.ring_size}_experiment_{self.sweep_idx}_{filename}"
+                    mapped_filename = f"ringsize_{self.ring_size}_switch_{node.switch_id}_{filename}"
                     local_dest = os.path.join(self.local_run_dir, mapped_filename)
 
                     node_log.info(f"Downloading telemetry {filename} back to laptop tracking workspace...")
-                    scp_cmd = scp_pull + [f"{node.username}@{node.mgmt_ip}:{remote_file}", local_dest]
-                    subprocess.run(scp_cmd, check=True, capture_output=True, timeout=30)
+                    self.run_scp(node, remote_file, local_dest, True)
+                    #scp_cmd = scp_pull + [f"{node.username}@{node.mgmt_ip}:{remote_file}", local_dest]
+                    #subprocess.run(scp_cmd, check=True, capture_output=True, timeout=30)
 
                     self._execute_remote_cmd(node, f"rm -f {remote_file}")
 
@@ -556,19 +620,20 @@ class RemoteBenchmarkOrchestrator:
                 if not target_logs or target_logs == ['']:
                     continue
 
-                scp_pull_base = ["scp", "-o", "StrictHostKeyChecking=no"]
-                if self.config.jumpbox:
-                    scp_pull_base += ["-J", self.config.jumpbox]
-                if node.ssh_key_path:
-                    scp_pull_base += ["-i", node.ssh_key_path]
+                #scp_pull_base = ["scp", "-o", "StrictHostKeyChecking=no"]
+                #if self.config.jumpbox:
+                #    scp_pull_base += ["-J", self.config.jumpbox]
+                #if node.ssh_key_path:
+                #    scp_pull_base += ["-i", node.ssh_key_path]
 
                 for remote_log in target_logs:
-                    filename = f"switch_{node.switch_id}_ringsize_{self.ring_size}_experiment_{self.sweep_idx}_{os.path.basename(remote_log)}"
+                    filename = f"ringsize_{self.ring_size}_switch_{node.switch_id}_{os.path.basename(remote_log)}"
                     local_dest = os.path.join(self.local_run_dir, filename)
 
                     node_log.info(f"Recovering trace log metrics ({os.path.basename(remote_log)}) -> Laptop tracking folder")
-                    scp_cmd = scp_pull_base + [f"{node.username}@{node.mgmt_ip}:{remote_log}", local_dest]
-                    subprocess.run(scp_cmd, check=True, capture_output=True, timeout=30)
+                    self.run_scp(node, remote_log, local_dest, True)
+                    #scp_cmd = scp_pull_base + [f"{node.username}@{node.mgmt_ip}:{remote_log}", local_dest]
+                    #subprocess.run(scp_cmd, check=True, capture_output=True, timeout=30)
 
                     self._execute_remote_cmd(node, f"rm -f {remote_log}")
 
@@ -677,65 +742,63 @@ def main():
         truncated_ring_topo = config.ring_topo[:ring_size]
         config_for_run = replace(config, ring_topo=truncated_ring_topo)
 
-        sweep_idx = 0
-        for current_recirc in config_for_run.total_recirc_ports:
-            for current_nsperpkt in nsperpkt_list:
-                log.info(f"\n==========================================================================")
-                log.info(f" STARTING EXPERIMENT RUN {sweep_idx} (ring_size = {ring_size}, "
-                         f"recirc = {current_recirc}, nsperpkt = {current_nsperpkt})")
-                log.info(f" Active ring members this run: {truncated_ring_topo}")
-                log.info(f"==========================================================================")
+        for current_lower_time_bound in config_for_run.ns_lower_bound_time:
+            for current_recirc in config_for_run.total_recirc_ports:
+                for current_nsperpkt in nsperpkt_list:
+                    log.info(f"\n==========================================================================")
+                    log.info(f" STARTING EXPERIMENT RUN (ring_size = {ring_size}, "
+                             f"recirc = {current_recirc}, nsperpkt = {current_nsperpkt})")
+                    log.info(f" Active ring members this run: {truncated_ring_topo}")
+                    log.info(f"==========================================================================")
 
-                # One node per PHYSICAL SWITCH -- a switch is included if either of its
-                # pipes appears anywhere in this run's truncated ring_topo. Its single
-                # control-plane process will configure whichever of its pipes are active.
-                switches_in_ring = {sw for (sw, _pipe) in config_for_run.ring_topo}
+                    # One node per PHYSICAL SWITCH -- a switch is included if either of its
+                    # pipes appears anywhere in this run's truncated ring_topo. Its single
+                    # control-plane process will configure whichever of its pipes are active.
+                    switches_in_ring = {sw for (sw, _pipe) in config_for_run.ring_topo}
 
-                nodes = []
-                for s in switch_inventory:
-                    if s["switch_id"] not in switches_in_ring:
-                        continue
-                    snode = SwitchNode(
-                        switch_id=s["switch_id"],
-                        mgmt_ip=s["mgmt_ip"],
-                        username=s["username"],
-                        ssh_key_path=s["ssh_key_path"],
-                        is_primary=(s["switch_id"] == config_for_run.primary_switch_id)
+                    nodes = []
+                    for s in switch_inventory:
+                        if s["switch_id"] not in switches_in_ring:
+                            continue
+                        snode = SwitchNode(
+                            switch_id=s["switch_id"],
+                            mgmt_ip=s["mgmt_ip"],
+                            username=s["username"],
+                            ssh_key_path=s["ssh_key_path"],
+                            is_primary=(s["switch_id"] == config_for_run.primary_switch_id)
+                        )
+                        nodes.append(snode)
+
+                    if len(nodes) == 0:
+                        log.critical("No valid switch nodes matching topology! Aborting loop...")
+                        break
+
+                    # Safety net: the configured primary_switch_id might not be part of this
+                    # ring_size's prefix (e.g. primary is ring_topo[1] but ring_size=1 only
+                    # includes ring_topo[0]). Without a primary, telemetry collection has
+                    # nothing to pull from -- fall back to the first node in the ring so
+                    # results are still collected, but say so loudly.
+                    if not any(n.is_primary for n in nodes):
+                        nodes[0].is_primary = True
+                        log.warning(f"Configured primary_switch_id={config_for_run.primary_switch_id} is not part "
+                                    f"of this ring_size={ring_size} prefix. Falling back to switch "
+                                    f"{nodes[0].switch_id} as primary for telemetry collection purposes.")
+
+                    # Instantiates orchestrator with explicit target configuration states
+                    orchestrator = RemoteBenchmarkOrchestrator(
+                        config_for_run, nodes, current_nsperpkt, current_recirc, current_lower_time_bound, base_results_dir
                     )
-                    nodes.append(snode)
+                    active_orchestrator = orchestrator
 
-                if len(nodes) == 0:
-                    log.critical("No valid switch nodes matching topology! Aborting loop...")
-                    break
-
-                # Safety net: the configured primary_switch_id might not be part of this
-                # ring_size's prefix (e.g. primary is ring_topo[1] but ring_size=1 only
-                # includes ring_topo[0]). Without a primary, telemetry collection has
-                # nothing to pull from -- fall back to the first node in the ring so
-                # results are still collected, but say so loudly.
-                if not any(n.is_primary for n in nodes):
-                    nodes[0].is_primary = True
-                    log.warning(f"Configured primary_switch_id={config_for_run.primary_switch_id} is not part "
-                                f"of this ring_size={ring_size} prefix. Falling back to switch "
-                                f"{nodes[0].switch_id} as primary for telemetry collection purposes.")
-
-                # Instantiates orchestrator with explicit target configuration states
-                orchestrator = RemoteBenchmarkOrchestrator(
-                    config_for_run, nodes, current_nsperpkt, current_recirc, base_results_dir, sweep_idx
-                )
-                active_orchestrator = orchestrator
-
-                try:
-                    orchestrator.initialize_environment()
-                    orchestrator.run_experiment()
-                    orchestrator.collect_telemetry_data()
-                except Exception as fatal_err:
-                    log.critical(f"Experiment iteration failed with runtime error: {str(fatal_err)}")
-                finally:
-                    orchestrator.collect_log_files()
-                    orchestrator.teardown_cluster()
-
-                sweep_idx += 1
+                    try:
+                        orchestrator.initialize_environment()
+                        orchestrator.run_experiment()
+                        orchestrator.collect_telemetry_data()
+                    except Exception as fatal_err:
+                        log.critical(f"Experiment iteration failed with runtime error: {str(fatal_err)}")
+                    finally:
+                        orchestrator.collect_log_files()
+                        orchestrator.teardown_cluster()
 
     log.info(f"\n[SUCCESS] Entire configuration sweep matrix completed. Check items under: {base_results_dir}")
 

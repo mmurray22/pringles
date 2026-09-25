@@ -5,14 +5,15 @@
 #   S4.P0 -> S4.P1 -> S1.P0 -> S1.P1 -> S2.P0 -> S2.P1 -> S3.P0 -> S3.P1 -> (S4.P0)
 # using the numeric switch_ids already assigned to S1=3, S2=2, S4=0, S5=1
 # (adjust these two mappings if your actual switch_id <-> label assignment differs).
-ring_topo = [[3, 1], [0, 0]] #[3, 1]] # [0, 0], [0, 1], [1, 0], [1, 1], [2, 0], [2, 1]]
+# NOTE: pipeline 1 should always be put before pipeline 0 for each switch so you can get injected packets (just in case) [switch_id, 1] should come before [switch_id, 0]
+ring_topo = [[0, 1], [0, 0], [1, 1], [1, 0], [2, 1], [2, 0]] #, [3, 1], [3, 0]]
 
 # Sweep how many ring members (pipes) are active, using PREFIXES of ring_topo above.
 # [1, 2] runs the experiment first with only ring_topo[:1] (just switch 3 pipe 0),
 # then again with ring_topo[:2] (switch 3 pipes 0 and 1). Leave commented out /
 # remove entirely to automatically test every prefix length from 1 through
 # len(ring_topo).
-ring_sizes_to_test = [1] # TODO: Ok I think I know what the issue is - you need a way to encode just a single pipeline and thus control port should truly be loopback or if it's two pipelines then the control port needs to send between the different ports. Close to sending across multiple switches! Also need to push to codeberg.
+ring_sizes_to_test = [6] #1, 2, 3, 4, 5, 6, 7, 8] 
 
 # Indexed as [switch_id][pipe_id] -> per-target-switch-id port list.
 # ports_to_ring_members[sw][pipe][X] means:
@@ -44,27 +45,40 @@ ports_to_pipelines_per_switch = [
 # sequencing/recirculation experiment itself (unrelated to the ring relay port
 # above). Split from the original flat lists using the pipe-encoding boundary:
 # devport >= 128 belongs to pipe 1, devport < 128 belongs to pipe 0.
+# Same formatting goes for the wait ports array
 loopback_ports = [
     [[12], [168]],
     [[12], [168]],
     [[12], [168]],
     [[56], [172]]
 ]
+wait_ports = [
+    [[20, 56], [172, 184]],
+    [[20, 56], [172, 184]],
+    [[20, 56], [172, 184]],
+    [[20, 28], [140, 164]]
+]
 
 # Indexed as [switch_id][pipe_id] -> list of front-panel devports belonging to
 # that pipe. Same split rule as above.
 switch_ports = [
-    [[20, 28, 36, 44, 52, 56], [132, 148, 164, 172, 180, 188]],
-    [[20, 28, 36, 44, 52, 56], [132, 144, 148, 164, 172, 188]],
-    [[20, 28, 36, 44, 52, 56], [132, 144, 148, 164, 172, 188]],
-    [[4, 12, 20, 28, 36, 44, 52], [132, 140, 148, 164, 172, 188]]
+    [[28, 36, 52], [132, 148, 164, 180, 188]],
+    [[28, 36, 52], [132, 144, 148, 164, 188]],
+    [[28, 36, 52], [132, 144, 148, 164, 188]],
+    [[4, 36, 44], []]
 ]
 
 total_recirc_ports = [1] #, 2, 3, 4]
-duration = 10
-wait_time = 5
+duration = 20
+wait_time = 14
+ns_lower_bound_time = [0] #, 10, 100, 1000, 10000]
+ns_upper_bound_time = 60000
 jumpbox = "micahmurray@watson.millennium.berkeley.edu"
-primary_switch_id = 3
-primary_pipe_id = 0
+primary_switch_id = 0
+primary_pipe_id = 1
 payload_size = 12
-nsperpkt = [1] #[30, 20, 5, 1] #[1000000000, 100000000, 10000000, 1000000, 100000, 10000, 1000, 500, 100, 50, 10]
+nsperpkt = [1] #1000000000, 100000000, 10000000, 1000000, 100000, 10000, 1000, 500, 100, 50, 10, 1]
+# 1: Sequencing only experiment
+# 2: End to end experiment
+exp_type = 2
+#git_hash = "576b70662dd7e911d52968231e54f3b70927972f"
