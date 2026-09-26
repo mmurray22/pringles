@@ -165,8 +165,8 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
 	p = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
             IP(dst=ip_addr)/ \
 	    UDP(dport=1234, sport=5678)/ \
-	    RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1)/ \
-            Append(nonce=nonce,payload_size=payload_size,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,start_ts=0,exp_type=exp_type)/ \
+	    RingType(type=TYPE_APPEND, num_entries=1, shard_id=0,switch_to_process=1,start_ts=0,end_ts=0,raw_elapsed_time=0,pipe_ts=0)/ \
+            Append(nonce=nonce,payload_size=payload_size,stream_id=0,g_idx=0,cntrl_pkt_it=0,client_ip=ip_int,recv_port=192,exp_type=exp_type)/ \
             Canary(magic=165)/ \
             Raw(load=payload)
         p.show()
@@ -523,9 +523,9 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
             curr_time = time.time() - start_time
             self.timestamps.append(curr_time)
             for pipe_id in range(2):
-                cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter".format(pipe_id)
-                cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-                logger.info("[IN PROGRESS] Control count: {}".format(cntrl_cnt))
+                #cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter".format(pipe_id)
+                #cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+                #logger.info("[IN PROGRESS] Control count: {}".format(cntrl_cnt))
                 cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
                 cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
                 logger.info("[IN PROGRESS] Ingress Canary count: {}".format(cntrl_cnt))

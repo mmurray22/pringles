@@ -38,13 +38,14 @@ class Hello(Packet):
     fields_desc = [ BitField("hello", 0, 32)]
 
 class RingType(Packet):
-    fields_desc = [ XShortField("type", 0x0),
+    fields_desc = [ BitField("type", 0x0, 16),
                     BitField("num_entries", 1, 16),
-                    BitField("shard_id", 0, 32),
+                    BitField("shard_id", 0, 16),
                     BitField("switch_to_process", 1, 32),
                     BitField("start_ts", 0, 48),
                     BitField("end_ts", 0, 48),
-                    XShortField("raw_elapsed_time", 0)]
+                    BitField("raw_elapsed_time", 0, 16),
+                    BitField("pipe_ts", 0, 32)]
 class Append(Packet):
     fields_desc = [ BitField("nonce", 0, 16),
                     BitField("payload_size", 0, 16),
@@ -52,8 +53,7 @@ class Append(Packet):
                     BitField("g_idx", 0, 32), # TODO: 64
                     BitField("cntrl_pkt_it", 0, 16), # TODO: 64
                     BitField("client_ip", 0, 32),
-                    ShortField("recv_port", 0),
-                    BitField("start_ts", 0, 48),
+                    BitField("recv_port", 0, 16),
                     BitField("exp_type", 0, 16)]
 class Read(Packet):
     fields_desc = [ BitField("nonce", 0, 32),
@@ -62,8 +62,7 @@ class Read(Packet):
                     BitField("g_idx", 0, 32),
                     BitField("ring_view", 0, 16),
                     ShortField("recv_port", 0),
-                    BitField("client_ip", 0, 32),
-                    BitField("start_ts", 0, 48)]
+                    BitField("client_ip", 0, 32)]
 class Subscribe(Packet):
     fields_desc = [ BitField("g_idx", 0, 32),
                     BitField("stream_id", 0, 32),
