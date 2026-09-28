@@ -487,28 +487,6 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         if switch_send_cntrl:
 	    logger.info("Sending control packet!")
 	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, in_cntrl, 0)
-        #start_time = time.time()
-        #while (time.time() - start_time) < 2:
-        #    # Get cntrl packet counter
-        #    for pipe_id in (1, 1):
-        #        cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter".format(pipe_id)
-        #        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-        #        logger.info("[IN PROGRESS] Control count: {}".format(cntrl_cnt))
-        #        cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
-        #        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-        #        logger.info("[IN PROGRESS] Ingress Canary count: {}".format(cntrl_cnt))
-        #        if pipe_id == 1:
-        #            cntrl_cnt_reg_name = "MyIngress{}.true_magic_val".format(pipe_id)
-        #            cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
-        #            logger.info("[IN PROGRESS] Canary magic value: {}".format(cntrl_cnt))
-        #            cntrl_cnt_reg_name = "MyIngress{}.pesky_ether_type".format(pipe_id)
-        #            cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
-        #            logger.info("[IN PROGRESS] Ether type value: {}".format(cntrl_cnt))
-        #        
-        #        cntrl_cnt_reg_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
-        #        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-        #        logger.info("[IN PROGRESS] Egress Canary count: {}".format(cntrl_cnt))
-        #return # TODO TODO
 
         for pipe_cfg in pipes_cfg:
             pipe_id = pipe_cfg['pipe_id']
@@ -528,7 +506,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 #logger.info("[IN PROGRESS] Control count: {}".format(cntrl_cnt))
                 cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
                 cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-                logger.info("[IN PROGRESS] Ingress Canary count: {}".format(cntrl_cnt))
+                logger.info("[IN PROGRESS] Ingress {} Canary count: {}".format(pipe_id, cntrl_cnt))
                 if pipe_id == 1:
                     cntrl_cnt_reg_name = "MyIngress{}.true_magic_val".format(pipe_id)
                     cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
@@ -539,7 +517,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 
                 cntrl_cnt_reg_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
                 cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-                logger.info("[IN PROGRESS] Egress Canary count: {}".format(cntrl_cnt))
+                logger.info("[IN PROGRESS] Egress {} Canary count: {}".format(pipe_id, cntrl_cnt))
 
                 resp = pktgen_app_cfg_table.entry_get(
                     targets[pipe_id],
@@ -605,10 +583,10 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 self.queue_cnt_over_time[pipe_id].append(q_res)
 
                 # measure amount of time  at this time period
-                #pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
-                #pipe_res = self.get_register_number(bfrt_info, targets[pipe_id], pipe_name)
-                #logger.info("[IN PROGRESS] Time in the pipeline: {}".format(pipe_res))
-                #self.pipeline_time[pipe_id].append(pipe_res)
+                pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
+                pipe_res = self.get_register_number(bfrt_info, targets[pipe_id], pipe_name)
+                logger.info("[IN PROGRESS] Time in the pipeline {}: {}".format(pipe_id, pipe_res))
+                self.pipeline_time[pipe_id].append(pipe_res)
 
                 # measure size of ack count table
                 #ack_name = "MyIngress{}.ack_array".format(pipe_id)

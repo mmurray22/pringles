@@ -5,8 +5,8 @@
 #include <core.p4>
 #include <tna.p4>
 
-#include "../common/headers.p4"
-#include "../common/util.p4"
+#include "../../common/headers.p4"
+#include "../../common/util.p4"
 
 
 const bit<16> TYPE_TIMER = 0x0660;

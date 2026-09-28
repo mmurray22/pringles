@@ -1197,7 +1197,7 @@ class SequencingTest(BfRuntimeTest):
 	        print("Number of loopback ports: {}".format(len(loopback_ports)))
                 if len(pktgen_per_pipe_port) > 64:
                     raise "Too many ports for parser to handle!"
-            	self.setup_parser_ports(targets[pipe_id], bfrt_info, pktgen_per_pipe_port, pipe_id)
+            	#self.setup_parser_ports(targets[pipe_id], bfrt_info, pktgen_per_pipe_port, pipe_id)
 
 
 	        ####################### SETUP MATCH-ACTION TABLES (this pipe) ##########################
