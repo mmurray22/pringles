@@ -946,7 +946,7 @@ class SequencingTest(BfRuntimeTest):
         return reg_data_dict[register_entry_name][0]
         
 
-    def get_final_pktgen_stats(self, bfrt_info, target, duration, nsperpkt, num_recircs, pipe_id, num_pipelines, payload_size):
+    def get_final_pktgen_stats(self, bfrt_info, target, duration, nsperpkt, num_recircs, pipe_id, num_pipelines, payload_size, time_interval_ms):
         # 1. Get a reference to the counter table
         pkts = 0
         pkts_tput = 0
@@ -1027,26 +1027,22 @@ class SequencingTest(BfRuntimeTest):
         #end_ts_reg_name = "MyEgress{}.end_ts".format(pipe_id)
         #end_ts = self.get_register_number(bfrt_info, target, end_ts_reg_name)
         #print("End ts: {}ns".format(end_ts))
-
         avg_lat = 0
         if pkts != 0:
 	    avg_lat = (total_latency_ns/float(pkts))/float(1000)
         target_dest = "/root/pipe{}_{}_nsperpkt.json".format(pipe_id, nsperpkt)
-        self.write_experiment_telemetry(target_dest, pkts, pkts_tput, total_latency_ns, avg_lat, duration, nsperpkt, num_recircs, num_pipelines, payload_size)
-     
-    def write_experiment_telemetry(self, file_path, total_pkts, throughput, total_lat, avg_lat, duration, nsperpkt, num_recircs, num_pipelines, payload_size):
         """
         Serializes benchmarking telemetry safely into a standardized JSON payload structure.
         """
         # 1. Map data directly into a standard Python dictionary layout
         telemetry_payload = {
-            "total_number_of_packets": int(total_pkts),
-            "throughput_pps": float(throughput),
-            "total_latency_ns": float(total_lat),
+            "total_number_of_packets": int(cnt_pkts),
+            "throughput_pps": float(pkts_tput),
+            "total_latency_ns": float(total_latency_ns),
             "average_latency_us": float(avg_lat),
             "nsperpkt": int(nsperpkt),
             "duration": int(duration),
-            "total_loopback": int(num_recircs),
+            #"total_loopback": int(num_recircs),
             "num_pipelines": int(num_pipelines),
             "payload_size": int(payload_size),
             "elapsed_time_timeseries": self.raw_et_over_time,
@@ -1055,8 +1051,14 @@ class SequencingTest(BfRuntimeTest):
             "true_gen_pkt_rate_timeseries": self.generate_pkts_over_time,
             "tput_timeseries": self.tput_over_time,
             "num_pkts_timeseries": self.pkts_over_time,
-
+            "timestamps": self.timestamps,
+            "pipe_id": pipe_id,
+            "timeseries_interval_ms": time_interval_ms
         }
+        self.write_experiment_telemetry(target_dest, telemetry_payload)
+
+
+    def write_experiment_telemetry(self, file_path, telemetry_payload):
         
         # 2. Open and write out using a safe with context block
         try:
@@ -1230,10 +1232,14 @@ class SequencingTest(BfRuntimeTest):
         self.avg_lat_over_time = []
         self.tput_over_time = []
         self.pkts_over_time = []
+        self.timestamps = []
         self.generate_pkts_over_time = []
         prev_num_pkts = 0
+        time_interval_s = .1
         while (time.time() - start_time) < duration:
             # verify pktgen related counters
+            curr_time = time.time() - start_time
+            self.timestamps.append(curr_time)
             for pipe_id in range(2):
                 resp = pktgen_app_cfg_table.entry_get(
                     targets[pipe_id],
@@ -1294,7 +1300,7 @@ class SequencingTest(BfRuntimeTest):
                 q_res = self.get_register_number(bfrt_info, targets[pipe_id], q_name)
                 print("[IN PROGRESS] Num of packets in the egress queue: {}".format(q_res))
                 self.queue_cnt_over_time.append(q_res)
-	    time.sleep(1)
+	    time.sleep(time_interval_s)
         
         num_pipelines = len(pipes_cfg)
         
@@ -1303,6 +1309,6 @@ class SequencingTest(BfRuntimeTest):
 	    tot_num_recirc_ports = pipe_cfg['total_recirc_ports']
             print("Processing pipe {} info!".format(pipe_id))
             if pipe_id == 0:
-                self.get_final_pktgen_stats(bfrt_info, self.target0, duration, nsperpkt, tot_num_recirc_ports, pipe_id, num_pipelines, payload_size)
+                self.get_final_pktgen_stats(bfrt_info, self.target0, duration, nsperpkt, tot_num_recirc_ports, pipe_id, num_pipelines, payload_size, time_interval_s*1000)
             else:
-                self.get_final_pktgen_stats(bfrt_info, self.target1, duration, nsperpkt, tot_num_recirc_ports, pipe_id, num_pipelines, payload_size)
+                self.get_final_pktgen_stats(bfrt_info, self.target1, duration, nsperpkt, tot_num_recirc_ports, pipe_id, num_pipelines, payload_size, time_interval_s*1000)
