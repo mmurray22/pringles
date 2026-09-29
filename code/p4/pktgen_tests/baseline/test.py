@@ -1256,8 +1256,9 @@ class SequencingTest(BfRuntimeTest):
                 logger.info("Generated %d batches", batch_value)
                 pkt_value = data_dict["pkt_counter"]
                 logger.info("Generated %d packets", pkt_value)
+                rate = pkt_value - prev_num_pkts[pipe_id]
                 logger.info("Rate of packet production is %d packets for 1 second", (pkt_value - prev_num_pkts[pipe_id]))
-                self.generate_pkts_over_time[pipe_id].append(pkt_value)
+                self.generate_pkts_over_time[pipe_id].append(rate)
                 prev_num_pkts[pipe_id] = pkt_value
 
                 # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
