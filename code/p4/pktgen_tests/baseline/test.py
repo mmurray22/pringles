@@ -1008,7 +1008,7 @@ class SequencingTest(BfRuntimeTest):
         print("High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
         print("Aggregate Latency: {}ns".format(total_latency_ns))
         avg_lat = 0
-        if cnt_pkts == 0:
+        if cnt_pkts != 0:
             avg_lat = (total_latency_ns/float(cnt_pkts))/float(1000)
         print("======================Average latency: {} microseconds".format(avg_lat))
        
