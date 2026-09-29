@@ -1008,9 +1008,9 @@ class SequencingTest(BfRuntimeTest):
         print("High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
         print("Aggregate Latency: {}ns".format(total_latency_ns))
         avg_lat = 0
-        if pkts != 0:
-	    avg_lat = (total_latency_ns/float(pkts))/float(1000)
-            print("======================Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
+        if cnt_pkts == 0:
+            avg_lat = (total_latency_ns/float(cnt_pkts))/float(1000)
+        print("======================Average latency: {} microseconds".format(avg_lat))
        
         raw_dur_reg_name = "MyIngress{}.raw_duration".format(pipe_id)
         raw_dur_lat = self.get_register_number(bfrt_info, target, raw_dur_reg_name)
@@ -1019,7 +1019,6 @@ class SequencingTest(BfRuntimeTest):
         raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
         raw_et_lat = self.get_register_number(bfrt_info, target, raw_et_reg_name)
         print("Raw elapsed time: {}ns".format(raw_et_lat))
-        total_latency_ns = 0
         
         #start_ts_reg_name = "MyEgress{}.start_ts".format(pipe_id)
         #start_ts = self.get_register_number(bfrt_info, target, start_ts_reg_name)
@@ -1027,9 +1026,6 @@ class SequencingTest(BfRuntimeTest):
         #end_ts_reg_name = "MyEgress{}.end_ts".format(pipe_id)
         #end_ts = self.get_register_number(bfrt_info, target, end_ts_reg_name)
         #print("End ts: {}ns".format(end_ts))
-        avg_lat = 0
-        if pkts != 0:
-	    avg_lat = (total_latency_ns/float(pkts))/float(1000)
         target_dest = "/root/pipe{}_{}_nsperpkt.json".format(pipe_id, nsperpkt)
         """
         Serializes benchmarking telemetry safely into a standardized JSON payload structure.
@@ -1274,6 +1270,7 @@ class SequencingTest(BfRuntimeTest):
 	        high_num_tot_pkts = self.get_register_number(bfrt_info, targets[pipe_id], high_tot_name)
                 pkts = (high_num_tot_pkts << 32) + low_num_tot_pkts - 1 # NOTE: the -1 is to correct for a small hack in how this tabulation is done in P4
                 curr_dur = time.time() - start_time
+                print("[IN PROGRESS] For pipe {} time elapsed is {}".format(pipe_id, curr_dur))
                 pkts_tput = pkts/float(curr_dur)
                 print("[IN PROGRESS] Upper Append Packets: {} and Lower Append Packets: {}".format(high_num_tot_pkts, low_num_tot_pkts))
 	        print("[IN PROGRESS] Total Append Packets: {}".format(pkts))
