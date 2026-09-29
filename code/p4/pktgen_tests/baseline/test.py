@@ -1042,15 +1042,14 @@ class SequencingTest(BfRuntimeTest):
             "average_latency_us": float(avg_lat),
             "nsperpkt": int(nsperpkt),
             "duration": int(duration),
-            #"total_loopback": int(num_recircs),
             "num_pipelines": int(num_pipelines),
             "payload_size": int(payload_size),
-            "elapsed_time_timeseries": self.raw_et_over_time,
-            "queue_count_timeseries": self.queue_cnt_over_time,
-            "avg_lat_timeseries": self.avg_lat_over_time,
-            "true_gen_pkt_rate_timeseries": self.generate_pkts_over_time,
-            "tput_timeseries": self.tput_over_time,
-            "num_pkts_timeseries": self.pkts_over_time,
+            "elapsed_time_timeseries": self.raw_et_over_time[pipe_id],
+            "queue_count_timeseries": self.queue_cnt_over_time[pipe_id],
+            "avg_lat_timeseries": self.avg_lat_over_time[pipe_id],
+            "true_gen_pkt_rate_timeseries": self.generate_pkts_over_time[pipe_id],
+            "tput_timeseries": self.tput_over_time[pipe_id],
+            "num_pkts_timeseries": self.pkts_over_time[pipe_id],
             "timestamps": self.timestamps,
             "pipe_id": pipe_id,
             "timeseries_interval_ms": time_interval_ms
@@ -1227,13 +1226,13 @@ class SequencingTest(BfRuntimeTest):
 	pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         
         # TODO: Collect data in dictionary format
-        self.raw_et_over_time = []
-        self.queue_cnt_over_time = []
-        self.avg_lat_over_time = []
-        self.tput_over_time = []
-        self.pkts_over_time = []
+        self.raw_et_over_time = {0: [], 1: []}
+        self.queue_cnt_over_time = {0: [], 1: []}
+        self.avg_lat_over_time = {0: [], 1: []}
+        self.tput_over_time = {0: [], 1: []}
+        self.pkts_over_time = {0: [], 1: []}
         self.timestamps = []
-        self.generate_pkts_over_time = []
+        self.generate_pkts_over_time = {0: [], 1: []}
         prev_num_pkts = 0
         time_interval_s = .1
         while (time.time() - start_time) < duration:
@@ -1258,13 +1257,13 @@ class SequencingTest(BfRuntimeTest):
                 pkt_value = data_dict["pkt_counter"]
                 logger.info("Generated %d packets", pkt_value)
                 logger.info("Rate of packet production is %d packets for 1 second", (pkt_value - prev_num_pkts))
-                self.generate_pkts_over_time.append(pkt_value)
+                self.generate_pkts_over_time[pipe_id].append(pkt_value)
                 prev_num_pkts = pkt_value
 
                 # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
                 raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
                 raw_et_lat = self.get_register_number(bfrt_info, targets[pipe_id], raw_et_reg_name)
-                self.raw_et_over_time.append(raw_et_lat)
+                self.raw_et_over_time[pipe_id].append(raw_et_lat)
                 print("[IN PROGRESS] Raw elapsed time: {}ns".format(raw_et_lat))
  
                 # measure total number of packets 
@@ -1278,8 +1277,8 @@ class SequencingTest(BfRuntimeTest):
                 print("[IN PROGRESS] Upper Append Packets: {} and Lower Append Packets: {}".format(high_num_tot_pkts, low_num_tot_pkts))
 	        print("[IN PROGRESS] Total Append Packets: {}".format(pkts))
 	        print("[IN PROGRESS] Append Throughput from PIPE {}: {}".format(pipe_id, pkts_tput))
-                self.pkts_over_time.append(pkts)
-                self.tput_over_time.append(pkts_tput)
+                self.pkts_over_time[pipe_id].append(pkts)
+                self.tput_over_time[pipe_id].append(pkts_tput)
 
                 # measure average latency at this time period
                 low_lat_reg_name = "MyIngress{}.latency_lower".format(pipe_id)
@@ -1293,13 +1292,13 @@ class SequencingTest(BfRuntimeTest):
                 if pkts != 0:
 	            avg_lat = (total_latency_ns/float(pkts))/float(1000)
                     print("[IN PROGRESS] Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
-                self.avg_lat_over_time.append(avg_lat)
+                self.avg_lat_over_time[pipe_id].append(avg_lat)
 
                 # measure queue size at this time period
                 q_name = "MyEgress{}.queue_cnt".format(pipe_id)
                 q_res = self.get_register_number(bfrt_info, targets[pipe_id], q_name)
                 print("[IN PROGRESS] Num of packets in the egress queue: {}".format(q_res))
-                self.queue_cnt_over_time.append(q_res)
+                self.queue_cnt_over_time[pipe_id].append(q_res)
 	    time.sleep(time_interval_s)
         
         num_pipelines = len(pipes_cfg)
