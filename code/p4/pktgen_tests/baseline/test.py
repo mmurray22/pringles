@@ -1233,8 +1233,8 @@ class SequencingTest(BfRuntimeTest):
         self.pkts_over_time = {0: [], 1: []}
         self.timestamps = []
         self.generate_pkts_over_time = {0: [], 1: []}
-        prev_num_pkts = 0
         time_interval_s = .1
+        prev_num_pkts = [0, 0]
         while (time.time() - start_time) < duration:
             # verify pktgen related counters
             curr_time = time.time() - start_time
@@ -1256,9 +1256,9 @@ class SequencingTest(BfRuntimeTest):
                 logger.info("Generated %d batches", batch_value)
                 pkt_value = data_dict["pkt_counter"]
                 logger.info("Generated %d packets", pkt_value)
-                logger.info("Rate of packet production is %d packets for 1 second", (pkt_value - prev_num_pkts))
+                logger.info("Rate of packet production is %d packets for 1 second", (pkt_value - prev_num_pkts[pipe_id]))
                 self.generate_pkts_over_time[pipe_id].append(pkt_value)
-                prev_num_pkts = pkt_value
+                prev_num_pkts[pipe_id] = pkt_value
 
                 # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
                 raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
