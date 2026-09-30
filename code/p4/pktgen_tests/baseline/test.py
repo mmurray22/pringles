@@ -906,7 +906,7 @@ class SequencingTest(BfRuntimeTest):
                                                  '$PKTGEN_TRIGGER_TIMER_PERIODIC')]
             )
         except gc.BfruntimeRpcException as e:
-            print(e)
+            logger.info(e)
             raise e
         finally:
             pass
@@ -1152,7 +1152,20 @@ class SequencingTest(BfRuntimeTest):
         self.target0 = gc.Target(device_id=0, pipe_id=0x00)
         self.target1 = gc.Target(device_id=0, pipe_id=0x01)
         targets = [self.target0, self.target1]
+        app_id = 0
+	pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         
+        # TODO: Collect data in dictionary format
+        self.raw_et_over_time = {0: [], 1: []}
+        self.queue_cnt_over_time = {0: [], 1: []}
+        self.avg_lat_over_time = {0: [], 1: []}
+        self.tput_over_time = {0: [], 1: []}
+        self.pkts_over_time = {0: [], 1: []}
+        self.timestamps = []
+        self.generate_pkts_over_time = {0: [], 1: []}
+        time_interval_s = .1
+        prev_num_pkts = [0, 0]
+
         if run_setup:
             loop_ports = set()
             no_loop_ports = set()
@@ -1217,20 +1230,8 @@ class SequencingTest(BfRuntimeTest):
 
 	## Both pipes' generators are now running concurrently -- wait once for the
 	## shared experiment duration rather than once per pipe.
+
 	start_time = time.time()
-	app_id = 0
-	pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
-        
-        # TODO: Collect data in dictionary format
-        self.raw_et_over_time = {0: [], 1: []}
-        self.queue_cnt_over_time = {0: [], 1: []}
-        self.avg_lat_over_time = {0: [], 1: []}
-        self.tput_over_time = {0: [], 1: []}
-        self.pkts_over_time = {0: [], 1: []}
-        self.timestamps = []
-        self.generate_pkts_over_time = {0: [], 1: []}
-        time_interval_s = .1
-        prev_num_pkts = [0, 0]
         while (time.time() - start_time) < duration:
             # verify pktgen related counters
             curr_time = time.time() - start_time
