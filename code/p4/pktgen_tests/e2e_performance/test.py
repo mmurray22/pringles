@@ -471,7 +471,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
             if pipe_cfg['active_pipe']:
                 self.setup_timer_pkt_gen(bfrt_info, targets[pipe_id], CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, pipe_id, experiment_type)
 
-        time_interval_s = 1
+        time_interval_s = float(data['time_interval_ms'])/1000
         start_time = time.time()
 	while (time.time() - start_time) < duration:
             print("=======================================================================")
