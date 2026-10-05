@@ -38,14 +38,15 @@ from ptf.thriftutils import *
 
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../controlplane_libs")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../controlplane_libs")))
 from headers import *
 from multicast import *
 from portsetup import *
 from tables import * 
+from view_change import *
 
 
-p4_program_name = "pktgen" # TODO make parameter
+p4_program_name = "view_change" # TODO make parameter
 g_timer_app_id = 1
 g_num_pipes = int(testutils.test_param_get("num_pipes"))
 listen_ip = "0.0.0.0" # Listen on all interfaces
@@ -57,11 +58,11 @@ pkt_gen_app_id = 1
 
 
 # Initialize the logger
-logger = logging.getLogger('PacketGenTest')
+logger = logging.getLogger('ViewChangeTest')
 if not len(logger.handlers):
     logger.addHandler(logging.StreamHandler())
 
-class PacketGenTest(BfRuntimeTest, P4Tables):
+class ViewChangeTest(BfRuntimeTest, P4Tables):
     def load_config(self, file_path):
         with open(file_path, 'r') as file:
             try:
@@ -102,30 +103,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
 	    portSetup.port_setup(target, i, False, port_speed, port_fec)
 
     ###################### CONTROL PLANE RUNTIME ##############################3
-    def batch_check(self, bfrt_info, target, interface, duration):
-        #os.system("taskset -p -c 0 {}".format(os.getpid()))
-        # This creates a raw socket exactly like tcpdump
-        recv_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
-        recv_sock.bind((interface, 0))
-        logger.info("[*] Packet Gen Socket Open and Listening...")
-        # Block until 1 packet is received
-
-        start_time = time.time()
-        while (time.time() - start_time) < duration:
-	    time.sleep(1)
-            # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
-            active_batch_tbl = bfrt_info.table_get("pipe.MyIngress.active_batches")
-	    batch_val= active_batch_tbl.entry_get(
-	        target,
-	        [active_batch_tbl.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
-	        {"from_hw": True}
-	    )
-	    data, _ = next(batch_val)
-	    data_dict = data.to_dict()
-	    #logger.info(data_dict)
-            logger.info("Total Active Batches: {}".format(data_dict['MyIngress.active_batches.f1'][1]))
-
-    def pgen_timer_hdr_to_dmac(self, pipe_id, app_id, batch_id, packet_id):
+    def pgen_timer_hdr_to_dmac(self, pipe_id, app_id, batch_id, packet_id): #### TODO: DELETE
         """
         Given the fields of a 6-byte packet-gen header return an Ethernet MAC address
         which encodes the same values.
@@ -136,7 +114,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                                                 batch_id & 0xFF,
                                                 packet_id >> 8,
                                                 packet_id & 0xFF)
-    def pgen_port(self, pipe_id, pipe_local_port_idx):
+    def pgen_port(self, pipe_id, pipe_local_port_idx): ###### TODO: DELETE
         """
         Given a pipe return a port in that pipe which is usable for packet
         generation.  Note that Tofino allows ports 68-71 in each pipe to be used for
@@ -147,7 +125,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         pipe_local_port = list_pgen_ports[pipe_local_port_idx]
         return self.make_port(pipe_id, pipe_local_port)
     
-    def make_port(self, pipe, local_port):
+    def make_port(self, pipe, local_port): #### TODO : DELETE
         return (pipe << 7) | local_port
     
     def setup_timer_pkt_gen(self, bfrt_info, target, dstAddr, srcAddr, ip_addr, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, pipe_id, exp_type):
@@ -264,6 +242,16 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
 	reg_data_dict = reg_data.to_dict()
         register_entry_name = register_name + ".f1"
         return reg_data_dict[register_entry_name][0]
+    
+    def insert_register_entry(self, target, register_name, register_idx, register_val):
+        reg_table = bfrt_info.table_get(register_name)
+        register_entry_name = register_name + ".f1"
+        reg_table.entry_add(
+            target,
+            [reg_table.make_key([gc.KeyTuple('$REGISTER_INDEX', register_idx)])],
+            [reg_table.make_data(
+                [gc.DataTuple(register_entry_name, register_val)])])
+
 
     def get_full_register(self, bfrt_info, target, register_name):
         reg_table = bfrt_info.table_get(register_name)
@@ -410,6 +398,10 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         ack_threshold = data['ack_threshold'] # NEW
         payload_size = data['payload_size'] # NEW
 	switch_send_cntrl = data['send_cntrl_pkt']
+        num_shards = data['num_shards']
+        switch_id = data['switch_id']
+
+        view_member_threshold = data['num_switches'] / 2 + 1
 
         nsperpkt = data['nsperpkt']
         duration = data['duration']
@@ -456,7 +448,8 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
         cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
         cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
         logger.info("[BEFORE EVERYTHING] Ingress Canary count: {}".format(cntrl_cnt))
-                
+        view_change = ViewChange()
+        view_change.initialize(self.view, view_member_threshold, num_shards, switch_id, CONST_MAC_DST, CONST_MAC_SRC, cpu_interface, timeout, logger, timeout_app_id):
 	for pipe_cfg in pipes_cfg:
 	    loopback_ports = pipe_cfg['loopback_ports']
 	    wait_ports = pipe_cfg['wait_ports']
@@ -482,6 +475,10 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
 	        
                 P4Tables.setup_check_dur_table(bfrt_info, self.target, targets[pipe_id], lower_time_bound, upper_time_bound, pipe_id)
 	        P4Tables.setup_cntrl_table(bfrt_info, self.target, targets[pipe_id], in_cntrl, out_cntrl, cntrl_port, pipe_id)
+                register_name = "next_ring_hop_id"
+                register_idx = 0
+                register_val = pipe_cfg['next_ring_hop_id']
+                self.insert_register_entry(self.target, register_name, register_idx, register_val):
 
         time.sleep(wait_time)
         if switch_send_cntrl:
@@ -493,7 +490,7 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
             if pipe_cfg['active_pipe']:
                 self.setup_timer_pkt_gen(bfrt_info, targets[pipe_id], CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, pipe_id, experiment_type)
 
-        time_interval_s = .1
+        time_interval_s = float(data['time_interval_ms'])/1000
         start_time = time.time()
 	while (time.time() - start_time) < duration:
             print("=======================================================================")
@@ -535,9 +532,9 @@ class PacketGenTest(BfRuntimeTest, P4Tables):
                 logger.info("Generated %d batches", batch_value)
                 pkt_value = data_dict["pkt_counter"]
                 logger.info("Generated %d packets", pkt_value)
-                rate_pkt_prod = pkt_value - prev_num_pkts[pipe_id]
+                rate_pkt_prod = (pkt_value - prev_num_pkts[pipe_id])/float(time_interval_s)
                 logger.info("Rate of packet production is %d packets for 1 second", rate_pkt_prod)
-                self.generate_pkts_over_time[pipe_id].append(rate_pkt_prod) # TODO check this
+                self.generate_pkts_over_time[pipe_id].append(rate_pkt_prod)
                 prev_num_pkts[pipe_id] = pkt_value
 
                 # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
