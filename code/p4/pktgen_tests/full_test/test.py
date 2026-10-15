@@ -40,13 +40,12 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../controlplane_libs")))
 from headers import *
-from multicast import *
 from portsetup import *
 from tables import * 
 from view_change import *
 
 
-p4_program_name = "view_change" # TODO make parameter
+p4_program_name = "viewchange" # TODO make parameter
 g_timer_app_id = 1
 g_num_pipes = int(testutils.test_param_get("num_pipes"))
 listen_ip = "0.0.0.0" # Listen on all interfaces
@@ -55,6 +54,22 @@ CONST_MAC_DST = "00:90:fb:70:65:71"
 CONST_MAC_SRC = "00:25:90:53:e6:00"
 CONST_IP = "10.229.49.9"
 pkt_gen_app_id = 1
+timeout_app_id = 2
+
+# List of Types:
+# 0 = Dummy 0x0
+# 1 = Append 0x0860 
+# 2 = Append_Wait 0x0862 
+# 3 = Append_Resp 0x0861 
+# 4 = Read 0x0870 
+# 5 = Read_Resp 0x0871
+# 6 = Tail 0x0840
+# 7 = Sub 0x0850
+# 8 = Sub_Resp 0x0851
+# 9 = View_Change 0x0900
+# 10 = View_Ack 0x0910
+list_of_types = [0x0, 0x0860, 0x0862, 0x0861, 0x0870, 0x0871, 0x0840, 0x0850, 0x0851, 0x0900, 0x910]
+#list_of_types = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 # Initialize the logger
@@ -62,7 +77,7 @@ logger = logging.getLogger('ViewChangeTest')
 if not len(logger.handlers):
     logger.addHandler(logging.StreamHandler())
 
-class ViewChangeTest(BfRuntimeTest, P4Tables):
+class ViewChangeTest(BfRuntimeTest):
     def load_config(self, file_path):
         with open(file_path, 'r') as file:
             try:
@@ -81,7 +96,7 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
         loop_ports = set()
         no_loop_ports = set()
         for pipe_cfg in pipes_cfg:
-            for port in pipe_cfg['loopback_ports']:
+            for port in pipe_cfg['recirc_ports']:
                 loop_ports.add(port)
             for port in pipe_cfg['wait_ports']:
                 loop_ports.add(port)
@@ -90,9 +105,9 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
             for port in pipe_cfg['switch_ports']:
                 no_loop_ports.add(port)
             if pipe_cfg['cntrl_port_is_loopback'] == True:
-                loop_ports.add(pipe_cfg['cntrl_port'])
+                loop_ports.add(pipe_cfg['self_cntrl_port'])
             else:
-                no_loop_ports.add(pipe_cfg['cntrl_port'])
+                no_loop_ports.add(pipe_cfg['self_cntrl_port'])
         logger.info(loop_ports)
         logger.info(no_loop_ports)
         logger.info(port_speed)
@@ -128,7 +143,7 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
     def make_port(self, pipe, local_port): #### TODO : DELETE
         return (pipe << 7) | local_port
     
-    def setup_timer_pkt_gen(self, bfrt_info, target, dstAddr, srcAddr, ip_addr, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, pipe_id, exp_type):
+    def setup_timer_pkt_gen(self, bfrt_info, target, dstAddr, srcAddr, ip_addr, payload_size, cpu_interface, duration, nsperpkt, pipe_id, exp_type):
         logger.info("=============== Testing Packet Generator trigger by Timer ===============")
         pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         pktgen_pkt_buffer_table = bfrt_info.table_get("$PKTGEN_PKT_BUFFER")
@@ -227,7 +242,7 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
 	    
 	    # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
 	    return data_dict['$COUNTER_SPEC_PKTS']
-        except gcBfruntimeRpcException as e:
+        except gc.BfruntimeRpcException as e:
             logger.info(e)
             return 0
 
@@ -242,16 +257,20 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
 	reg_data_dict = reg_data.to_dict()
         register_entry_name = register_name + ".f1"
         return reg_data_dict[register_entry_name][0]
-    
-    def insert_register_entry(self, target, register_name, register_idx, register_val):
+   
+    # Note: It seems that in order to insert a register entry, you necessarily must taret 
+    # the entire device, but to just read from a register, you can just read from that particular
+    # pipe
+    def insert_register_entry(self, bfrt_info, target, register_name, register_idx, register_val):
+        print(register_name)
         reg_table = bfrt_info.table_get(register_name)
         register_entry_name = register_name + ".f1"
+        print(register_entry_name)
         reg_table.entry_add(
-            target,
+            self.target,
             [reg_table.make_key([gc.KeyTuple('$REGISTER_INDEX', register_idx)])],
-            [reg_table.make_data(
-                [gc.DataTuple(register_entry_name, register_val)])])
-
+            [reg_table.make_data([gc.DataTuple(register_entry_name, register_val)])])
+        reg_table.operations_execute(self.target, 'Sync')
 
     def get_full_register(self, bfrt_info, target, register_name):
         reg_table = bfrt_info.table_get(register_name)
@@ -264,7 +283,29 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
 	reg_data_dict = reg_data.to_dict()
         register_entry_name = register_name + ".f1"
         return reg_data_dict[register_entry_name]
-     
+
+    ######################################## View Change maintenance ############################
+    def maintain_view_change(self, viewChangeMaintainer, pipe_id):
+        # View Change
+        cntrl_cnt_reg_name = "MyIngress{}.drop_cntrl_counter_ig{}".format(pipe_id, pipe_id)
+        start_time = time.time()
+        experiment_time = time.time()
+        sleep_time = self.timeout / 3
+        ref_pkt_it = self.get_counter_number(bfrt_info, target, cntrl_cnt_reg_name)
+        while (time.time() - start_time) < self.timeout:
+            time.sleep(sleep_time)
+            if (time.time() - experiment_time) < duration: # If the experiment finishes, return
+                return
+            curr_pkt_it = self.get_counter_number(bfrt_info, target, counter_name)
+            if ref_pkt_it != curr_pkt_it: # If control packet came around, update start time and packet iteration
+                ref_pkt_it = curr_pkt_it
+                start_time = time.time()
+                continue
+            else:
+                viewChangeMaintainer.run_view_change(bfrt_info, self.target, cntrl_cnt_reg_name, duration)
+
+
+    ######################################## Packet Gen Stats ###################################
     def get_final_pktgen_stats(self, bfrt_info, target, duration, nsperpkt, num_recircs, pipe_id, num_pipelines, payload_size, exp_type, lower_time_bound, upper_time_bound, time_interval_ms):
         # 1. Get a reference to the counter table
         pkts = 0
@@ -352,14 +393,122 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
         except IOError as e:
             logger.info("[ERROR] Failed writing metrics to destination layout: {}".format(e))
     
-    def send_cntrl_packet(self, interface, dstAddr, srcAddr, in_cntrl, seq_no):
+    def send_cntrl_packet(self, interface, dstAddr, srcAddr, seq_no, view):
         pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_CONTROL)/ \
-              Cntrl(global_seq_no=seq_no, ring_view=1, pkt_id=in_cntrl)/ \
+              Cntrl(global_seq_no=seq_no, ring_view=view)/ \
               Canary(magic=165)
         logger.info("CONTROL PACKET WE ARE SENDING:")
         pkt.show()
         sendp(pkt, iface=interface, verbose=True)
 
+    ######################################## Per Pipe Operations ###################################
+    # Runtime per pipe maintenance which collects data from each pipe and manages the view change
+    def pipe_runtime_observations(pipe_id):
+        time_interval_s = float(data['time_interval_ms'])/1000
+        start_time = time.time()
+	while (time.time() - start_time) < duration:
+            print("=======================================================================")
+            # verify pktgen related counters
+            curr_time = time.time() - start_time
+            self.timestamps.append(curr_time)
+            #cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter".format(pipe_id)
+            #cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+            #logger.info("[IN PROGRESS] Control count: {}".format(cntrl_cnt))
+            cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
+            cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+            logger.info("[IN PROGRESS] Ingress {} Canary count: {}".format(pipe_id, cntrl_cnt))
+            if pipe_id == 1:
+                cntrl_cnt_reg_name = "MyIngress{}.true_magic_val".format(pipe_id)
+                cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
+                logger.info("[IN PROGRESS] Canary magic value: {}".format(cntrl_cnt))
+                cntrl_cnt_reg_name = "MyIngress{}.pesky_ether_type".format(pipe_id)
+                cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
+                logger.info("[IN PROGRESS] Ether type value: {}".format(cntrl_cnt))
+            
+            cntrl_cnt_reg_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
+            cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+            logger.info("[IN PROGRESS] Egress {} Canary count: {}".format(pipe_id, cntrl_cnt))
+
+            resp = pktgen_app_cfg_table.entry_get(
+                targets[pipe_id],
+                [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', app_id)])],
+                {"from_hw": True},
+                pktgen_app_cfg_table.make_data([gc.DataTuple('batch_counter'),
+                                                gc.DataTuple('pkt_counter'),
+                                                gc.DataTuple('trigger_counter')],
+                                               '$PKTGEN_TRIGGER_TIMER_PERIODIC', get=True)
+            )
+            data_dict = next(resp)[0].to_dict()
+            tri_value = data_dict["trigger_counter"]
+            logger.info("Triggered %d times", tri_value)
+            batch_value = data_dict["batch_counter"]
+            logger.info("Generated %d batches", batch_value)
+            pkt_value = data_dict["pkt_counter"]
+            logger.info("Generated %d packets", pkt_value)
+            rate_pkt_prod = (pkt_value - prev_num_pkts[pipe_id])/float(time_interval_s)
+            logger.info("Rate of packet production is %d packets for 1 second", rate_pkt_prod)
+            self.generate_pkts_over_time[pipe_id].append(rate_pkt_prod)
+            prev_num_pkts[pipe_id] = pkt_value
+
+            # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
+            raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
+            raw_et_lat = self.get_register_number(bfrt_info, targets[pipe_id], raw_et_reg_name)
+            self.raw_et_over_time[pipe_id].append(raw_et_lat)
+            logger.info("[IN PROGRESS] Raw elapsed time: {}ns".format(raw_et_lat))
+ 
+            # measure total number of packets 
+            tot_cnt_name = "MyIngress{}.tot_packet_counter".format(pipe_id)
+            pkts = self.get_counter_number(bfrt_info, tot_cnt_name)
+            #low_tot_name = "MyIngress{}.total_pkt_cnt_lower".format(pipe_id)
+            #high_tot_name = "MyIngress{}.total_pkt_cnt_higher".format(pipe_id)
+	    #low_num_tot_pkts = self.get_register_number(bfrt_info, targets[pipe_id], low_tot_name)
+	    #high_num_tot_pkts = self.get_register_number(bfrt_info, targets[pipe_id], high_tot_name)
+            #pkts = (high_num_tot_pkts << 32) + low_num_tot_pkts - 1 # NOTE: the -1 is to correct for a small hack in how this tabulation is done in P4
+            curr_dur = time.time() - start_time
+            pkts_tput = pkts/float(curr_dur)
+            #logger.info("[IN PROGRESS] Upper Append Packets: {} and Lower Append Packets: {}".format(high_num_tot_pkts, low_num_tot_pkts))
+	    logger.info("[IN PROGRESS] Total Append Packets: {}".format(pkts))
+	    logger.info("[IN PROGRESS] Append Throughput from PIPE {}: {}".format(pipe_id, pkts_tput))
+            self.pkts_over_time[pipe_id].append(pkts)
+            self.tput_over_time[pipe_id].append(pkts_tput)
+
+            # measure average latency at this time period
+            low_lat_reg_name = "MyIngress{}.latency_lower".format(pipe_id)
+            high_lat_reg_name = "MyIngress{}.latency_higher".format(pipe_id)
+            low_lat = self.get_register_number(bfrt_info, targets[pipe_id], low_lat_reg_name)
+            high_lat = self.get_register_number(bfrt_info, targets[pipe_id], high_lat_reg_name)
+            total_latency_ns = (high_lat << 31) + low_lat
+            logger.info("[IN PROGRESS] High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
+            logger.info("[IN PROGRESS] Aggregate Latency: {}ns".format(total_latency_ns))
+            avg_lat = 0
+            if pkts != 0:
+	        avg_lat = (total_latency_ns/float(pkts))/float(1000)
+                logger.info("[IN PROGRESS] Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
+            self.avg_lat_over_time[pipe_id].append(avg_lat)
+
+            # measure queue size at this time period
+            q_name = "MyEgress{}.queue_cnt".format(pipe_id)
+            q_res = self.get_register_number(bfrt_info, targets[pipe_id], q_name)
+            logger.info("[IN PROGRESS] Num of packets in the egress queue: {}".format(q_res))
+            self.queue_cnt_over_time[pipe_id].append(q_res)
+
+            # measure amount of time  at this time period
+            pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
+            pipe_res = self.get_register_number(bfrt_info, targets[pipe_id], pipe_name)
+            logger.info("[IN PROGRESS] Time in the pipeline {}: {}".format(pipe_id, pipe_res))
+            self.pipeline_time[pipe_id].append(pipe_res)
+
+            # measure size of ack count table
+            #ack_name = "MyIngress{}.ack_array".format(pipe_id)
+            #ack_res = self.get_full_register(bfrt_info, targets[pipe_id], ack_name)
+            #logger.info("[IN PROGRESS] Number of pending acks: {}".format(ack_res))
+            #self.ack_cnt_over_time[pipe_id].append(ack_res)
+
+            print("=======================================================================")
+	    time.sleep(time_interval_s)
+
+
+    ######################################## Core Test Runner ###################################
     def runTest(self):
 	filepath = "/tmp/switch_config.yaml"
         logger.info(filepath)
@@ -376,11 +525,9 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
         self.target0 = gc.Target(device_id=0, pipe_id=0x00)
         self.target1 = gc.Target(device_id=0, pipe_id=0x01)
         targets = [self.target0, self.target1]
-	pipe_id = 1
-        cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
-        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-        logger.info("[BEFORE PORT SETUP] Ingress Canary count: {}".format(cntrl_cnt))
- 
+
+        global_group_id = data['global_group_id']
+        p4Tables = P4Tables(bfrt_info, global_group_id, list_of_types, logger)
         portSetup = PortSetup() 
         portSetup.initialize_ports(bfrt_info, logger) 
 
@@ -391,7 +538,6 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
 	in_cntrl = data['in_cntrl']
 	out_cntrl = data['out_cntrl']
         size_of_ring = data['size_of_ring']
-        #use_stor = data['use_stor'] TODO add in eventually?
         self.view = data['start_view']
 
         cntrl_timeout = data['cntrl_timeout']
@@ -399,9 +545,11 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
         payload_size = data['payload_size'] # NEW
 	switch_send_cntrl = data['send_cntrl_pkt']
         num_shards = data['num_shards']
+        shard_size = data['shard_size']
         switch_id = data['switch_id']
+        timeout = data['timeout']
 
-        view_member_threshold = data['num_switches'] / 2 + 1
+        view_threshold = data['num_switches'] / 2 + 1
 
         nsperpkt = data['nsperpkt']
         duration = data['duration']
@@ -410,10 +558,7 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
         upper_time_bound = data['upper_time_bound']
         experiment_type = data['experiment_type']
         logger.info("Experiment type: {}".format(experiment_type))
-	pipe_id = 1
-        cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
-        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-        logger.info("[EVEN EARLIER] Ingress Canary count: {}".format(cntrl_cnt))
+        logger.info("View number: {}".format(self.view))
          
         warmup = 5
         cooldown = 5
@@ -442,158 +587,90 @@ class ViewChangeTest(BfRuntimeTest, P4Tables):
 	# ring's first control packet.
 	pipes_cfg = data['pipes']
 
-
     	self.setup_all_switch_ports(self.target, pipes_cfg, port_speed, port_fec, portSetup)
-        pipe_id = 1
-        cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
-        cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-        logger.info("[BEFORE EVERYTHING] Ingress Canary count: {}".format(cntrl_cnt))
-        view_change = ViewChange()
-        view_change.initialize(self.view, view_member_threshold, num_shards, switch_id, CONST_MAC_DST, CONST_MAC_SRC, cpu_interface, timeout, logger, timeout_app_id):
+        viewChangeMaintainer = ViewChange(self.view, view_threshold, num_shards, switch_id, CONST_MAC_DST, CONST_MAC_SRC, cpu_interface, timeout, logger, timeout_app_id)
 	for pipe_cfg in pipes_cfg:
-	    loopback_ports = pipe_cfg['loopback_ports']
+	    recirc_ports = pipe_cfg['recirc_ports']
 	    wait_ports = pipe_cfg['wait_ports']
 	    ports_to_ring_members = pipe_cfg['ports_to_ring_members']
-	    tot_num_recirc_ports = pipe_cfg['total_recirc_ports']
+
+	    tot_num_recirc_ports = len(recirc_ports)
+	    tot_num_wait_ports = len(wait_ports)
+
 	    list_of_switch_ports = pipe_cfg['switch_ports']
-	    cntrl_port = pipe_cfg['cntrl_port']
+	    self_cntrl_port = pipe_cfg['self_cntrl_port']
             is_cntrl_pkt_loopback = pipe_cfg['cntrl_port_is_loopback']
-            pipe_id = pipe_cfg['pipe_id']
+            pipe_idx = pipe_cfg['pipe_id']
+            next_hop_port_id = pipe_cfg['next_ring_hop_id']
+            client_machines = []
 
-
-	    logger.info("Pipe {} - ports to ring members: {}".format(pipe_id, ports_to_ring_members))
+	    logger.info("Pipe {} - ports to ring members: {}".format(pipe_idx, ports_to_ring_members))
 
 	    if run_setup:
 	        ####################### SETUP MATCH-ACTION TABLES (this pipe) ##########################
-	        logger.info("Pipe {} - Number of loopback ports: {}".format(pipe_id , len(loopback_ports)))
-	        logger.info("Pipe {} - Control port: {}, with in port {} and out port {}".format(pipe_id, cntrl_port, in_cntrl, out_cntrl))
-	        P4Tables.setup_recirc_port_table(bfrt_info, self.target, targets[pipe_id], len(loopback_ports), pipe_id)
-	        P4Tables.setup_circulate_table(bfrt_info, self.target, targets[pipe_id], loopback_ports, pipe_id)
+                logger.info("Pipe {}: Number of loopback ports {}".format(pipe_idx, len(recirc_ports)))
+                logger.info("Pipe {}: Control port {}, Hop: {}".format(pipe_idx, self_cntrl_port, next_hop_port_id))
+                p4Tables.setup_recirc_port_table(tot_num_recirc_ports, pipe_idx)
+                p4Tables.setup_wait_port_table(tot_num_wait_ports, pipe_idx)
+                p4Tables.setup_ack_const(ack_threshold, pipe_idx)
+                p4Tables.setup_num_shard_const(num_shards, pipe_idx)
+                p4Tables.setup_shard_size_const(shard_size, pipe_idx)
+                p4Tables.setup_switch_id_const(switch_id, pipe_idx)
+                p4Tables.setup_switch_check(list_of_types, switch_id, ports_to_ring_members, pipe_idx)
 
-                P4Tables.setup_wait_port_table(bfrt_info, self.target, targets[pipe_id], len(wait_ports), pipe_id)
-	        P4Tables.setup_wait_table(bfrt_info, self.target, targets[pipe_id], wait_ports, pipe_id)
-	        
-                P4Tables.setup_check_dur_table(bfrt_info, self.target, targets[pipe_id], lower_time_bound, upper_time_bound, pipe_id)
-	        P4Tables.setup_cntrl_table(bfrt_info, self.target, targets[pipe_id], in_cntrl, out_cntrl, cntrl_port, pipe_id)
-                register_name = "next_ring_hop_id"
-                register_idx = 0
-                register_val = pipe_cfg['next_ring_hop_id']
-                self.insert_register_entry(self.target, register_name, register_idx, register_val):
+                p4Tables.setup_local_seq(pipe_idx)
+                p4Tables.setup_pkt_it(pipe_idx)
 
+                view_register_name = "MyIngress{}.current_view".format(pipe_idx)
+                view_register_idx = 0
+                self.insert_register_entry(bfrt_info, self.target, view_register_name, view_register_idx, self.view)
+                output = self.get_register_number(bfrt_info, targets[pipe_idx], view_register_name)
+                print("For pipe {}, new value of {}: {}".format(pipe_idx, view_register_name, output))
+
+
+                ring_register_name = "MyIngress{}.next_ring_hop_id".format(pipe_idx)
+                ring_register_idx = 0
+                self.insert_register_entry(bfrt_info, targets[pipe_idx], ring_register_name, ring_register_idx, next_hop_port_id)
+                output = self.get_register_number(bfrt_info, targets[pipe_idx], ring_register_name)
+                print("For pipe {}, new value of {}: {}".format(pipe_idx, ring_register_name, output))
+                
+                p4Tables.setup_cntrl_next_hop(pipe_idx)
+                p4Tables.setup_edit_batch_size(pipe_idx)
+                p4Tables.setup_update_batches(pipe_idx)
+                p4Tables.setup_process_gsn(pipe_idx)
+
+                # Add cntrl port for self pipe TODO does this semantically make sense?
+                ports_to_ring_members[switch_id] = self_cntrl_port
+                p4Tables.setup_routing(recirc_ports, wait_ports, ports_to_ring_members, client_machines, pipe_idx)
+
+                p4Tables.setup_check_dur_table(lower_time_bound, upper_time_bound, pipe_idx)
+                p4Tables.setup_active_view_table(pipe_idx)
         time.sleep(wait_time)
         if switch_send_cntrl:
 	    logger.info("Sending control packet!")
-	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, in_cntrl, 0)
+	    #self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view) TODO
+
+
+
+        start_time = time.time()
+	while (time.time() - start_time) < duration:
+            pipe_id = 1
+            cntrl_cnt_reg_name = "MyIngress{}.drop_cntrl_counter_ig{}".format(pipe_id, pipe_id)
+            cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+            logger.info("[IN PROGRESS] Ingress {} Canary count: {}".format(pipe_id, cntrl_cnt))
+	    time.sleep(1)
+        return
+
 
         for pipe_cfg in pipes_cfg:
             pipe_id = pipe_cfg['pipe_id']
             if pipe_cfg['active_pipe']:
                 self.setup_timer_pkt_gen(bfrt_info, targets[pipe_id], CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, payload_size, in_cntrl, cpu_interface, duration, nsperpkt, pipe_id, experiment_type)
+                viewChangeMaintainer = ViewChange(self.view, view_threshold, num_shards, switch_id, CONST_MAC_DST, CONST_MAC_SRC, cpu_interface, timeout, logger, timeout_app_id)
+                self.maintain_view_change(viewChangeMaintainer, pipe_id)
 
-        time_interval_s = float(data['time_interval_ms'])/1000
-        start_time = time.time()
-	while (time.time() - start_time) < duration:
-            print("=======================================================================")
-            # verify pktgen related counters
-            curr_time = time.time() - start_time
-            self.timestamps.append(curr_time)
-            for pipe_id in range(2):
-                #cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter".format(pipe_id)
-                #cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-                #logger.info("[IN PROGRESS] Control count: {}".format(cntrl_cnt))
-                cntrl_cnt_reg_name = "MyIngress{}.canary_no_match_counter_ig{}".format(pipe_id, pipe_id)
-                cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-                logger.info("[IN PROGRESS] Ingress {} Canary count: {}".format(pipe_id, cntrl_cnt))
-                if pipe_id == 1:
-                    cntrl_cnt_reg_name = "MyIngress{}.true_magic_val".format(pipe_id)
-                    cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
-                    logger.info("[IN PROGRESS] Canary magic value: {}".format(cntrl_cnt))
-                    cntrl_cnt_reg_name = "MyIngress{}.pesky_ether_type".format(pipe_id)
-                    cntrl_cnt = self.get_register_number(bfrt_info, targets[pipe_id], cntrl_cnt_reg_name)
-                    logger.info("[IN PROGRESS] Ether type value: {}".format(cntrl_cnt))
-                
-                cntrl_cnt_reg_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
-                cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-                logger.info("[IN PROGRESS] Egress {} Canary count: {}".format(pipe_id, cntrl_cnt))
 
-                resp = pktgen_app_cfg_table.entry_get(
-                    targets[pipe_id],
-                    [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', app_id)])],
-                    {"from_hw": True},
-                    pktgen_app_cfg_table.make_data([gc.DataTuple('batch_counter'),
-                                                    gc.DataTuple('pkt_counter'),
-                                                    gc.DataTuple('trigger_counter')],
-                                                   '$PKTGEN_TRIGGER_TIMER_PERIODIC', get=True)
-                )
-                data_dict = next(resp)[0].to_dict()
-                tri_value = data_dict["trigger_counter"]
-                logger.info("Triggered %d times", tri_value)
-                batch_value = data_dict["batch_counter"]
-                logger.info("Generated %d batches", batch_value)
-                pkt_value = data_dict["pkt_counter"]
-                logger.info("Generated %d packets", pkt_value)
-                rate_pkt_prod = (pkt_value - prev_num_pkts[pipe_id])/float(time_interval_s)
-                logger.info("Rate of packet production is %d packets for 1 second", rate_pkt_prod)
-                self.generate_pkts_over_time[pipe_id].append(rate_pkt_prod)
-                prev_num_pkts[pipe_id] = pkt_value
-
-                # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
-                raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
-                raw_et_lat = self.get_register_number(bfrt_info, targets[pipe_id], raw_et_reg_name)
-                self.raw_et_over_time[pipe_id].append(raw_et_lat)
-                logger.info("[IN PROGRESS] Raw elapsed time: {}ns".format(raw_et_lat))
- 
-                # measure total number of packets 
-                tot_cnt_name = "MyIngress{}.tot_packet_counter".format(pipe_id)
-                pkts = self.get_counter_number(bfrt_info, tot_cnt_name)
-                #low_tot_name = "MyIngress{}.total_pkt_cnt_lower".format(pipe_id)
-                #high_tot_name = "MyIngress{}.total_pkt_cnt_higher".format(pipe_id)
-	        #low_num_tot_pkts = self.get_register_number(bfrt_info, targets[pipe_id], low_tot_name)
-	        #high_num_tot_pkts = self.get_register_number(bfrt_info, targets[pipe_id], high_tot_name)
-                #pkts = (high_num_tot_pkts << 32) + low_num_tot_pkts - 1 # NOTE: the -1 is to correct for a small hack in how this tabulation is done in P4
-                curr_dur = time.time() - start_time
-                pkts_tput = pkts/float(curr_dur)
-                #logger.info("[IN PROGRESS] Upper Append Packets: {} and Lower Append Packets: {}".format(high_num_tot_pkts, low_num_tot_pkts))
-	        logger.info("[IN PROGRESS] Total Append Packets: {}".format(pkts))
-	        logger.info("[IN PROGRESS] Append Throughput from PIPE {}: {}".format(pipe_id, pkts_tput))
-                self.pkts_over_time[pipe_id].append(pkts)
-                self.tput_over_time[pipe_id].append(pkts_tput)
-
-                # measure average latency at this time period
-                low_lat_reg_name = "MyIngress{}.latency_lower".format(pipe_id)
-                high_lat_reg_name = "MyIngress{}.latency_higher".format(pipe_id)
-                low_lat = self.get_register_number(bfrt_info, targets[pipe_id], low_lat_reg_name)
-                high_lat = self.get_register_number(bfrt_info, targets[pipe_id], high_lat_reg_name)
-                total_latency_ns = (high_lat << 31) + low_lat
-                logger.info("[IN PROGRESS] High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
-                logger.info("[IN PROGRESS] Aggregate Latency: {}ns".format(total_latency_ns))
-                avg_lat = 0
-                if pkts != 0:
-	            avg_lat = (total_latency_ns/float(pkts))/float(1000)
-                    logger.info("[IN PROGRESS] Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
-                self.avg_lat_over_time[pipe_id].append(avg_lat)
-
-                # measure queue size at this time period
-                q_name = "MyEgress{}.queue_cnt".format(pipe_id)
-                q_res = self.get_register_number(bfrt_info, targets[pipe_id], q_name)
-                logger.info("[IN PROGRESS] Num of packets in the egress queue: {}".format(q_res))
-                self.queue_cnt_over_time[pipe_id].append(q_res)
-
-                # measure amount of time  at this time period
-                pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
-                pipe_res = self.get_register_number(bfrt_info, targets[pipe_id], pipe_name)
-                logger.info("[IN PROGRESS] Time in the pipeline {}: {}".format(pipe_id, pipe_res))
-                self.pipeline_time[pipe_id].append(pipe_res)
-
-                # measure size of ack count table
-                #ack_name = "MyIngress{}.ack_array".format(pipe_id)
-                #ack_res = self.get_full_register(bfrt_info, targets[pipe_id], ack_name)
-                #logger.info("[IN PROGRESS] Number of pending acks: {}".format(ack_res))
-                #self.ack_cnt_over_time[pipe_id].append(ack_res)
-
-            print("=======================================================================")
-	    time.sleep(time_interval_s)
-        num_pipelines = len(pipes_cfg)
+                num_pipelines = len(pipes_cfg)
 
 	for pipe_cfg in pipes_cfg:
 	    pipe_id = pipe_cfg['pipe_id']
