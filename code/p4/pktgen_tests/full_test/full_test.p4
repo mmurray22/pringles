@@ -1,7 +1,11 @@
-/* -*- P4_16: Bare Minimum Sequencing Program -*- */
-// Credit: 
-// - Base code come from p4 tutorial exercises
-// - CPU port code inspiration comes from https://github.com/nsg-ethz/p4-learning/tree/master/examples/copy_to_cpu
+/*******************************************************************************
+ * P4_16: Ringworld
+ * Credit: 
+ *  - Base code come from p4 tutorial exercises
+ *  - CPU port code inspiration comes from https://github.com/nsg-ethz/p4-learning/tree/master/examples/copy_to_cpu
+ *  - Lots of inspiration from the p4_16 examples
+ ******************************************************************************/
+
 #include <core.p4>
 #if __TARGET_TOFINO__ == 2
 #include <t2na.p4>
@@ -12,8 +16,7 @@
 #include "../../common/headers.p4"
 #include "../../common/util.p4"
 
-
-const bit<16> TYPE_IPV4  = 0x0800;
+const bit<16> ETHERTYPE_IPV4  = 0x0800;
 const bit<16> TYPE_CONTROL = 0x0820; // only for the switches
 const bit<16> TYPE_MULTICAST = 0x0890; // only for the switches
 const bit<16> TYPE_APPEND = 0x0860;
@@ -24,6 +27,7 @@ const bit<16> TYPE_READ_RESP = 0x0871;
 const bit<16> TYPE_TAIL = 0x0840;
 const bit<16> TYPE_SUB = 0x0850;
 const bit<16> TYPE_SUB_RESP = 0x0851;
+const bit<16> TYPE_VIEW_TRIGGER = 0x0891;
 const bit<16> TYPE_VIEW_CHANGE = 0x0900;
 const bit<16> TYPE_VIEW_ACK = 0x0910;
 
@@ -39,7 +43,7 @@ const bit<8> CANARY_VALUE = 165; //0xA5;
 
 typedef bit<9>  egressSpec_t;
 typedef bit<48> macAddr_t;
-typedef bit<32> ip4Addr_t;
+typedef bit<32> ipv4_addr_t;
 typedef bit<48> time_t;
 typedef bit<8> pkt_type_t;
 const pkt_type_t PKT_TYPE_MIRROR = 2;
@@ -52,7 +56,7 @@ typedef bit<4> mirror_type_t;
 #endif
 const mirror_type_t MIRROR_TYPE_I2E = 1;
 
-/******* Default Headers ********/
+******* Default Headers ********/
 // Size: 112 bits
 header ethernet_t {
     macAddr_t dstAddr;
@@ -72,8 +76,8 @@ header ipv4_t {
     bit<8>    ttl;
     bit<8>    protocol;
     bit<16>   hdrChecksum;
-    ip4Addr_t srcAddr;
-    ip4Addr_t dstAddr;
+    ipv4_addr_t srcAddr;
+    ipv4_addr_t dstAddr;
 }
 
 /******* Custom Pringles Headers ********/
@@ -201,18 +205,26 @@ header subscribe_req_t {
 
 
 /***** View Change Headers ******/
+struct digest_timeout_t {
+    bit<8> cntrl_packet_not_seen;
+}
+
+header trigger_view_change_t {
+    bit<8> trigger;
+}
+
 header start_view_change_t {
     bit<16> current_ring_view;
-    bit<16> old_ring_view;
-    bit<8> switch_id;
-    bit<8> sender_switch_id;
+    bit<8> view_member_switch_id;
+    bit<8> leader_switch_id;
     bit<32> highest_seen_seq_no;
 }
 
 header finalize_view_change_t {
-    bit<16> dst_id;
+    bit<8> dst_id;
     bit<16> current_ring_view;
     bit<8> next_switch_id;
+    bit<8> sender_switch_id;
     bit<32> highest_quorum_seq_no;
 }
 
@@ -223,14 +235,16 @@ header canary_t {
 struct metadata {
     bit<2> recirc_port_type;
     bit<1> route_to_shard;
-
+    bit<1> trigger;
     bit<1> ready_for_ack;
     bit<1> ack_ready;
     bit<1> cntrl_to_process;
     bit<1> route_to_client;
+    bit<1> send_to_control_plane;
 
     bit<16> ring_process;
     bit<8> subscribe;
+    bit<8> view_change;
     bit<8> canary_ok; 
     bit<8> num_recirc_ports;
     bit<8> num_wait_ports;
@@ -238,6 +252,7 @@ struct metadata {
     bit<8> hops;
     bit<8> switch_id;
     bit<8> view_change_active;
+    bit<8> view_change_status;
     bit<8> view_change_prev;
     bit<8> next_hop;
     bit<8> update_iteration;
@@ -263,6 +278,9 @@ struct metadata {
     int<32> overflow;
     bit<32> output;
     bit<32> ack_threshold;
+    bit<32> view_timeout;
+    bit<32> last_time;
+    bit<32> current_time;
 
     // For mirroring
     bit<1> do_ing_mirroring; // Enable ingress mirroring
@@ -283,6 +301,7 @@ struct headers {
     control_pkt_t           cntrl;
     ipv4_t                  ipv4;
     udp_h		    udp; // 64 bits
+    trigger_view_change_t   trigger_view;
     start_view_change_t     start_view;
     finalize_view_change_t  finalize_view;
     ring_type_t             ring_type;
@@ -309,6 +328,7 @@ parser MyParser(packet_in packet,
         meta.recirc_port_type = 0;
         meta.route_to_shard = 0;
 
+        meta.trigger = 0;
         meta.ready_for_ack = 1;
         meta.ack_ready = 0;
         meta.cntrl_to_process = 0;
@@ -322,6 +342,7 @@ parser MyParser(packet_in packet,
         meta.port_idx = 0;
         meta.hops = 0;
         meta.switch_id = 0;
+	meta.view_change = 0;
         meta.view_change_active = 0;
         meta.view_change_prev = 0;
         meta.next_hop = 1; // TODO: Should be 0, using 1 to test
@@ -378,9 +399,10 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.ethernet);
 	transition select(hdr.ethernet.etherType) {
             TYPE_CONTROL: parse_control;
+            TYPE_VIEW_TRIGGER: parse_trigger_view;
             TYPE_VIEW_CHANGE: parse_start_view;
             TYPE_VIEW_ACK: parse_finalize_view;
-            TYPE_IPV4: parse_ipv4;
+            ETHERTYPE_IPV4: parse_ipv4;
 	    default: accept;
         }
     }
@@ -429,6 +451,11 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.sub);
         transition parse_canary;
     }
+
+    state parse_trigger_view {
+        packet.extract(hdr.trigger_view);
+        transition parse_canary;
+    } 
 
     state parse_start_view {
         packet.extract(hdr.start_view);
@@ -788,7 +815,7 @@ control MyIngress0(inout headers hdr,
     };
 
     // Total packet counter 
-    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) drop_cntrl_counter_ig0; 
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) cntrl_counter_ig0; 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) seq_only_packet_counter; 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter; 
     Register<bit<32>, bit<1>>(1, 1) total_pkt_cnt_lower; 
@@ -1167,7 +1194,7 @@ control MyIngress0(inout headers hdr,
     action send_multicast(bit<16> group_id) { // This does: shard multicast, subscription multicast
         ig_tm_md.mcast_grp_a = group_id;
     }
-    action eth_forward(macAddr_t dstAddr, egressSpec_t port) {
+    action eth_forward(mac_addr_t dstAddr, egress_spec_t port) {
         ig_tm_md.ucast_egress_port = port;
         hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
         hdr.ethernet.dstAddr = dstAddr;
@@ -1184,6 +1211,8 @@ control MyIngress0(inout headers hdr,
 	    meta.recirc_port_type: exact;
 	    meta.port_idx: exact;
 	    meta.subscribe: exact;
+	    meta.view_change: exact;
+	    meta.send_to_control_plane: exact;
 	    meta.route_to_shard: exact; // encodes shard_id
 	    meta.hops: exact; // send_to if more hops to go, eth_forward to send back to client
 	}
@@ -1230,6 +1259,7 @@ control MyIngress0(inout headers hdr,
 	meta.ring_view = get_view.execute(0);
 	hdr.timer.setInvalid();
 
+	
 	// Determine if this packet needs to be routed to another switch
 	if (hdr.ring_type.isValid()) {
 	    check_switch_routing.apply();
@@ -1237,11 +1267,11 @@ control MyIngress0(inout headers hdr,
 
 	if (hdr.cntrl.isValid()) {
 	    if (meta.ring_view != hdr.cntrl.ring_view) {
-		drop_cntrl_counter_ig0.count(0);
 		meta.cntrl_to_process = 0;
 		drop();
 	    } else {
 		meta.cntrl_to_process = 1;
+		cntrl_counter_ig0.count(0);
 	    }
 	}
 
@@ -1283,7 +1313,7 @@ control MyIngress0(inout headers hdr,
 	    // TODO: set ipv4 destination address??
 	} 
 
-        if (hdr.start_view.isValid()) {
+        if (hdr.start_view.isValid()) { // TODO: Multicast??
             hdr.start_view.highest_seen_seq_no = meta.assign_sn;
 	    hdr.start_view.old_ring_view = meta.ring_view;
 	    hdr.start_view.switch_id = meta.switch_id;
@@ -1443,6 +1473,18 @@ control MyIngress1(inout headers hdr,
         size = 1;
         default_action = get_num_wait(1);
     }
+    // Store view timeout threshold, which can be set relatively statically in a table
+    action get_view_timeout(bit<32> timeout) {
+        meta.view_timeout = timeout;
+    }
+    @pragma ternary 1 
+    table view_timeout_table { // DONE
+	actions = {
+            get_view_timeout;
+        }
+        size = 1;
+        default_action = get_view_timeout(2500);
+    }
 
 
     /**** ROUTING *****/
@@ -1550,6 +1592,8 @@ control MyIngress1(inout headers hdr,
 	}
     };
 
+    
+
     /**** TAIL *****/
     
     /****** SUBSCRIPTION ********/
@@ -1637,7 +1681,7 @@ control MyIngress1(inout headers hdr,
     };
 
     // Total packet counter 
-    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) drop_cntrl_counter_ig1; 
+    Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) cntrl_counter_ig1; 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) seq_only_packet_counter; 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter; 
     Register<bit<32>, bit<1>>(1, 1) total_pkt_cnt_lower; 
@@ -2033,6 +2077,8 @@ control MyIngress1(inout headers hdr,
 	    meta.recirc_port_type: exact;
 	    meta.port_idx: exact; 
 	    meta.subscribe: exact;
+	    meta.view_change: exact;
+	    meta.send_to_control_plane: exact;
 	    meta.route_to_shard: exact; // encodes shard_id
 	    meta.hops: exact; // send_to if more hops to go, eth_forward to send back to client
 	}
@@ -2081,6 +2127,18 @@ control MyIngress1(inout headers hdr,
 	size = 64;
 	default_action = view_start();
     }
+     
+    Register<bit<32>, bit<1>>(1, 0) last_seen_cntrl_pkt;
+    RegisterAction<bit<32>, bit<1>, bit<32>>(last_seen_cntrl_pkt) log_cntrl_pkt_time = {
+        void apply(inout bit<32> time) {
+	    time = (bit<32>)standard_metadata.ingress_mac_tstamp;
+        }
+    };
+    RegisterAction<bit<32>, bit<1>, bit<32>>(last_seen_cntrl_pkt) get_cntrl_pkt_time = {
+        void apply(inout bit<32> time, out bit<32> output) {
+	    output = time;
+        }
+    };
 
     /* Start of Ingress Pipeline */
     apply {	
@@ -2095,6 +2153,7 @@ control MyIngress1(inout headers hdr,
 	meta.update_iteration = 0;
 	meta.append_g_zero = 0;
 	meta.ack_ready = 0;
+	meta.send_to_control_plane = 0;	
 
 	meta.ring_view = get_view.execute(0);
 
@@ -2104,8 +2163,38 @@ control MyIngress1(inout headers hdr,
 	get_num_shards.apply();
 	get_shard_size.apply();
 	get_switch_id.apply();
+	view_timeout_table.apply();
 
 	hdr.timer.setInvalid();
+
+	if (hdr.start_view.isValid() || hdr.finalize_view.isValid()) {
+	    meta.view_change = 1;
+	    if (hdr.start_view.isValid()) {
+		if (hdr.start_view.switch_id == hdr.start_view.sender_switch_id) {
+		    meta.send_to_control_plane = 0;	
+		    meta.next_hop = 0;
+	    	} else if (hdr.start_view.sender_switch_id == meta.switch_id) {
+		    meta.send_to_control_plane = 0;	
+	    	    meta.next_hop = hdr.start_view.sender_switch_id;
+	    	} else {
+	    	    meta.send_to_control_plane = 1;
+	    	    meta.next_hop = 0;
+	    	}
+	    } else if (hdr.finalize_view.isValid()) {
+		if (hdr.finalize_view.dst_id == hdr.finalize_view.sender_switch_id && hdr.finalize_view.dst_id == meta.switch_id) {
+		    meta.send_to_control_plane = 1;
+	    	    meta.next_hop = 0;
+		} else if (hdr.finalize_view.dst_id != hdr.finalize_view.sender_switch_id && hdr.finalize_view.dst_id == meta.switch_id) {
+		    hdr.finalize_view.dst_id = hdr.finalize_view.sender_switch_id;
+		    meta.send_to_control_plane = 0;
+	    	    meta.next_hop = hdr.finalize_view.sender_switch_id;
+		} else if (hdr.finalize_view.dst_id != hdr.finalize_view.sender_switch_id && hdr.finalize_view.dst_id != meta.switch_id) {
+		    meta.send_to_control_plane = 0;
+	    	    meta.next_hop = hdr.finalize_view.dst_id;
+		}
+	    }
+	}
+
 
 	// Determine if this packet needs to be routed to another switch
 	if (hdr.ring_type.isValid()) {
@@ -2118,8 +2207,18 @@ control MyIngress1(inout headers hdr,
 		drop(); // <-- TODO put in routing table
 	    } else {
 		meta.cntrl_to_process = 1;
-		drop_cntrl_counter_ig1.count(0);
+		log_cntrl_pkt_time.execute(0);
+		cntrl_counter_ig1.count(0);
 	    }
+	} else {
+	    meta.last_time = get_cntrl_pkt_time.execute(0);
+	    meta.current_time = (bit<32>)standard_metadata.ingress_mac_tstamp;
+
+	    /*bit<32> elapsed = meta.current_time - meta.last_time; <-- TODO figure out how to make work?
+	    bit<32> diff = elapsed - meta.view_timeout;
+	    if (diff > 0) {
+	        ig_dprsr_md.digest_type = 1; // TODO: Is this right?
+	    }*/
 	}
 
 	cntrl_local_seq.apply();
@@ -2150,7 +2249,7 @@ control MyIngress1(inout headers hdr,
 	    ack_get_lower_lat.apply();
 	    ack_get_upper_lat.apply();
 	    if (hdr.append.isValid() && hdr.append.exp_type == 2) {
-	        drop();
+	        drop(); // <-- TODO put in routing table?
 	    }
 	} 
 
@@ -2162,15 +2261,18 @@ control MyIngress1(inout headers hdr,
 	} 
 
         if (hdr.start_view.isValid()) {
-	    start_view_tbl.apply();
-            /*hdr.start_view.highest_seen_seq_no = meta.assign_sn;
-	    hdr.start_view.old_ring_view = meta.ring_view;
-	    hdr.start_view.switch_id = meta.switch_id;*/
+	    bit<8> hello = 1;
+	    bit<8> hi = 2;
+	    if (hello < hdr.start_view.switch_id) {
+	    //if (hdr.start_view.old_ring_view < meta.ring_view) {
+	        start_view_tbl.apply();
+	    }
 	}
 
         if (hdr.finalize_view.isValid()) {
 	    // Set highest sequence number
 	    meta.global_seq_no = hdr.finalize_view.highest_quorum_seq_no;
+
 	    update_view.execute(0);
 	}
 
@@ -2186,8 +2288,14 @@ control MyIngressDeparser(
  in ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md)
 {
     Mirror() mirror;
+    Digest<digest_timeout_t>() digest_timeout;
 
     apply {
+	if (ig_dprsr_md.digest_type == 1) {
+	    // We have: meta.view_timeout, meta.last_time, and meta.current_time
+	    bit<8> hello = 0;
+	    //digest_timeout.pack({hello});
+	}
 	if (ig_dprsr_md.mirror_type == MIRROR_TYPE_I2E) {
 	    mirror.emit<mirror_h>(ig_md.ing_mir_ses, {ig_md.pkt_type});
 	}
@@ -2275,9 +2383,10 @@ parser MyEgressParser(packet_in packet,
             packet.extract(hdr.ethernet);
             transition select(hdr.ethernet.etherType) {
                 TYPE_CONTROL: parse_control;
+		TYPE_VIEW_TRIGGER: parse_trigger_view;
 		TYPE_VIEW_CHANGE: parse_start_view;
             	TYPE_VIEW_ACK: parse_finalize_view;
-                TYPE_IPV4: parse_ipv4;
+                ETHERTYPE_IPV4: parse_ipv4;
                 default: accept;
             }
         }
@@ -2310,6 +2419,11 @@ parser MyEgressParser(packet_in packet,
             packet.extract(hdr.cntrl);
             transition parse_canary;
         }
+
+   	state parse_trigger_view {
+   	    packet.extract(hdr.trigger_view);
+   	    transition parse_canary;
+   	} 
 
         state parse_start_view {
             packet.extract(hdr.start_view);
@@ -2367,16 +2481,22 @@ control MyEgress0(inout headers hdr,
     };
 
     Register<bit<8>, bit<1>>(1, 0) view_change_active; 
-    RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) set_active_view_change = {
+    RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) trigger_active_view_change = {
         void apply(inout bit<8> is_active, out bit<8> output) {
 	    is_active = 1;
 	    output = 1;
 	}
     };
+    RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) started_active_view_change = {
+        void apply(inout bit<8> is_active, out bit<8> output) {
+	    is_active = 2;
+	    output = 2;
+	}
+    };
     RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) unset_active_view_change = {
         void apply(inout bit<8> is_active, out bit<8> output) {
-	    output = is_active;
 	    is_active = 0;
+	    output = 0;
 	}
     };
     RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) get_active_view_change = {
@@ -2385,16 +2505,10 @@ control MyEgress0(inout headers hdr,
 	}
     };
 
-    
-    Register<bit<32>, bit<1>>(1, 0) view_change_start_time; 
-    RegisterAction<bit<32>, bit<1>, bit<32>>(view_change_start_time) log_view_change_start_time = {
+    Register<bit<32>, bit<1>>(2, 0) view_change_start_time; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(view_change_start_time) log_view_change_time = {
         void apply(inout bit<32> start_time) {
 	    start_time = eg_prsr_md.global_tstamp[31:0];
-	}
-    };
-    RegisterAction<bit<32>, bit<1>, bit<32>>(view_change_start_time) update_view_change_time = {
-        void apply(inout bit<32> start_time) {
-	    start_time = meta.egress_end_time - start_time;
 	}
     };
 
@@ -2436,23 +2550,31 @@ control MyEgress0(inout headers hdr,
 	default_action = NoAction;
     }
 
-
-    action set_active_view() {
-	meta.view_change_active = set_active_view_change.execute(0);
+    action trigger_active_view() { // View trigger packet 
+	meta.view_change_active = trigger_active_view_change.execute(0);
+	meta.view_change_status = 0; // Irrelevant
     }
-    action unset_active_view() {
+    action start_active_view_and_status() { // Start View packet 
+	meta.view_change_active = started_active_view_change.execute(0);
+	meta.view_change_status = 1; // Start timestamping
+    }
+    action unset_active_view() { // New next control packet
 	meta.view_change_active = unset_active_view_change.execute(0);
+	meta.view_change_status = 2; // Stop timestamping
     }
     action get_active_view() {
 	meta.view_change_active = get_active_view_change.execute(0);
+	meta.view_change_status = 0; // Irrelevant
     }
     table update_active_view {
 	key = {
 	    hdr.ethernet.etherType: exact;
             meta.ring_process: exact;
+            meta.view_change: exact;
 	}
 	actions = {
-	    set_active_view;
+	    trigger_active_view;
+	    start_active_view_and_status;
 	    unset_active_view;
 	    get_active_view;
 	    NoAction;
@@ -2462,14 +2584,14 @@ control MyEgress0(inout headers hdr,
     }
 
     action get_ts() {
-	update_view_change_time.execute(0);
+	log_view_change_time.execute(1);
     }
     action log_ts() {
-	log_view_change_start_time.execute(0);
+	log_view_change_time.execute(0);
     }
     table view_logistics {
 	key = {
-	    meta.view_change_active: exact;
+	    meta.view_change_status: exact;
 	}
 	actions = {
 	    log_ts;
@@ -2499,6 +2621,7 @@ control MyEgress0(inout headers hdr,
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) drop_cntrl_counter_eg0; 
 
     apply { 
+	meta.view_change_status = 0;
 	if (eg_dprsr_md.mirror_type != 0) {
             hdr.ring_type.type = TYPE_SUB_RESP;
 	}
@@ -2517,6 +2640,9 @@ control MyEgress0(inout headers hdr,
             check_duration.apply();
 	} 
 
+	if (hdr.start_view.isValid() && hdr.start_view.switch_id == hdr.start_view.sender_switch_id) {
+	    meta.view_change = 1;
+	}
 	update_active_view.apply();
 	view_logistics.apply();
 	check_view_change.apply();
@@ -2542,17 +2668,33 @@ control MyEgress1(inout headers hdr,
 	}
     };
 
-    Register<bit<8>, bit<1>>(1, 0) view_change_active; 
-    RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) set_active_view_change = {
+    Register<bit<8>, bit<1>>(1, 0) view_change_status;  // TODO : Setting the point at which the view change happens
+    RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_status) received_start_view = {
         void apply(inout bit<8> is_active, out bit<8> output) {
 	    is_active = 1;
 	    output = 1;
 	}
     };
+
+
+    Register<bit<8>, bit<1>>(1, 0) view_change_active; 
+    RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) trigger_active_view_change = {
+        void apply(inout bit<8> is_active, out bit<8> output) {
+	    is_active = 1;
+	    output = 1;
+	}
+    };
+    RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) started_active_view_change = {
+        void apply(inout bit<8> is_active, out bit<8> output) {
+	    is_active = 2;
+	    output = 2;
+	}
+    };
+
     RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) unset_active_view_change = {
         void apply(inout bit<8> is_active, out bit<8> output) {
-	    output = is_active;
 	    is_active = 0;
+	    output = 0;
 	}
     };
     RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_active) get_active_view_change = {
@@ -2562,15 +2704,10 @@ control MyEgress1(inout headers hdr,
     };
 
     
-    Register<bit<32>, bit<1>>(1, 0) view_change_start_time; 
-    RegisterAction<bit<32>, bit<1>, bit<32>>(view_change_start_time) log_view_change_start_time = {
+    Register<bit<32>, bit<1>>(2, 0) view_change_start_time; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(view_change_start_time) log_view_change_time = {
         void apply(inout bit<32> start_time) {
 	    start_time = eg_prsr_md.global_tstamp[31:0];
-	}
-    };
-    RegisterAction<bit<32>, bit<1>, bit<32>>(view_change_start_time) update_view_change_time = {
-        void apply(inout bit<32> start_time) {
-	    start_time = meta.egress_end_time - start_time;
 	}
     };
 
@@ -2603,6 +2740,7 @@ control MyEgress1(inout headers hdr,
     table check_view_change {
 	key = {
             meta.view_change_active: exact;
+	    hdr.ethernet.etherType: exact; // TYPE_CNTRL, TYPE_IP
 	}
 	actions = {
 	    drop;
@@ -2612,23 +2750,31 @@ control MyEgress1(inout headers hdr,
 	default_action = NoAction;
     }
 
-
-    action set_active_view() {
-	meta.view_change_active = set_active_view_change.execute(0);
+    action trigger_active_view() { // View trigger packet 
+	meta.view_change_active = trigger_active_view_change.execute(0);
+	meta.view_change_status = 0; // Irrelevant
     }
-    action unset_active_view() {
+    action start_active_view_and_status() { // Start View packet 
+	meta.view_change_active = started_active_view_change.execute(0);
+	meta.view_change_status = 1; // Start timestamping
+    }
+    action unset_active_view() { // New next control packet
 	meta.view_change_active = unset_active_view_change.execute(0);
+	meta.view_change_status = 2; // Stop timestamping
     }
     action get_active_view() {
 	meta.view_change_active = get_active_view_change.execute(0);
+	meta.view_change_status = 0; // Irrelevant
     }
     table update_active_view {
 	key = {
 	    hdr.ethernet.etherType: exact;
             meta.ring_process: exact;
+            meta.view_change: exact;
 	}
 	actions = {
-	    set_active_view;
+	    trigger_active_view;
+	    start_active_view_and_status;
 	    unset_active_view;
 	    get_active_view;
 	    NoAction;
@@ -2638,14 +2784,14 @@ control MyEgress1(inout headers hdr,
     }
 
     action get_ts() {
-	update_view_change_time.execute(0);
+	log_view_change_time.execute(1);
     }
     action log_ts() {
-	log_view_change_start_time.execute(0);
+	log_view_change_time.execute(0);
     }
     table view_logistics {
 	key = {
-	    meta.view_change_active: exact;
+	    meta.view_change_status: exact;
 	}
 	actions = {
 	    log_ts;
@@ -2656,7 +2802,7 @@ control MyEgress1(inout headers hdr,
 	default_action = NoAction;
     }
 
-   action set_ring_process(bit<16> process_type) {
+    action set_ring_process(bit<16> process_type) {
 	meta.ring_process = process_type;
     }
     table get_packet_type {
@@ -2675,6 +2821,11 @@ control MyEgress1(inout headers hdr,
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) drop_cntrl_counter_eg1; 
 
     apply { 
+	meta.view_change = 0;
+	meta.view_change_status = 0;
+	meta.ring_process = 0;
+	meta.view_change_active = 0;
+
 	if (eg_dprsr_md.mirror_type != 0) {
             hdr.ring_type.type = TYPE_SUB_RESP;
 	}
@@ -2692,12 +2843,16 @@ control MyEgress1(inout headers hdr,
 	    hdr.ring_type.raw_elapsed_time = (bit<16>)(hdr.ring_type.end_ts - hdr.ring_type.start_ts);
             check_duration.apply();
 	} 
+	
+	if (hdr.start_view.isValid() && hdr.start_view.switch_id == hdr.start_view.sender_switch_id) {
+	    meta.view_change = 1;
+	}
 
 	update_active_view.apply();
 	view_logistics.apply();
 	check_view_change.apply();
 
-	if ((hdr.ring_type.isValid() || hdr.cntrl.isValid()) && hdr.canary.magic != CANARY_VALUE) {
+	if ((hdr.ring_type.isValid() || hdr.cntrl.isValid()) && hdr.canary.magic != CANARY_VALUE) { // TODO: Put canary in table
 	    canary_no_match_counter_eg1.count(0);
 	    drop();
 	}
