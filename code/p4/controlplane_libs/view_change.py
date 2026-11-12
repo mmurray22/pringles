@@ -20,7 +20,8 @@ import random
 import os
 import yaml
 from multiprocessing import Process
-from helper import *
+import threading
+
 import ptf
 import ptf.dataplane as dataplane
 from ptf import config
@@ -35,213 +36,203 @@ from headers import *
 from helper import *
 
 class ViewChange:
-    def __init__(self, view_num, view_member_threshold, num_shards, switch_id, defaultDstAddr, defaultSrcAddr, interface, timeout, logger, timeout_app_id):
+    def __init__(self, view_num, view_member_threshold, switch_id, defaultDstAddr, defaultSrcAddr, interface, cpu_port, timeout, duration, logger, active_switches):
+        # View numbers
         self.view = view_num
         self.prev_view = 0
-        self.num_shards = num_shards
+
+        # Number of switches needed to create new ring
         self.view_member_threshold = view_member_threshold
+
+        # ID of the switch the current control plane is running on 
         self.switch_id = switch_id
+
+        # Destination and Source Address 
         self.dstAddr = defaultDstAddr
         self.srcAddr = defaultSrcAddr
+
+        # CPU Interface name and port
         self.cpu_interface = interface
-        self.timeout = timeout
-        self.timeout_app_id = timeout_app_id
+        self.cpu_port = cpu_port
+
+        # View times: View change phases timeouts and experiment duration
+        self.view_timeout = timeout
+        self.exp_duration = duration + 5
+
+        # Queue of incoming packets
+        self.received_start_view = []
+        self.received_finalize_view = []
+
+        # Link down timeout id
+        #self.timeout_app_id = timeout_app_id
+
+        self.active_switches = active_switches
+
+        # Logger
         self.logger = logger
 
-    #def get_counter_number(bfrt_info, target, counter_name):
-    #    counter = bfrt_info.table_get(counter_name)
-    #    # 3. Request the entry at index 0
-    #    # 'from_hw=True' ensures you get the latest count from the ASIC registers, 
-    #    # not a cached software value.
-    #    resp = counter.entry_get(
-    #        target,
-    #        [counter.make_key([gc.KeyTuple('$COUNTER_INDEX', 0)])],
-    #        {"from_hw": True}
-    #    )
-    #    
-    #    # 4. Parse the response
-    #    try:
-    #        data, _ = next(resp)
-    #        data_dict = data.to_dict()
-    #        
-    #        # Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
-    #        return data_dict['$COUNTER_SPEC_PKTS']
-    #    except gcBfruntimeRpcException as e:
-    #        logger.info(e)
-    #        return 0
+        self.arr_lock = threading.Lock()
 
-    def send_start_view_change(self, interface, switch_highest_seq_no):
+    #def __exit__(self):
+    
+    ##################################### Helper functions (TODO deduplicate) ############################
+    def get_register_number(self, bfrt_info, target, register_name, idx):
+        reg_table = bfrt_info.table_get(register_name)
+	table_resp = reg_table.entry_get(
+	    target,
+	    [reg_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
+	    {"from_hw": True}
+	)
+	reg_data, _ = next(table_resp)
+	reg_data_dict = reg_data.to_dict()
+        register_entry_name = register_name + ".f1"
+        return reg_data_dict[register_entry_name][idx]
+   
+
+    ##################################### Send View Change Packets ############################
+    def inject_view_change_trigger(self):
+        pkt = Ether(dst=self.dstAddr, src=self.srcAddr, type=TYPE_VIEW_INDUCE)/ \
+              InduceViewChange(drop_cntrl=1)/ \
+              Canary(magic=MAGIC_VALUE)
+        self.logger.info("TRIGGER PACKET WE ARE SENDING:")
+	pkt.show()
+        sendp(pkt, iface=self.cpu_interface, verbose=True)
+
+    def send_start_view_change(self, switch_highest_seq_no):
         self.prev_view = self.view
         self.view = self.view + 1
-        pkt = Ether(dst=self.dstAddr, src=self.srcAddr, type=TYPE_VIEW_CHANGE)/ \
-              StartViewChange(current_ring_view=self.view, 
-                              old_ring_view=old_view, 
-                              switch_id=0, 
-                              sender_switch_id=self.switch_id, 
-                              num_shards=self.num_shards, 
-                              highest_quorum_seq_no=switch_highest_seq_no)/ \
-              Canary(magic=165)
-        logger.info("VIEW CHANGE PACKET WE ARE SENDING:")
-	pkt.show()
-        sendp(pkt, iface=interface, verbose=True)
+        its = 0
+        for i in range(0, len(self.active_switches)):
+            pkt = Ether(dst=self.dstAddr, src=self.srcAddr, type=TYPE_VIEW_CHANGE)/ \
+                  TriggerViewChange(leader_switch_id=self.switch_id, 
+                                  current_ring_view=self.prev_view, 
+                                  view_member_switch_id=self.active_switches[i],
+                                  highest_seen_seq_no=switch_highest_seq_no,
+                                  hops=0)/ \
+                  Canary(magic=MAGIC_VALUE)
+            #self.logger.info("START VIEW PACKET WE ARE SENDING:") # TODO change naming of highest_seen_seq_no!
+	    #pkt.show()
+            sendp(pkt, iface=self.cpu_interface, verbose=True)
+            its += 1
+        #print("============================TOTAL NUMBER OF TRIGGERS SENT IS: {}".format(its))
 
-    def send_view_change_ack(self, interface, highest_quorum_seq_no):
+    def send_view_change_ack(self, highest_quorum_seq_no, members):
         for i in range(0, len(members)):
-            final_view_pkt = Ether(dstAddr, srcAddr, type=TYPE_FINAL_VIEW)/ \
-                             FinalizeViewChange(dst_id=members[i],
+            final_view_pkt = Ether(dst=self.dstAddr, src=self.srcAddr, type=TYPE_VIEW_ACK)/ \
+                             FinalizeViewChange(leader_switch_id=self.switch_id,
+                                                view_member_switch_id=members[i],
                                                 current_ring_view=self.view,
                                                 next_switch_id=members[(i+1)%len(members)],
-                                                highest_quorum_seq_no=highest_quorum_seq_no)/ \
-                             Canary(magic=165)
-            logger.info("VIEW ACK PACKET WE ARE SENDING:")
-	    pkt.show()
-            sendp(final_view_pkt, iface=interface, verbose=True)
+                                                highest_quorum_seq_no=highest_quorum_seq_no,
+                                                hops=0)/ \
+                             Canary(magic=MAGIC_VALUE)
+            #self.logger.info("FINAL VIEW PACKET WE ARE SENDING:")
+	    #final_view_pkt.show()
+            sendp(final_view_pkt, iface=self.cpu_interface, verbose=True)
         
-    def collect_responses(self, pkt_type):
-        os.system("taskset -p -c 0 {}".format(os.getpid()))
-        # This creates a raw socket exactly like tcpdump
-        recv_sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
-        recv_sock.bind((interface, 0))
-        # The Magic Constant: 18 (PACKET_IGNORE_OUTGOING)
-        # This prevents the socket from receiving packets sent by the local host
-        recv_sock.setsockopt(263, 18, 1)
-        new_view_members = 0
-        pkt_arr = []
-        start_time = time.time()
-        #while (time.time() - start_time) < self.timeout:
-        #    print("[*] Tofino Receive Socket Open and Listening...")
-        #    try:
-        #        raw_data, addr = recv_sock.recvfrom(65535)
-        #        pkttype = addr[2]
-        #        if pkttype == 4:
-        #            continue
-        #        ether_pkt = Ether(raw_data)
-        #        if ether_pkt.haslayer(RingType):
-        #            if ether_pkt[RingType] == pkt_type:
-        #                new_view_members += 1
-        #                pkt_arr.append(ether_pkt)
-        #return (new_view_members, pkt_arr)
+    ##################################### Send View Change Packets ############################
+    def is_returned(self, p):
+        return (Ether in p and (p[Ether].type == TYPE_VIEW_CHANGE or p[Ether].type == TYPE_VIEW_ACK)
+                and (TriggerViewChange in p or FinalizeViewChange in p))
 
+    def handle_pkt(self, ether_pkt):
+        if ether_pkt[Ether].type == TYPE_VIEW_CHANGE:
+            #print("GOT A TriggerView PACKET!")
+            startView = ether_pkt[TriggerViewChange]
+            #startView.show()
+            #self.logger.info("TriggerView pkt: leader={} member={} seq_no={}".format(startView.leader_switch_id, startView.view_member_switch_id, startView.highest_seen_seq_no))
+            with self.arr_lock:
+                self.received_start_view.append(startView)
+        elif ether_pkt[Ether].type == TYPE_VIEW_ACK:
+            #print("GOT A FinalizeView PACKET!")
+            finalView = ether_pkt[FinalizeViewChange]
+            #finalView.show()
+            #self.logger.info("FinalizeView pkt: next_switch={} member={} start_seq_no={} view={}".format(finalView.next_switch_id, finalView.view_member_switch_id, finalView.highest_quorum_seq_no, finalView.current_ring_view))
+            self.received_finalize_view.append(finalView)
+
+    def collect_responses(self):
+        sniff(iface = self.cpu_interface, L2socket=conf.L2socket, lfilter=self.is_returned, timeout=self.exp_duration, prn = lambda x: self.handle_pkt(x))
+        #sniff(iface=self.cpu_interface, L2socket=conf.L2socket, timeout=self.exp_duration, prn = lambda x: self.handle_pkt(x))
+        print("Sniffing is over!")
+
+    ##################################### Helper Functions for View Change ############################
     def prep_new_view(self, view_pkts):
         highest_quorum_seq_no = 0
         members = []
         ring_idx = 0
-        for pkt in range(0, len(view_pkts)):
-            # Get the sequence number seen by ALL switches in the new quorum from the last view
-            if pkt[StartViewChange].old_ring_view < self.prev_view: # TODO what if previous view is higher?
-                continue
-            elif pkt[StartViewChange].old_ring_view > self.prev_view:
-                error = "UH OH! This switch is STALE NOT HANDLED!"
-                self.logger.error(error)
-                raise ValueError(error)
-            elif highest_quorum_seq_no == 0:
-                highest_quorum_seq_no = pkt[StartViewChange].highest_quorum_seq_no
-            elif pkt[StartViewChange].highest_quorum_seq_no < highest_quorum_seq_no:
-                highest_quorum_seq_no = pkt[StartViewChange].highest_quorum_seq_no
+        for pkt in view_pkts:
+            # TODO? Get the sequence number seen by ALL switches in the new quorum from the last view
+
+            # Get the highest quorum sequence number
+            if highest_quorum_seq_no == 0:
+                highest_quorum_seq_no = pkt[TriggerViewChange].highest_seen_seq_no
+            elif pkt[TriggerViewChange].highest_seen_seq_no < highest_quorum_seq_no:
+                highest_quorum_seq_no = pkt[TriggerViewChange].highest_seen_seq_no
 
             # Construct members of the new ring
-            members.append(pkt[StartViewChange].switch_id)
+            members.append(pkt[TriggerViewChange].view_member_switch_id)
         return (highest_quorum_seq_no, members)
 
-    def run_view_change(self, bfrt_info, target, counter_name, duration):
+    #################### View Change Leader #################################
+    def run_view_change(self, bfrt_info, target, pkt_it, duration, pipe_id):
         # Timeout has been surpassed, start the view change process!
-        register_name = "map_from_gsn"
-        highest_quorum_seq_no = get_register_info(bfrt_info, target, register_name, ref_pkt_it)
-        self_pkt = self.send_start_view_change(self.cpu_interface, highest_quorum_seq_no)
-        (new_view_members, pkt_arr) = self.collect_responses()
-        pkt_arr.append(self_pkt) # TODO: push self_pkt to the front
-        if new_view_members < self.view_member_threshold:
-            error = "DID NOT GET ENOUGH MEMBERS"
-            logger.info(error)
+        
+        # Start dataplane response sniffing thread
+        #print("========================================MADE IT HERE!!!!!")
+        register_name = "MyIngress{}.map_from_gsn".format(pipe_id)
+        highest_quorum_seq_no = self.get_register_number(bfrt_info, target, register_name, pkt_it)
+        #print("======================================= Packet iteration: {}, Highest quorum sequence number: {}".format(pkt_it, highest_quorum_seq_no))
+
+        # Send StartView packet 
+        self.send_start_view_change(highest_quorum_seq_no)
+        #sleep_time = float("5e-9")
+        sleep_time = .0000000005
+        total_time_waited = 0
+        start_time = time.time()
+        list_of_start_view_pkts = []
+        while (time.time() - start_time) < self.view_timeout:
+            with self.arr_lock:
+                list_of_start_view_pkts = self.received_start_view
+                if  len(self.received_start_view) < self.view_member_threshold:
+                    #print("Only got {}, waiting for {} StartView packets".format(len(self.received_start_view), self.view_member_threshold))
+                    continue
+                else:
+                    break
+            total_time_waited += sleep_time
+            time.sleep(sleep_time)
+                    
+        
+        if len(list_of_start_view_pkts) < self.view_member_threshold:
+            error = "DID NOT GET ENOUGH MEMBERS TO START THE VIEW"
+            self.logger.warn(error)
+            raise ValueError(error) # TODO DO BETTER!
+        #else:
+            #print("IT TOOK {}s to get START VIEW QUORUM".format(total_time_waited))
+            #print("=============================AND WE GOT {} number of members".format(len(list_of_start_view_pkts)))
+        self.received_start_view = []
+
+        (highest_seq_no, members) = self.prep_new_view(list_of_start_view_pkts)
+        self.send_view_change_ack(highest_seq_no, members)
+
+        start_time = time.time()
+        total_time_waited = 0
+        list_of_finalize_view_pkts = []
+        while (time.time() - start_time) < self.view_timeout:
+            list_of_finalize_view_pkts = self.received_finalize_view
+            if  len(self.received_finalize_view) < self.view_member_threshold:
+                #print("Only got {}, waiting for {} FinalView packets".format(len(self.received_finalize_view), self.view_member_threshold))
+                time.sleep(sleep_time)
+                continue
+            else:
+                break
+
+        if len(list_of_finalize_view_pkts) < self.view_member_threshold:
+            error = "DID NOT GET ENOUGH MEMBERS TO FINALIZE THE VIEW"
+            self.logger.warn(error)
             raise ValueError(error)
-
-        (highest_seq_no, members) = self.prep_new_view(pkt_arr)
-
-        self_pkt = self.send_view_ack(self.cpu_interface, highest_seq_no, members)
-        (new_view_members, pkt_arr) = self.collect_responses(pkt_type)
-        pkt_arr.append(self_pkt)
-
-        if new_view_members < self.view_member_threshold:
-            error = "DID NOT GET ENOUGH MEMBERS"
-            logger.info(error)
-            raise ValueError(error)
-        return True
-
-    def setup_link_down_trigger(self, bfrt_info, target): # TODO NOT DONE, not highest priority
-        logger.info("=============== Testing Packet Generator trigger by Timer ===============")
-        pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
-        pktgen_pkt_buffer_table = bfrt_info.table_get("$PKTGEN_PKT_BUFFER")
-        pktgen_port_cfg_table = bfrt_info.table_get("$PKTGEN_PORT_CFG")
-
-
-        # timer pktgen app_id = 1 one shot 0
-        app_id = self.timeout_app_id
-
-        # Assuming not including the pkt gen header
-        # Assuming in bytes
-        pgen_pipe_id = 1
-        src_port = self.pgen_port(pgen_pipe_id)
-        # B x P to emulate 100G of client traffic
-        p_count = 1 # packets per batch
-        b_count = 1 # batch number
-        buff_offset = 1  # generated packets' payload will be taken from the offset in buffer
-        out_port = 192
-
-        # build expected generated packets
-        p = Ether(dst=self.dstAddr, src=self.srcAddr, type=TYPE_VIEW_CHANGE)/ \
-              StartViewChange(current_ring_view=0, old_ring_view=0, switch_id=0, sender_switch_id=self.switch_id, num_shards=self.num_shards, highest_quorum_seq_no=0)
-        raw_p = bytes(p)
-        pktlen = len(raw_p)
-        print("Length of the packet being sent is: {}".format(pktlen))
-        try:
-            logger.info("configure forwarding table")
-
-            # Enable packet generation on the port
-            logger.info("enable pktgen port")
-	    #port_target = gc.Target(device_id=0, pipe_id=0x1)
-            pktgen_port_cfg_table.entry_add(
-                target,
-                [pktgen_port_cfg_table.make_key([gc.KeyTuple('dev_port', src_port)])],
-                [pktgen_port_cfg_table.make_data([gc.DataTuple('pktgen_enable', bool_val=True)])])
-
-            # Configure the packet generation timer application
-            logger.info("configure pktgen application")
-            data = pktgen_app_cfg_table.make_data([gc.DataTuple('timer_nanosec', 100000),
-                                                   gc.DataTuple('app_enable', bool_val=False),
-                                                   gc.DataTuple('pkt_len', pktlen),
-                                                   gc.DataTuple('pkt_buffer_offset', buff_offset),
-                                                   gc.DataTuple('pipe_local_source_port', (src_port & 0x7F)),
-                                                   gc.DataTuple('increment_source_port', bool_val=False),
-                                                   gc.DataTuple('batch_count_cfg', b_count-1),
-                                                   gc.DataTuple('packets_per_batch_cfg', p_count-1),
-                                                   gc.DataTuple('ibg', 0),
-                                                   gc.DataTuple('ibg_jitter', 0),
-                                                   gc.DataTuple('ipg', 0),
-                                                   gc.DataTuple('ipg_jitter', 0),
-                                                   gc.DataTuple('batch_counter', 0),
-                                                   gc.DataTuple('pkt_counter', 0),
-                                                   gc.DataTuple('trigger_counter', 0)],
-                                                  '$PKTGEN_TRIGGER_PORT_DOWN')
-            pktgen_app_cfg_table.entry_add(
-                target,
-                [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
-                [data])
-            logger.info("configure packet buffer")
-            pktgen_pkt_buffer_table.entry_add(
-                target,
-                [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
-                                                   gc.KeyTuple('pkt_buffer_size', pktlen)])],
-                [pktgen_pkt_buffer_table.make_data([gc.DataTuple('buffer', raw_p)])])
-            logger.info("enable pktgen")
-            pktgen_app_cfg_table.entry_mod(
-                target,
-                [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', g_timer_app_id)])],
-                [pktgen_app_cfg_table.make_data([gc.DataTuple('app_enable', bool_val=True)],
-                                                 '$PKTGEN_TRIGGER_PORT_DOWN')]
-            )
-            
-        except gc.BfruntimeRpcException as e:
-            print(e)
-            raise e
-        finally:
-            pass
+        #else:
+            #print("IT TOOK {}s to get FINALIZE VIEW QUORUM".format(total_time_waited))
+            #print("=============================AND WE GOT {} number of members".format(len(list_of_finalize_view_pkts)))
+        self.active_switches = members # TODO: Check semantics but I think this is sound
+        self.received_finalize_view = []
+        return (self.view, highest_seq_no)

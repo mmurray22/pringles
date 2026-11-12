@@ -11,8 +11,9 @@ TYPE_READ_RESP = 0x0871
 TYPE_TAIL = 0x0840
 TYPE_SUB = 0x0850
 TYPE_SUB_RESP = 0x0851
-TYPE_CONTROL = 0x0820; 
-TYPE_MULTICAST = 0x0890
+TYPE_CONTROL = 0x0820
+TYPE_VIEW_INDUCE = 0x0890
+TYPE_VIEW_TRIGGER = 0x0891
 TYPE_VIEW_CHANGE = 0x0900
 TYPE_VIEW_ACK = 0x0910
 
@@ -41,10 +42,10 @@ class Cntrl(Packet):
     fields_desc = [ BitField("global_seq_no", 0, 32),
                     BitField("ring_view", 0, 16)]
 class RingType(Packet):
-    fields_desc = [ BitField("type", 0x0, 8),
+    fields_desc = [ BitField("type", 0x0, 16),
                     BitField("num_entries", 1, 16),
                     BitField("shard_id", 0, 16),
-                    BitField("switch_to_process", 1, 32),
+                    BitField("switch_to_process", 1, 8),
                     BitField("start_ts", 0, 48),
                     BitField("end_ts", 0, 48),
                     BitField("raw_elapsed_time", 0, 16),
@@ -56,7 +57,8 @@ class Append(Packet):
                     BitField("g_idx", 0, 32), # TODO: 64
                     BitField("cntrl_pkt_it", 0, 16),
                     BitField("recv_port", 0, 16),
-                    BitField("exp_type", 0, 16)]
+                    BitField("exp_type", 0, 16),
+                    BitField("start_ts", 0, 48)]
 class Read(Packet):
     fields_desc = [ BitField("nonce", 0, 16),
                     BitField("payload_size", 0, 32),
@@ -73,23 +75,27 @@ class Subscribe(Packet):
 class Tail(Packet):
     fields_desc = [ BitField("nonce", 0, 16),
                     BitField("hops", 0, 8),
+                    BitField("start_switch_id", 0, 8),
                     BitField("tail_seq_no", 0, 32),
                     BitField("recv_port", 0, 16)]
-class StartViewChange(Packet):
-    fields_desc = [ BitField("current_ring_view", 0, 16),
-                    BitField("old_ring_view", 0, 16),
-                    BitField("switch_id", 0, 8),
-                    BitField("sender_switch_id", 0, 8),
-                    BitField("highest_seen_seq_no", 0, 32)]
+class TriggerViewChange(Packet):
+    fields_desc = [ BitField("leader_switch_id", 0, 8),
+                    BitField("current_ring_view", 0, 16),
+                    BitField("view_member_switch_id", 0, 8),
+                    BitField("highest_seen_seq_no", 0, 32),
+                    BitField("hops", 0, 8)]
 class FinalizeViewChange(Packet):
-    fields_desc = [ BitField("dst_id", 0, 16),
+    fields_desc = [ BitField("leader_switch_id", 0, 8),
+                    BitField("view_member_switch_id", 0, 8),
                     BitField("current_ring_view", 0, 16),
                     BitField("next_switch_id", 0, 8),
-                    BitField("highest_quorum_seq_no", 0, 32)]
+                    BitField("highest_quorum_seq_no", 0, 32),
+                    BitField("hops", 0, 8)]
 class Canary(Packet):
     fields_desc = [ BitField("magic", MAGIC_VALUE, 8)]
 
-
+class InduceViewChange(Packet):
+    fields_desc = [ BitField("drop_cntrl", 1, 8)]
 
 bind_layers(PktgenTimerHeader, Ether)
 bind_layers(Ether, IP, type=TYPE_IP)
@@ -104,11 +110,14 @@ bind_layers(RingType, Read, type=TYPE_READ_RESP)
 bind_layers(RingType, Subscribe, type=TYPE_SUB)
 bind_layers(RingType, Tail, type=TYPE_TAIL)
 bind_layers(Ether, Cntrl, type=TYPE_CONTROL)
-bind_layers(Ether, StartViewChange, type=TYPE_VIEW_CHANGE)
-bind_layers(Ether, StartViewChange, type=TYPE_VIEW_ACK)
+#bind_layers(Ether, StartViewChange, type=TYPE_VIEW_CHANGE)
+bind_layers(Ether, FinalizeViewChange, type=TYPE_VIEW_ACK)
+bind_layers(Ether, TriggerViewChange, type=TYPE_VIEW_CHANGE)
+bind_layers(Ether, InduceViewChange, type=TYPE_VIEW_INDUCE)
 bind_layers(Cntrl, Canary)
-bind_layers(StartViewChange, Canary)
 bind_layers(FinalizeViewChange, Canary)
+bind_layers(TriggerViewChange, Canary)
+bind_layers(InduceViewChange, Canary)
 bind_layers(Append, Canary)
 bind_layers(Read, Canary)
 bind_layers(Subscribe, Canary)

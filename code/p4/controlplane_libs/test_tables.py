@@ -56,4 +56,26 @@ class TestTables:
                     target, 
                     [table_hops.make_key([gc.KeyTuple('hdr.link_test.hop', i)])],
                     [table_hops.make_data(action_name="MyIngress.forward_pkt", data_field_list_in=[gc.DataTuple(name="port", val=ports_to_link_members[idx])])])
+    
+    
+    """
+    Function name: setup_pcie_return_table
+    Arguments: 
+        - target: pipeline
+        - bfrt_info: device info object
+        - max_hops: max number of injections the PCIE test packet will withstand (necessary? TODO)
+        - control_port: Port to send packet from data plane back to control plane for processing
 
+    Purpose: This function routes PCIE return test packets back to the CPU control plane
+    """
+    @staticmethod
+    def setup_pcie_return_table(target, bfrt_info, max_hops, control_port):
+        # Basic table initialization
+        table_hops = bfrt_info.table_get("MyIngress.pcie_return")
+        table_hops.info.key_field_annotation_add("hdr.pcie_test.hop", "bit<8>")
+
+        # Send pcie_test packet to the control plane if we just received it
+        table_hops.entry_add(
+                target, 
+                [table_hops.make_key([gc.KeyTuple('hdr.pcie_test.hop', max_hops)])],
+                [table_hops.make_data(action_name="MyIngress.send_back_to_control", data_field_list_in=[gc.DataTuple(name="port", val=control_port)])])

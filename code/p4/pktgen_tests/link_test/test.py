@@ -357,18 +357,41 @@ class MiniTests(BfRuntimeTest, TestTables):
         return (Ether in p and p[Ether].type == TYPE_LINK_TEST
                 and LinkTest in p and p[LinkTest].hop >= 1)
 
-    def handle_pkt(self, ether_pkt, max_hops):
+    def handle_link_pkt(self, ether_pkt, max_hops):
         if ether_pkt[Ether].type == TYPE_LINK_TEST:
             print("FOUND A LINK TEST PACKET!")
             link = ether_pkt[LinkTest]
             logger.info("Link Test pkt: start_ts={} end_ts={} hop={}".format(link.start_ts, link.end_ts, link.hop))
             elapsed_time = ether_pkt[LinkTest].end_ts - ether_pkt[LinkTest].start_ts
             logger.info("For {} hops, the time it took the link test packet to traverse was {}".format(max_hops, elapsed_time))
+    
+    def handle_pcie_pkt(self, ether_pkt):
+        if ether_pkt[Ether].type == TYPE_PCIE_TEST:
+            print("FOUND A PCIE TEST PACKET!")
+            ether_pkt.show()
+            link = ether_pkt[PcieTest]
+            end_time_ns = time.time_ns() 
+            logger.info("Link Test pkt: start_time={} end_time={} hop={}".format(link.start_time, end_time_ns, link.hop))
+            elapsed_time = end_time_ns - ether_pkt[PcieTest].start_time
+            logger.info("The time it took the pcie test packet to traverse was {}".format(elapsed_time))
+
 
     ###################################### TESTING FUNCTIONS #############################
     def run_link_test(self, max_hops, cpu_interface, link_test_wait_time):
 	# Setup listener socket
-        sniff(iface = cpu_interface, lfilter=self.is_returned, timeout=link_test_wait_time, prn = lambda x: self.handle_pkt(x, max_hops))
+        sniff(iface = cpu_interface,L2socket=conf.L2socket, lfilter=self.is_returned, timeout=link_test_wait_time, prn = lambda x: self.handle_link_pkt(x, max_hops))
+
+    def run_pcie_return_test(self, cpu_interface, link_test_wait_time):
+	# Setup listener socket
+        sniffer = AsyncSniffer(iface = cpu_interface, L2socket=conf.L2socket, timeout=link_test_wait_time, prn = lambda x: self.handle_pcie_pkt(x))
+        sniffer.start()
+        start_time_ns = time.time_ns() 
+        pkt = Ether(dst=CONST_MAC_DST, src=CONST_MAC_SRC, type=TYPE_PCIE_TEST)/ \
+              PcieTest(start_ts=start_time_ns, hop=0)
+        logger.info("PCIE TEST PACKET WE ARE SENDING:")
+        pkt.show()
+        sendp(pkt, iface=cpu_interface, verbose=True)
+        sniffer.stop()
        
     def runTest(self):
 	os.system("taskset -p -c 1 {}".format(os.getpid()))
@@ -408,12 +431,23 @@ class MiniTests(BfRuntimeTest, TestTables):
 
         # Setup tables
         TestTables.setup_link_hop_table(self.target, bfrt_info, link_test_src_switch_id, switch_id, max_hops, ports_to_ring_members, cpu_port)
+        TestTables.setup_pcie_return_table(self.target, bfrt_info, 0, cpu_port)
 
+        run_link_test = False
+        run_pcie_test = True
         # Run link test
-        if switch_id == link_test_src_switch_id:
-            t = threading.Thread(target=self.run_link_test, args=(max_hops, cpu_interface, link_test_wait_time))
+        if run_link_test:
+            if switch_id == link_test_src_switch_id:
+                t = threading.Thread(target=self.run_link_test, args=(max_hops, cpu_interface, link_test_wait_time))
+                t.start()
+                time.sleep(2)
+                self.send_link_test_packet(cpu_interface)
+                t.join()
+        elif run_pcie_test:
+            t = threading.Thread(target=self.run_pcie_test, args=(cpu_interface))
             t.start()
-            time.sleep(2)
-            self.send_link_test_packet(cpu_interface)
             t.join()
+        
+
+
 

@@ -1,6 +1,7 @@
 from scapy.all import *
 
 TYPE_LINK_TEST = 0x0711
+TYPE_PCIE_TEST = 0x0721
 TYPE_IP= 0x800
 
 class PktgenTimerHeader(Packet):
@@ -17,4 +18,9 @@ class LinkTest(Packet):
                     BitField("end_ts", 0, 48),
                     BitField("hop", 0, 8)]
 
+class PcieTest(Packet):
+    fields_desc = [ BitField("start_time", 0, 48),
+                    BitField("hop", 0, 8)]
+
 bind_layers(Ether, LinkTest, type=TYPE_LINK_TEST)
+bind_layers(Ether, LinkTest, type=TYPE_PCIE_TEST)

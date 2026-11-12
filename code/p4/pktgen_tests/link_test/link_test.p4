@@ -11,6 +11,7 @@
 
 const bit<16> TYPE_IPV4  = 0x0800;
 const bit<16> TYPE_LINK_TEST  = 0x0711;
+const bit<16> TYPE_PCIE_TEST  = 0x0721;
 
 
 /*************************************************************************
@@ -44,6 +45,12 @@ header ethernet_t {
 // Size: 8 bits
 header mirror_h {
     bit<8> pkt_type;
+}
+
+// PCIe test header
+header pcie_test_t {
+    bit<48> start_time;
+    bit<8> hop;
 }
 
 // Link test header
@@ -103,6 +110,12 @@ parser MyParser(packet_in packet,
 	packet.extract(hdr.link_test);
 	transition accept;
     }
+
+    state parse_pcie_test {
+	packet.extract(hdr.pcie_test);
+	transition accept;
+    }
+
 }
 
 /*************************************************************************
@@ -159,10 +172,33 @@ control MyIngress(inout headers hdr,
         default_action = drop();
     }
 
-        
+    /* Send packet back to control plane */
+    action send_back_to_control(egressSpec_t port) {
+        ig_tm_md.ucast_egress_port = port;
+    }
+
+    table pcie_return { 
+        key = {
+	    hdr.pcie_test.hop: exact;
+	}
+	actions = {
+	    send_back_to_control;
+	    drop;
+        }
+        size = 64;
+        default_action = drop();
+    }
+   
     /* Start of Ingress Pipeline */
     apply {
-	link_hop.apply();
+	if (hdr.link_test.isValid()) {
+	    link_hop.apply();
+	} 
+
+	if (hdr.pcie_test.isValid()) {
+	    pcie_return.apply();
+	}
+
 	hdr.timer.setInvalid();
     }
 }
@@ -216,6 +252,12 @@ parser MyEgressParser(packet_in packet,
             packet.extract(hdr.link_test);
 	    transition accept;
         }
+
+        state parse_pcie_test {
+            packet.extract(hdr.pcie_test);
+            transition accept;
+        }
+
 }
 
 control MyEgress(inout headers hdr,

@@ -3,8 +3,8 @@ import ptf.dataplane as dataplane
 import bfrt_grpc.client as gc
 import logging
 
-class PortSetup:
-    def initialize_ports(self, bfrt_info, logger):
+class E2EPortSetup:
+    def __init__(self, bfrt_info, logger):
         self.port_table = bfrt_info.table_get("$PORT")
         self.port_hdl_info_table = bfrt_info.table_get("$PORT_HDL_INFO")
         self.port_fp_idx_info_table = bfrt_info.table_get("$PORT_FP_IDX_INFO")

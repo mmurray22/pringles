@@ -13,3 +13,11 @@ Assumptions about port setup on the switches:
 - The topology is static for the whole run
 - Exactly one true origin
 - One shared cpu_interface per physical switch, always "enp5s0"
+
+An explanation of the results:
+
+- The maximum throughput that any of the recirculation ports can support 
+is its bandwidth of 100 Gbps. Given that each back is 100 bytes not including
+the ~20 byte preamble in the Ethernet frame, this gives us an expected ceiling of 104-125M pps
+per recirculation port. 
+- The packet generator can generate packets at a rate of ~115M pps. 
