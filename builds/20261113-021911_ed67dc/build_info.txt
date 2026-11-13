@@ -1,0 +1,7 @@
+date        : 2026-11-13T02:19:11+00:00
+p4 source   : /root/pringles/code/p4/pktgen_tests/full_test/full_test.p4
+p4 sha1     : ed67dc79c7755a5725194c3f5987aae65aa62e73
+note        : pipe0+1 view change (independent of appends) seems to work, CHECK LOGIC ISSUES with register reads
+pipe0      : run_id 347691d59d394962  ingress 10 stages, egress 9 stages
+pipe1      : run_id 347691d59d394962  ingress 10 stages, egress 9 stages
+repo HEAD   : 21b61cd  (uncommitted source changes: 1)
