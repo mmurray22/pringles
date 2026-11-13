@@ -1,0 +1,7 @@
+date        : 2026-11-13T01:55:17+00:00
+p4 source   : /root/pringles/code/p4/pktgen_tests/full_test/full_test.p4
+p4 sha1     : ed67dc79c7755a5725194c3f5987aae65aa62e73
+note        : pipe0+1 append e2e emulated tput back to normal, fixed append_resp ack logic
+pipe0      : run_id 347691d59d394962  ingress 10 stages, egress 9 stages
+pipe1      : run_id 347691d59d394962  ingress 10 stages, egress 9 stages
+repo HEAD   : b2add02  (uncommitted source changes: 1)

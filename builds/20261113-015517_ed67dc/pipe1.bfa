@@ -1,0 +1,4323 @@
+version:
+  version: 1.0.1
+  run_id: "347691d59d394962"
+  target: Tofino
+phv ingress:
+  ig_intr_md_from_prsr.global_tstamp.0-31: W1
+  ig_intr_md_from_prsr.global_tstamp.32-47: TH22
+  ig_intr_md.ingress_mac_tstamp.0-31: W7
+  ig_intr_md.ingress_mac_tstamp.32-47: H3
+  hdr.timer._pad1: H12(13..15)
+  hdr.timer.pipe_id: H12(11..12)
+  hdr.timer.app_id: H12(8..10)
+  hdr.timer._pad2: H12(0..7)
+  hdr.timer.batch_id: TW6(16..31)
+  hdr.timer.packet_id: TW6(0..15)
+  hdr.ethernet.dst.0-31: W11
+  hdr.ethernet.dst.32-47: H7
+  hdr.ethernet.src.0-31: W12
+  hdr.ethernet.src.32-47: H8
+  hdr.ethernet.type: TH18
+  hdr.cntrl.global_seq_no: W0
+  hdr.cntrl.ring_view: TH6
+  hdr.canary.magic: TB4
+  hdr.induce_view.drop_cntrl: TB5
+  hdr.trigger_view.leader_switch_id: B4
+  hdr.trigger_view.current_ring_view: TH6
+  hdr.trigger_view.view_member_switch_id: B1
+  hdr.trigger_view.highest_seen_seq_no: W0
+  hdr.trigger_view.hops: B0
+  hdr.finalize_view.leader_switch_id: B4
+  hdr.finalize_view.view_member_switch_id: B1
+  hdr.finalize_view.current_ring_view: TH6
+  hdr.finalize_view.next_switch_id: B7
+  hdr.finalize_view.highest_quorum_seq_no: TW4
+  hdr.finalize_view.hops: B0
+  hdr.ipv4.version: TW4(28..31)
+  hdr.ipv4.ihl: TW4(24..27)
+  hdr.ipv4.tos: TW4(16..23)
+  hdr.ipv4.len: TW4(0..15)
+  hdr.ipv4.id: TW5(16..31)
+  hdr.ipv4.flags: TW5(13..15)
+  hdr.ipv4.frag: TW5(0..12)
+  hdr.ipv4.ttl: B0
+  hdr.ipv4.proto: TB6
+  hdr.ipv4.chksum: TH21
+  hdr.ipv4.src: TW14
+  hdr.ipv4.dst: W14
+  hdr.udp.src_port: TH7
+  hdr.udp.dst_port: TH6
+  hdr.udp.len: TW7(16..31)
+  hdr.udp.chksum: TW7(0..15)
+  hdr.ring_type.type: H13
+  hdr.ring_type.num_entries: W2(16..31)
+  hdr.ring_type.shard_id: W2(0..15)
+  hdr.ring_type.switch_to_process: TB5
+  hdr.ring_type.start_ts.0-31: W9
+  hdr.ring_type.start_ts.32-47: H5
+  hdr.ring_type.end_ts.0-31: W10
+  hdr.ring_type.end_ts.32-47: H6
+  hdr.ring_type.raw_elapsed_time: TH19
+  hdr.ring_type.pipe_ts: W13
+  hdr.append.nonce: TH9
+  hdr.append.payload_size: TH8
+  hdr.append.stream_id: W0
+  hdr.append.g_idx: W3
+  hdr.append.cntrl_pkt_it: H9
+  hdr.append.recv_port: TH10
+  hdr.append.exp_type.0-7: B1
+  hdr.append.exp_type.8-15: B4
+  hdr.append.start_ts.0-31: W8
+  hdr.append.start_ts.32-47: H4
+  hdr.read.nonce: TH20
+  hdr.read.payload_size: TW13
+  hdr.read.stream_id: TW12
+  hdr.read.g_idx.0-15: TH10
+  hdr.read.g_idx.16-31: TH11
+  hdr.read.ring_view: TH9
+  hdr.read.recv_port: TH8
+  hdr.tail.nonce: TH11
+  hdr.tail.hops: B1
+  hdr.tail.start_switch_id: B4
+  hdr.tail.tail_seq_no.0-15: TH8
+  hdr.tail.tail_seq_no.16-31: TH9
+  hdr.tail.recv_port: TH10
+  hdr.sub.g_idx: TW13
+  hdr.sub.stream_id: TW12
+  hdr.sub.recv_port: TH9
+  hdr.sub.subscribe_port: TH8
+  meta.recirc_port_type: B3(3..4)
+  meta.route_to_shard: B3(5)
+  meta.ready_for_ack: B3(6)
+  meta.ring_process: H14
+  meta.ack_ready: B8
+  meta.num_recirc_ports: B12
+  meta.num_wait_ports: B13
+  meta.port_idx: B9
+  meta.switch_id: B6
+  meta.view_hops: B10
+  meta.next_hop: B5
+  meta.update_iteration: B9
+  meta.append_g_zero: B11
+  meta.cntrl_pkt_it: H10
+  meta.cntrl_pkt_it_idx: H11
+  meta.dst_addr: W15
+  meta.assign_sn: W1
+  meta.local_seq_no: W4
+  meta.global_seq_no: W5
+  meta.batch_size: W6
+  meta.duration: W4
+  meta.overflow: W1
+  meta.ack_threshold: W32
+  meta.ing_mir_ses: H2(0..9)
+  meta.pkt_type: B6
+  cnt_1: W33
+  ig_intr_md_for_dprsr.drop_ctl: B3(0..2)
+  ig_intr_md_for_dprsr.mirror_type: B2(0..2)
+  slot_1: W5
+  ig_intr_md_for_tm.ucast_egress_port: H1(0..8)
+  ig_intr_md_for_tm.mcast_grp_a: H0
+  hdr.timer.$valid: H15(0)
+  hdr.ethernet.$valid: H15(1)
+  hdr.cntrl.$valid: H15(2)
+  hdr.canary.$valid: H15(3)
+  hdr.induce_view.$valid: H15(4)
+  hdr.trigger_view.$valid: H15(5)
+  hdr.finalize_view.$valid: H15(6)
+  hdr.ipv4.$valid: H15(7)
+  hdr.udp.$valid: H15(8)
+  hdr.ring_type.$valid: H15(9)
+  hdr.append.$valid: H15(10)
+  hdr.read.$valid: H15(11)
+  hdr.tail.$valid: H15(12)
+  hdr.sub.$valid: H15(13)
+  MyIngress1.active_batches$index: H32(0..9)
+  context_json:
+    TH22:
+    - { name : ig_intr_md_from_prsr.global_tstamp, live_start : parser, live_end : 0, mutually_exclusive_with: [  ] }
+    B0:
+    - { name : hdr.trigger_view.hops, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.finalize_view.hops, hdr.ipv4.ttl ] }
+    - { name : hdr.finalize_view.hops, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.hops, hdr.ipv4.ttl ] }
+    - { name : hdr.ipv4.ttl, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.hops, hdr.finalize_view.hops ] }
+    B1:
+    - { name : hdr.trigger_view.view_member_switch_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.finalize_view.view_member_switch_id, hdr.append.exp_type, hdr.tail.hops ] }
+    - { name : hdr.finalize_view.view_member_switch_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.view_member_switch_id, hdr.append.exp_type, hdr.tail.hops ] }
+    - { name : hdr.append.exp_type, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.view_member_switch_id, hdr.finalize_view.view_member_switch_id, hdr.tail.hops ] }
+    - { name : hdr.tail.hops, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.view_member_switch_id, hdr.finalize_view.view_member_switch_id, hdr.append.exp_type ] }
+    B2:
+    - { name : ig_intr_md_for_dprsr.mirror_type, live_start : 9, live_end : deparser, mutually_exclusive_with: [  ] }
+    B3:
+    - { name : meta.recirc_port_type, live_start : 2, live_end : 9, mutually_exclusive_with: [  ] }
+    - { name : meta.route_to_shard, live_start : 5, live_end : 9, mutually_exclusive_with: [  ] }
+    - { name : meta.ready_for_ack, live_start : 3, live_end : 6, mutually_exclusive_with: [  ] }
+    - { name : ig_intr_md_for_dprsr.drop_ctl, live_start : 5, live_end : deparser, mutually_exclusive_with: [  ] }
+    B4:
+    - { name : hdr.trigger_view.leader_switch_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.finalize_view.leader_switch_id, hdr.append.exp_type, hdr.tail.start_switch_id ] }
+    - { name : hdr.finalize_view.leader_switch_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.leader_switch_id, hdr.append.exp_type, hdr.tail.start_switch_id ] }
+    - { name : hdr.append.exp_type, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.leader_switch_id, hdr.finalize_view.leader_switch_id, hdr.tail.start_switch_id ] }
+    - { name : hdr.tail.start_switch_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.leader_switch_id, hdr.finalize_view.leader_switch_id, hdr.append.exp_type ] }
+    B5:
+    - { name : meta.next_hop, live_start : 0, live_end : 9, mutually_exclusive_with: [  ] }
+    B6:
+    - { name : meta.switch_id, live_start : 0, live_end : 2, mutually_exclusive_with: [  ] }
+    - { name : meta.pkt_type, live_start : 9, live_end : deparser, mutually_exclusive_with: [  ] }
+    B7:
+    - { name : hdr.finalize_view.next_switch_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    B8:
+    - { name : meta.ack_ready, live_start : 7, live_end : 9, mutually_exclusive_with: [  ] }
+    B9:
+    - { name : meta.port_idx, live_start : 2, live_end : 9, mutually_exclusive_with: [  ] }
+    - { name : meta.update_iteration, live_start : 0, live_end : 1, mutually_exclusive_with: [  ] }
+    B10:
+    - { name : meta.view_hops, live_start : 2, live_end : 9, mutually_exclusive_with: [  ] }
+    B11:
+    - { name : meta.append_g_zero, live_start : 0, live_end : 3, mutually_exclusive_with: [  ] }
+    B12:
+    - { name : meta.num_recirc_ports, live_start : 0, live_end : 6, mutually_exclusive_with: [  ] }
+    B13:
+    - { name : meta.num_wait_ports, live_start : 0, live_end : 6, mutually_exclusive_with: [  ] }
+    H0:
+    - { name : ig_intr_md_for_tm.mcast_grp_a, live_start : 9, live_end : deparser, mutually_exclusive_with: [  ] }
+    H1:
+    - { name : ig_intr_md_for_tm.ucast_egress_port, live_start : 9, live_end : deparser, mutually_exclusive_with: [  ] }
+    H2:
+    - { name : meta.ing_mir_ses, live_start : 9, live_end : deparser, mutually_exclusive_with: [  ] }
+    H3:
+    - { name : ig_intr_md.ingress_mac_tstamp, live_start : parser, live_end : 5, mutually_exclusive_with: [  ] }
+    H4:
+    - { name : hdr.append.start_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H5:
+    - { name : hdr.ring_type.start_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H6:
+    - { name : hdr.ring_type.end_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H7:
+    - { name : hdr.ethernet.dst, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H8:
+    - { name : hdr.ethernet.src, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H9:
+    - { name : hdr.append.cntrl_pkt_it, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H10:
+    - { name : meta.cntrl_pkt_it, live_start : 1, live_end : 4, mutually_exclusive_with: [  ] }
+    H11:
+    - { name : meta.cntrl_pkt_it_idx, live_start : 1, live_end : 3, mutually_exclusive_with: [  ] }
+    H12:
+    - { name : hdr.timer._pad1, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.timer.pipe_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.timer.app_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.timer._pad2, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H13:
+    - { name : hdr.ring_type.type, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H14:
+    - { name : meta.ring_process, live_start : 0, live_end : 9, mutually_exclusive_with: [  ] }
+    H15:
+    - { name : hdr.timer.$valid, live_start : 0, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.ethernet.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.cntrl.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.canary.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.induce_view.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.trigger_view.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.finalize_view.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.ipv4.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.udp.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.ring_type.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.append.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.read.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.tail.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.sub.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H32:
+    - { name : MyIngress1.active_batches$index, live_start : 3, live_end : 5, mutually_exclusive_with: [  ] }
+    W0:
+    - { name : hdr.cntrl.global_seq_no, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.highest_seen_seq_no, hdr.append.stream_id ] }
+    - { name : hdr.trigger_view.highest_seen_seq_no, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.cntrl.global_seq_no, hdr.append.stream_id ] }
+    - { name : hdr.append.stream_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.cntrl.global_seq_no, hdr.trigger_view.highest_seen_seq_no ] }
+    W1:
+    - { name : ig_intr_md_from_prsr.global_tstamp, live_start : parser, live_end : 0, mutually_exclusive_with: [  ] }
+    - { name : meta.assign_sn, live_start : 2, live_end : 5, mutually_exclusive_with: [  ] }
+    - { name : meta.overflow, live_start : 6, live_end : 9, mutually_exclusive_with: [  ] }
+    W2:
+    - { name : hdr.ring_type.num_entries, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.ring_type.shard_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W3:
+    - { name : hdr.append.g_idx, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W4:
+    - { name : meta.local_seq_no, live_start : 1, live_end : 3, mutually_exclusive_with: [  ] }
+    - { name : meta.duration, live_start : 6, live_end : 8, mutually_exclusive_with: [  ] }
+    W5:
+    - { name : meta.global_seq_no, live_start : 0, live_end : 3, mutually_exclusive_with: [  ] }
+    - { name : slot_1, live_start : 6, live_end : 7, mutually_exclusive_with: [  ] }
+    W6:
+    - { name : meta.batch_size, live_start : 3, live_end : 4, mutually_exclusive_with: [  ] }
+    W7:
+    - { name : ig_intr_md.ingress_mac_tstamp, live_start : parser, live_end : 5, mutually_exclusive_with: [  ] }
+    W8:
+    - { name : hdr.append.start_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W9:
+    - { name : hdr.ring_type.start_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W10:
+    - { name : hdr.ring_type.end_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W11:
+    - { name : hdr.ethernet.dst, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W12:
+    - { name : hdr.ethernet.src, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W13:
+    - { name : hdr.ring_type.pipe_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W14:
+    - { name : hdr.ipv4.dst, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W15:
+    - { name : meta.dst_addr, live_start : 1, live_end : 9, mutually_exclusive_with: [  ] }
+    W32:
+    - { name : meta.ack_threshold, live_start : 0, live_end : 7, mutually_exclusive_with: [  ] }
+    W33:
+    - { name : cnt_1, live_start : 4, live_end : 5, mutually_exclusive_with: [  ] }
+phv egress:
+  eg_intr_md_from_prsr.global_tstamp.0-31: W16
+  eg_intr_md_from_prsr.global_tstamp.32-47: TH0
+  eg_intr_md.egress_port: H19(0..8)
+  eg_intr_md.deq_qdepth.0-15: W19(0..15)
+  eg_intr_md.deq_qdepth.16-18: B22(0..2)
+  hdr.ethernet.dst.0-15: TH14
+  hdr.ethernet.dst.16-31: TH15
+  hdr.ethernet.dst.32-47: TH25
+  hdr.ethernet.src.0-15: TH12
+  hdr.ethernet.src.16-31: TH13
+  hdr.ethernet.src.32-47: TH24
+  hdr.ethernet.type: H21
+  hdr.cntrl.global_seq_no: TW0
+  hdr.cntrl.ring_view: H16
+  hdr.canary.magic: B18
+  hdr.induce_view.drop_cntrl: TB0
+  hdr.trigger_view.leader_switch_id: B19
+  hdr.trigger_view.current_ring_view: H16
+  hdr.trigger_view.view_member_switch_id: TB1
+  hdr.trigger_view.highest_seen_seq_no: TW0
+  hdr.trigger_view.hops: TB0
+  hdr.finalize_view.leader_switch_id: TH1(8..15)
+  hdr.finalize_view.view_member_switch_id: TH1(0..7)
+  hdr.finalize_view.current_ring_view: H16
+  hdr.finalize_view.next_switch_id: TB1
+  hdr.finalize_view.highest_quorum_seq_no: TW0
+  hdr.finalize_view.hops: TB0
+  hdr.ipv4.version: TW2(28..31)
+  hdr.ipv4.ihl: TW2(24..27)
+  hdr.ipv4.tos: TW2(16..23)
+  hdr.ipv4.len: TW2(0..15)
+  hdr.ipv4.id.0-7: TB1
+  hdr.ipv4.id.8-15: TB2
+  hdr.ipv4.flags: TH1(13..15)
+  hdr.ipv4.frag: TH1(0..12)
+  hdr.ipv4.ttl: TW3(24..31)
+  hdr.ipv4.proto: TW3(16..23)
+  hdr.ipv4.chksum: TW3(0..15)
+  hdr.ipv4.src.0-7: TB3
+  hdr.ipv4.src.8-15: TB8
+  hdr.ipv4.src.16-23: TB9
+  hdr.ipv4.src.24-31: TB10
+  hdr.ipv4.dst.0-15: TH16
+  hdr.ipv4.dst.16-31: TH17
+  hdr.udp.src_port: TW8(16..31)
+  hdr.udp.dst_port: TW8(0..15)
+  hdr.udp.len: TH5
+  hdr.udp.chksum: TH4
+  hdr.ring_type.type.0-7: B19
+  hdr.ring_type.type.8-15: B21
+  hdr.ring_type.num_entries: TW9(16..31)
+  hdr.ring_type.shard_id: TW9(0..15)
+  hdr.ring_type.switch_to_process: TB0
+  hdr.ring_type.start_ts.0-15: H17
+  hdr.ring_type.start_ts.16-47: TW1
+  hdr.ring_type.end_ts.0-15: H16
+  hdr.ring_type.end_ts.16-47: TW0
+  hdr.ring_type.raw_elapsed_time: H18
+  hdr.ring_type.pipe_ts: W17
+  hdr.append.nonce: TW11(16..31)
+  hdr.append.payload_size: TW11(0..15)
+  hdr.append.stream_id: TW18
+  hdr.append.g_idx: TW17
+  hdr.append.cntrl_pkt_it: TW10(16..31)
+  hdr.append.recv_port: TW10(0..15)
+  hdr.append.exp_type: TH3
+  hdr.append.start_ts.0-31: TW16
+  hdr.append.start_ts.32-47: TH2
+  hdr.read.nonce: TH2
+  hdr.read.payload_size: TW17
+  hdr.read.stream_id: TW16
+  hdr.read.g_idx: TW11
+  hdr.read.ring_view: TW10(16..31)
+  hdr.read.recv_port: TW10(0..15)
+  hdr.tail.nonce: TH3
+  hdr.tail.hops: TH2(8..15)
+  hdr.tail.start_switch_id: TH2(0..7)
+  hdr.tail.tail_seq_no: TW10
+  hdr.tail.recv_port: TH26
+  hdr.sub.g_idx: TW16
+  hdr.sub.stream_id: TW11
+  hdr.sub.recv_port: TW10(16..31)
+  hdr.sub.subscribe_port: TW10(0..15)
+  eg_intr_md_for_dprsr.drop_ctl: B17(0..2)
+  eg_intr_md_for_dprsr.mirror_type: B16(0..2)
+  meta.leader_switch_id: B20
+  meta.accept_finalize_view: B25
+  meta.view_change_active: B24
+  meta.accept_view_change: H23
+  meta.ring_view: H20
+  meta.queue_congest.0-15: W19(16..31)
+  meta.queue_congest.16-18: B17(3..5)
+  meta.queue_congest.19-26: B23
+  meta.queue_congest.27-31: B22(3..7)
+  meta.elapse_time: W18
+  hdr.ethernet.$valid: H22(0)
+  hdr.cntrl.$valid: H22(1)
+  hdr.canary.$valid: H22(2)
+  hdr.induce_view.$valid: H22(3)
+  hdr.trigger_view.$valid: H22(4)
+  hdr.finalize_view.$valid: H22(5)
+  hdr.ipv4.$valid: H22(6)
+  hdr.udp.$valid: H22(7)
+  hdr.ring_type.$valid: H22(8)
+  hdr.append.$valid: H22(9)
+  hdr.read.$valid: H22(10)
+  hdr.tail.$valid: H22(11)
+  hdr.sub.$valid: H22(12)
+  context_json:
+    TH0:
+    - { name : eg_intr_md_from_prsr.global_tstamp, live_start : parser, live_end : 7, mutually_exclusive_with: [  ] }
+    TW0:
+    - { name : hdr.ring_type.end_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.cntrl.global_seq_no, hdr.trigger_view.highest_seen_seq_no, hdr.finalize_view.highest_quorum_seq_no ] }
+    TW1:
+    - { name : hdr.ring_type.start_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    B16:
+    - { name : eg_intr_md_for_dprsr.mirror_type, live_start : 4, live_end : 4, mutually_exclusive_with: [  ] }
+    B17:
+    - { name : eg_intr_md_for_dprsr.drop_ctl, live_start : 7, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : meta.queue_congest, live_start : 4, live_end : 6, mutually_exclusive_with: [  ] }
+    B18:
+    - { name : hdr.canary.magic, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    B19:
+    - { name : hdr.trigger_view.leader_switch_id, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.ring_type.type ] }
+    - { name : hdr.ring_type.type, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.leader_switch_id ] }
+    B20:
+    - { name : meta.leader_switch_id, live_start : 0, live_end : 1, mutually_exclusive_with: [  ] }
+    B21:
+    - { name : hdr.ring_type.type, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    B22:
+    - { name : eg_intr_md.deq_qdepth, live_start : parser, live_end : 5, mutually_exclusive_with: [  ] }
+    - { name : meta.queue_congest, live_start : 4, live_end : 6, mutually_exclusive_with: [  ] }
+    B23:
+    - { name : meta.queue_congest, live_start : 4, live_end : 6, mutually_exclusive_with: [  ] }
+    B24:
+    - { name : meta.view_change_active, live_start : 3, live_end : 7, mutually_exclusive_with: [  ] }
+    B25:
+    - { name : meta.accept_finalize_view, live_start : 1, live_end : 2, mutually_exclusive_with: [  ] }
+    H16:
+    - { name : hdr.cntrl.ring_view, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.trigger_view.current_ring_view, hdr.finalize_view.current_ring_view, hdr.ring_type.end_ts ] }
+    - { name : hdr.trigger_view.current_ring_view, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.cntrl.ring_view, hdr.finalize_view.current_ring_view, hdr.ring_type.end_ts ] }
+    - { name : hdr.finalize_view.current_ring_view, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.cntrl.ring_view, hdr.trigger_view.current_ring_view, hdr.ring_type.end_ts ] }
+    - { name : hdr.ring_type.end_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [ hdr.cntrl.ring_view, hdr.trigger_view.current_ring_view, hdr.finalize_view.current_ring_view ] }
+    H17:
+    - { name : hdr.ring_type.start_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H18:
+    - { name : hdr.ring_type.raw_elapsed_time, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H19:
+    - { name : eg_intr_md.egress_port, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H20:
+    - { name : meta.ring_view, live_start : 0, live_end : 3, mutually_exclusive_with: [  ] }
+    H21:
+    - { name : hdr.ethernet.type, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H22:
+    - { name : hdr.ethernet.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.cntrl.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.canary.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.induce_view.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.trigger_view.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.finalize_view.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.ipv4.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.udp.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.ring_type.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.append.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.read.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.tail.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    - { name : hdr.sub.$valid, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    H23:
+    - { name : meta.accept_view_change, live_start : 3, live_end : 4, mutually_exclusive_with: [  ] }
+    W16:
+    - { name : eg_intr_md_from_prsr.global_tstamp, live_start : parser, live_end : 7, mutually_exclusive_with: [  ] }
+    W17:
+    - { name : hdr.ring_type.pipe_ts, live_start : parser, live_end : deparser, mutually_exclusive_with: [  ] }
+    W18:
+    - { name : meta.elapse_time, live_start : 6, live_end : 7, mutually_exclusive_with: [  ] }
+    W19:
+    - { name : eg_intr_md.deq_qdepth, live_start : parser, live_end : 5, mutually_exclusive_with: [  ] }
+    - { name : meta.queue_congest, live_start : 4, live_end : 6, mutually_exclusive_with: [  ] }
+parser ingress:
+  start: $entry_point
+  init_zero: [ W1, TH22, B3, H14, B8, B12, B13, B9, B6, B10, B5, B11, H10, H11, W15, W4, W5, W6, W32, H2, W33, H15, H32 ]
+  bitwise_or: [ H15 ]
+  hdr_len_adj: 16
+  states:
+    $entry_point:
+      *:
+        56..59: W1  # buffer mapped I/O: bit[448..479] -> W1 bit[31..0]: ingress::ig_intr_md_from_prsr.global_tstamp[31:0].0-31
+        54..55: TH22  # buffer mapped I/O: bit[432..447] -> TH22 bit[15..0]: ingress::ig_intr_md_from_prsr.global_tstamp[47:32].32-47
+        load: { byte1 : 0 }
+        buf_req: 1
+        next: start
+    start:
+      match: [ byte1 ]
+      0b1*******:
+        2..3: H3  # ingress::ig_intr_md.ingress_mac_tstamp[47:32].32-47
+        4..7: W7  # ingress::ig_intr_md.ingress_mac_tstamp[31:0].0-31
+        shift: 8
+        buf_req: 8
+        next: end
+      0b0*******:
+        2..3: H3  # ingress::ig_intr_md.ingress_mac_tstamp[47:32].32-47
+        4..7: W7  # ingress::ig_intr_md.ingress_mac_tstamp[31:0].0-31
+        load: { half : 0..1 }
+        shift: 8
+        buf_req: 8
+        next: TofinoIngressParser_parse_port_metadata
+    TofinoIngressParser_parse_port_metadata:
+      match: [ half ]
+      0b*******011000100:
+        8..9: H12
+            # - bit[0..2] -> H12 bit[15..13]: ingress::hdr.timer._pad1
+            # - bit[3..4] -> H12 bit[12..11]: ingress::hdr.timer.pipe_id
+            # - bit[5..7] -> H12 bit[10..8]: ingress::hdr.timer.app_id
+            # - bit[8..15] -> H12 bit[7..0]: ingress::hdr.timer._pad2
+        10..13: TW6
+            # - bit[16..31] -> TW6 bit[31..16]: ingress::hdr.timer.batch_id
+            # - bit[32..47] -> TW6 bit[15..0]: ingress::hdr.timer.packet_id
+        load: { half : 26..27 }
+        shift: 14
+        buf_req: 28
+        next: parse_ethernet
+      0b*******011000101:
+        8..9: H12
+            # - bit[0..2] -> H12 bit[15..13]: ingress::hdr.timer._pad1
+            # - bit[3..4] -> H12 bit[12..11]: ingress::hdr.timer.pipe_id
+            # - bit[5..7] -> H12 bit[10..8]: ingress::hdr.timer.app_id
+            # - bit[8..15] -> H12 bit[7..0]: ingress::hdr.timer._pad2
+        10..13: TW6
+            # - bit[16..31] -> TW6 bit[31..16]: ingress::hdr.timer.batch_id
+            # - bit[32..47] -> TW6 bit[15..0]: ingress::hdr.timer.packet_id
+        load: { half : 26..27 }
+        shift: 14
+        buf_req: 28
+        next: parse_ethernet
+      0b*******011000110:
+        8..9: H12
+            # - bit[0..2] -> H12 bit[15..13]: ingress::hdr.timer._pad1
+            # - bit[3..4] -> H12 bit[12..11]: ingress::hdr.timer.pipe_id
+            # - bit[5..7] -> H12 bit[10..8]: ingress::hdr.timer.app_id
+            # - bit[8..15] -> H12 bit[7..0]: ingress::hdr.timer._pad2
+        10..13: TW6
+            # - bit[16..31] -> TW6 bit[31..16]: ingress::hdr.timer.batch_id
+            # - bit[32..47] -> TW6 bit[15..0]: ingress::hdr.timer.packet_id
+        load: { half : 26..27 }
+        shift: 14
+        buf_req: 28
+        next: parse_ethernet
+      0b*******011000111:
+        8..9: H12
+            # - bit[0..2] -> H12 bit[15..13]: ingress::hdr.timer._pad1
+            # - bit[3..4] -> H12 bit[12..11]: ingress::hdr.timer.pipe_id
+            # - bit[5..7] -> H12 bit[10..8]: ingress::hdr.timer.app_id
+            # - bit[8..15] -> H12 bit[7..0]: ingress::hdr.timer._pad2
+        10..13: TW6
+            # - bit[16..31] -> TW6 bit[31..16]: ingress::hdr.timer.batch_id
+            # - bit[32..47] -> TW6 bit[15..0]: ingress::hdr.timer.packet_id
+        load: { half : 26..27 }
+        shift: 14
+        buf_req: 28
+        next: parse_ethernet
+      0x****:
+        load: { half : 20..21 }
+        shift: 8
+        buf_req: 22
+        next: parse_ethernet
+    parse_ethernet:
+      match: [ half ]
+      0x0820:
+        0..1: H7  # ingress::hdr.ethernet.dst[47:32].32-47
+        2..5: W11  # ingress::hdr.ethernet.dst[31:0].0-31
+        6..7: H8  # ingress::hdr.ethernet.src[47:32].32-47
+        8..11: W12  # ingress::hdr.ethernet.src[31:0].0-31
+        12..13: TH18  # ingress::hdr.ethernet.type
+        H15: 2  # value 1 -> H15 bit[1]: ingress::hdr.ethernet.$valid
+        shift: 14
+        buf_req: 14
+        next: parse_control
+      0x0890:
+        0..1: H7  # ingress::hdr.ethernet.dst[47:32].32-47
+        2..5: W11  # ingress::hdr.ethernet.dst[31:0].0-31
+        6..7: H8  # ingress::hdr.ethernet.src[47:32].32-47
+        8..11: W12  # ingress::hdr.ethernet.src[31:0].0-31
+        12..13: TH18  # ingress::hdr.ethernet.type
+        H15: 2  # value 1 -> H15 bit[1]: ingress::hdr.ethernet.$valid
+        shift: 14
+        buf_req: 14
+        next: parse_induce_view
+      0x0900:
+        0..1: H7  # ingress::hdr.ethernet.dst[47:32].32-47
+        2..5: W11  # ingress::hdr.ethernet.dst[31:0].0-31
+        6..7: H8  # ingress::hdr.ethernet.src[47:32].32-47
+        8..11: W12  # ingress::hdr.ethernet.src[31:0].0-31
+        12..13: TH18  # ingress::hdr.ethernet.type
+        H15: 2  # value 1 -> H15 bit[1]: ingress::hdr.ethernet.$valid
+        shift: 14
+        buf_req: 14
+        next: parse_trigger_view
+      0x0910:
+        0..1: H7  # ingress::hdr.ethernet.dst[47:32].32-47
+        2..5: W11  # ingress::hdr.ethernet.dst[31:0].0-31
+        6..7: H8  # ingress::hdr.ethernet.src[47:32].32-47
+        8..11: W12  # ingress::hdr.ethernet.src[31:0].0-31
+        12..13: TH18  # ingress::hdr.ethernet.type
+        H15: 2  # value 1 -> H15 bit[1]: ingress::hdr.ethernet.$valid
+        shift: 14
+        buf_req: 14
+        next: parse_finalize_view
+      0x0800:
+        0..1: H7  # ingress::hdr.ethernet.dst[47:32].32-47
+        2..5: W11  # ingress::hdr.ethernet.dst[31:0].0-31
+        6..7: H8  # ingress::hdr.ethernet.src[47:32].32-47
+        8..11: W12  # ingress::hdr.ethernet.src[31:0].0-31
+        12..13: TH18  # ingress::hdr.ethernet.type
+        H15: 2  # value 1 -> H15 bit[1]: ingress::hdr.ethernet.$valid
+        shift: 14
+        buf_req: 14
+        next: parse_ipv4
+      0x****:
+        0..1: H7  # ingress::hdr.ethernet.dst[47:32].32-47
+        2..5: W11  # ingress::hdr.ethernet.dst[31:0].0-31
+        6..7: H8  # ingress::hdr.ethernet.src[47:32].32-47
+        8..11: W12  # ingress::hdr.ethernet.src[31:0].0-31
+        12..13: TH18  # ingress::hdr.ethernet.type
+        H15: 2  # value 1 -> H15 bit[1]: ingress::hdr.ethernet.$valid
+        shift: 14
+        buf_req: 14
+        next: end
+    parse_control:
+      *:
+        0..3: W0  # ingress::hdr.cntrl.global_seq_no
+        4..5: TH6  # ingress::hdr.cntrl.ring_view
+        H15: 4  # value 1 -> H15 bit[2]: ingress::hdr.cntrl.$valid
+        shift: 6
+        buf_req: 6
+        next: parse_canary
+    parse_canary:
+      *:
+        0: TB4  # ingress::hdr.canary.magic
+        H15: 8  # value 1 -> H15 bit[3]: ingress::hdr.canary.$valid
+        shift: 1
+        buf_req: 1
+        next: end
+    parse_induce_view:
+      *:
+        0: TB5  # ingress::hdr.induce_view.drop_cntrl
+        H15: 16  # value 1 -> H15 bit[4]: ingress::hdr.induce_view.$valid
+        shift: 1
+        buf_req: 1
+        next: parse_canary
+    parse_trigger_view:
+      *:
+        0: B4  # ingress::hdr.trigger_view.leader_switch_id
+        1..2: TH6  # ingress::hdr.trigger_view.current_ring_view
+        3: B1  # ingress::hdr.trigger_view.view_member_switch_id
+        4..7: W0  # ingress::hdr.trigger_view.highest_seen_seq_no
+        8: B0  # ingress::hdr.trigger_view.hops
+        H15: 32  # value 1 -> H15 bit[5]: ingress::hdr.trigger_view.$valid
+        shift: 9
+        buf_req: 9
+        next: parse_canary
+    parse_finalize_view:
+      *:
+        0: B4  # ingress::hdr.finalize_view.leader_switch_id
+        1: B1  # ingress::hdr.finalize_view.view_member_switch_id
+        2..3: TH6  # ingress::hdr.finalize_view.current_ring_view
+        4: B7  # ingress::hdr.finalize_view.next_switch_id
+        5..8: TW4  # ingress::hdr.finalize_view.highest_quorum_seq_no
+        9: B0  # ingress::hdr.finalize_view.hops
+        H15: 64  # value 1 -> H15 bit[6]: ingress::hdr.finalize_view.$valid
+        shift: 10
+        buf_req: 10
+        next: parse_canary
+    parse_ipv4:
+      *:
+        0..3: TW4
+            # - bit[0..3] -> TW4 bit[31..28]: ingress::hdr.ipv4.version
+            # - bit[4..7] -> TW4 bit[27..24]: ingress::hdr.ipv4.ihl
+            # - bit[8..15] -> TW4 bit[23..16]: ingress::hdr.ipv4.tos
+            # - bit[16..31] -> TW4 bit[15..0]: ingress::hdr.ipv4.len
+        4..7: TW5
+            # - bit[32..47] -> TW5 bit[31..16]: ingress::hdr.ipv4.id
+            # - bit[48..50] -> TW5 bit[15..13]: ingress::hdr.ipv4.flags
+            # - bit[51..63] -> TW5 bit[12..0]: ingress::hdr.ipv4.frag
+        8: B0  # ingress::hdr.ipv4.ttl
+        9: TB6  # ingress::hdr.ipv4.proto
+        10..11: TH21  # ingress::hdr.ipv4.chksum
+        12..15: TW14  # ingress::hdr.ipv4.src
+        16..19: W14  # ingress::hdr.ipv4.dst
+        20..21: TH7  # ingress::hdr.udp.src_port
+        22..23: TH6  # ingress::hdr.udp.dst_port
+        28..29: H13  # ingress::hdr.ring_type.type
+        H15: 896
+            # - value 1 -> H15 bit[7]: ingress::hdr.ipv4.$valid
+            # - value 1 -> H15 bit[8]: ingress::hdr.udp.$valid
+            # - value 1 -> H15 bit[9]: ingress::hdr.ring_type.$valid
+        shift: 24
+        buf_req: 30
+        next: parse_ipv4.$split_0
+    parse_ipv4.$split_0:
+      *:
+        0..3: TW7
+            # - bit[0..15] -> TW7 bit[31..16]: ingress::hdr.udp.len
+            # - bit[16..31] -> TW7 bit[15..0]: ingress::hdr.udp.chksum
+        6..9: W2
+            # - bit[48..63] -> W2 bit[31..16]: ingress::hdr.ring_type.num_entries
+            # - bit[64..79] -> W2 bit[15..0]: ingress::hdr.ring_type.shard_id
+        10: TB5  # ingress::hdr.ring_type.switch_to_process
+        11..12: H5  # ingress::hdr.ring_type.start_ts[47:32].32-47
+        13..16: W9  # ingress::hdr.ring_type.start_ts[31:0].0-31
+        17..18: H6  # ingress::hdr.ring_type.end_ts[47:32].32-47
+        19..22: W10  # ingress::hdr.ring_type.end_ts[31:0].0-31
+        23..24: TH19  # ingress::hdr.ring_type.raw_elapsed_time
+        load: { half : 4..5 }
+        shift: 25
+        buf_req: 25
+        next: parse_ipv4.$split_1
+    parse_ipv4.$split_1:
+      match: [ half ]
+      0x0860:
+        0..3: W13  # ingress::hdr.ring_type.pipe_ts
+        shift: 4
+        buf_req: 4
+        next: parse_append
+      0x0862:
+        0..3: W13  # ingress::hdr.ring_type.pipe_ts
+        shift: 4
+        buf_req: 4
+        next: parse_append
+      0x0861:
+        0..3: W13  # ingress::hdr.ring_type.pipe_ts
+        shift: 4
+        buf_req: 4
+        next: parse_append
+      0x0870:
+        0..3: W13  # ingress::hdr.ring_type.pipe_ts
+        shift: 4
+        buf_req: 4
+        next: parse_read
+      0x0871:
+        0..3: W13  # ingress::hdr.ring_type.pipe_ts
+        shift: 4
+        buf_req: 4
+        next: parse_read
+      0x0840:
+        0..3: W13  # ingress::hdr.ring_type.pipe_ts
+        shift: 4
+        buf_req: 4
+        next: parse_tail
+      0x0850:
+        0..3: W13  # ingress::hdr.ring_type.pipe_ts
+        shift: 4
+        buf_req: 4
+        next: parse_sub
+      0x****:
+        0..3: W13  # ingress::hdr.ring_type.pipe_ts
+        shift: 4
+        buf_req: 4
+        next: parse_canary
+    parse_append:
+      *:
+        0..1: TH9  # ingress::hdr.append.nonce
+        2..3: TH8  # ingress::hdr.append.payload_size
+        4..7: W0  # ingress::hdr.append.stream_id
+        8..11: W3  # ingress::hdr.append.g_idx
+        12..13: H9  # ingress::hdr.append.cntrl_pkt_it
+        14..15: TH10  # ingress::hdr.append.recv_port
+        16: B4  # ingress::hdr.append.exp_type[15:8].8-15
+        17: B1  # ingress::hdr.append.exp_type[7:0].0-7
+        20..23: W8  # ingress::hdr.append.start_ts[31:0].0-31
+        H15: 1024  # value 1 -> H15 bit[10]: ingress::hdr.append.$valid
+        shift: 18
+        buf_req: 24
+        next: parse_append.$split_0
+    parse_append.$split_0:
+      *:
+        0..1: H4  # ingress::hdr.append.start_ts[47:32].32-47
+        shift: 6
+        buf_req: 6
+        next: parse_canary
+    parse_read:
+      *:
+        0..1: TH20  # ingress::hdr.read.nonce
+        2..5: TW13  # ingress::hdr.read.payload_size
+        6..9: TW12  # ingress::hdr.read.stream_id
+        10..11: TH11  # ingress::hdr.read.g_idx[31:16].16-31
+        12..13: TH10  # ingress::hdr.read.g_idx[15:0].0-15
+        14..15: TH9  # ingress::hdr.read.ring_view
+        H15: 2048  # value 1 -> H15 bit[11]: ingress::hdr.read.$valid
+        shift: 16
+        buf_req: 16
+        next: parse_read.$split_0
+    parse_read.$split_0:
+      *:
+        0..1: TH8  # ingress::hdr.read.recv_port
+        shift: 2
+        buf_req: 2
+        next: parse_canary
+    parse_tail:
+      *:
+        0..1: TH11  # ingress::hdr.tail.nonce
+        2: B1  # ingress::hdr.tail.hops
+        3: B4  # ingress::hdr.tail.start_switch_id
+        4..5: TH9  # ingress::hdr.tail.tail_seq_no[31:16].16-31
+        6..7: TH8  # ingress::hdr.tail.tail_seq_no[15:0].0-15
+        8..9: TH10  # ingress::hdr.tail.recv_port
+        H15: 4096  # value 1 -> H15 bit[12]: ingress::hdr.tail.$valid
+        shift: 10
+        buf_req: 10
+        next: parse_canary
+    parse_sub:
+      *:
+        0..3: TW13  # ingress::hdr.sub.g_idx
+        4..7: TW12  # ingress::hdr.sub.stream_id
+        8..9: TH9  # ingress::hdr.sub.recv_port
+        10..11: TH8  # ingress::hdr.sub.subscribe_port
+        H15: 8192  # value 1 -> H15 bit[13]: ingress::hdr.sub.$valid
+        shift: 12
+        buf_req: 12
+        next: parse_canary
+deparser ingress:
+  dictionary:
+    H12: H15(0)
+        # - bit[15..13]: ingress::hdr.timer._pad1 if ingress::hdr.timer.$valid
+        # - bit[12..11]: ingress::hdr.timer.pipe_id if ingress::hdr.timer.$valid
+        # - bit[10..8]: ingress::hdr.timer.app_id if ingress::hdr.timer.$valid
+        # - bit[7..0]: ingress::hdr.timer._pad2 if ingress::hdr.timer.$valid
+    TW6: H15(0)
+        # - bit[31..16]: ingress::hdr.timer.batch_id if ingress::hdr.timer.$valid
+        # - bit[15..0]: ingress::hdr.timer.packet_id if ingress::hdr.timer.$valid
+    H7: H15(1)  # ingress::hdr.ethernet.dst.32-47 if ingress::hdr.ethernet.$valid
+    W11: H15(1)  # ingress::hdr.ethernet.dst.0-31 if ingress::hdr.ethernet.$valid
+    H8: H15(1)  # ingress::hdr.ethernet.src.32-47 if ingress::hdr.ethernet.$valid
+    W12: H15(1)  # ingress::hdr.ethernet.src.0-31 if ingress::hdr.ethernet.$valid
+    TH18: H15(1)  # ingress::hdr.ethernet.type if ingress::hdr.ethernet.$valid
+    W0: H15(2)  # ingress::hdr.cntrl.global_seq_no if ingress::hdr.cntrl.$valid
+    TH6: H15(2)  # ingress::hdr.cntrl.ring_view if ingress::hdr.cntrl.$valid
+    TW4: H15(7)
+        # - bit[31..28]: ingress::hdr.ipv4.version if ingress::hdr.ipv4.$valid
+        # - bit[27..24]: ingress::hdr.ipv4.ihl if ingress::hdr.ipv4.$valid
+        # - bit[23..16]: ingress::hdr.ipv4.tos if ingress::hdr.ipv4.$valid
+        # - bit[15..0]: ingress::hdr.ipv4.len if ingress::hdr.ipv4.$valid
+    TW5: H15(7)
+        # - bit[31..16]: ingress::hdr.ipv4.id if ingress::hdr.ipv4.$valid
+        # - bit[15..13]: ingress::hdr.ipv4.flags if ingress::hdr.ipv4.$valid
+        # - bit[12..0]: ingress::hdr.ipv4.frag if ingress::hdr.ipv4.$valid
+    B0: H15(7)  # ingress::hdr.ipv4.ttl if ingress::hdr.ipv4.$valid
+    TB6: H15(7)  # ingress::hdr.ipv4.proto if ingress::hdr.ipv4.$valid
+    TH21: H15(7)  # ingress::hdr.ipv4.chksum if ingress::hdr.ipv4.$valid
+    TW14: H15(7)  # ingress::hdr.ipv4.src if ingress::hdr.ipv4.$valid
+    W14: H15(7)  # ingress::hdr.ipv4.dst if ingress::hdr.ipv4.$valid
+    TH7: H15(8)  # ingress::hdr.udp.src_port if ingress::hdr.udp.$valid
+    TH6: H15(8)  # ingress::hdr.udp.dst_port if ingress::hdr.udp.$valid
+    TW7: H15(8)
+        # - bit[31..16]: ingress::hdr.udp.len if ingress::hdr.udp.$valid
+        # - bit[15..0]: ingress::hdr.udp.chksum if ingress::hdr.udp.$valid
+    TB5: H15(4)  # ingress::hdr.induce_view.drop_cntrl if ingress::hdr.induce_view.$valid
+    B4: H15(5)  # ingress::hdr.trigger_view.leader_switch_id if ingress::hdr.trigger_view.$valid
+    TH6: H15(5)  # ingress::hdr.trigger_view.current_ring_view if ingress::hdr.trigger_view.$valid
+    B1: H15(5)  # ingress::hdr.trigger_view.view_member_switch_id if ingress::hdr.trigger_view.$valid
+    W0: H15(5)  # ingress::hdr.trigger_view.highest_seen_seq_no if ingress::hdr.trigger_view.$valid
+    B0: H15(5)  # ingress::hdr.trigger_view.hops if ingress::hdr.trigger_view.$valid
+    B4: H15(6)  # ingress::hdr.finalize_view.leader_switch_id if ingress::hdr.finalize_view.$valid
+    B1: H15(6)  # ingress::hdr.finalize_view.view_member_switch_id if ingress::hdr.finalize_view.$valid
+    TH6: H15(6)  # ingress::hdr.finalize_view.current_ring_view if ingress::hdr.finalize_view.$valid
+    B7: H15(6)  # ingress::hdr.finalize_view.next_switch_id if ingress::hdr.finalize_view.$valid
+    TW4: H15(6)  # ingress::hdr.finalize_view.highest_quorum_seq_no if ingress::hdr.finalize_view.$valid
+    B0: H15(6)  # ingress::hdr.finalize_view.hops if ingress::hdr.finalize_view.$valid
+    H13: H15(9)  # ingress::hdr.ring_type.type if ingress::hdr.ring_type.$valid
+    W2: H15(9)
+        # - bit[31..16]: ingress::hdr.ring_type.num_entries if ingress::hdr.ring_type.$valid
+        # - bit[15..0]: ingress::hdr.ring_type.shard_id if ingress::hdr.ring_type.$valid
+    TB5: H15(9)  # ingress::hdr.ring_type.switch_to_process if ingress::hdr.ring_type.$valid
+    H5: H15(9)  # ingress::hdr.ring_type.start_ts.32-47 if ingress::hdr.ring_type.$valid
+    W9: H15(9)  # ingress::hdr.ring_type.start_ts.0-31 if ingress::hdr.ring_type.$valid
+    H6: H15(9)  # ingress::hdr.ring_type.end_ts.32-47 if ingress::hdr.ring_type.$valid
+    W10: H15(9)  # ingress::hdr.ring_type.end_ts.0-31 if ingress::hdr.ring_type.$valid
+    TH19: H15(9)  # ingress::hdr.ring_type.raw_elapsed_time if ingress::hdr.ring_type.$valid
+    W13: H15(9)  # ingress::hdr.ring_type.pipe_ts if ingress::hdr.ring_type.$valid
+    TH9: H15(10)  # ingress::hdr.append.nonce if ingress::hdr.append.$valid
+    TH8: H15(10)  # ingress::hdr.append.payload_size if ingress::hdr.append.$valid
+    W0: H15(10)  # ingress::hdr.append.stream_id if ingress::hdr.append.$valid
+    W3: H15(10)  # ingress::hdr.append.g_idx if ingress::hdr.append.$valid
+    H9: H15(10)  # ingress::hdr.append.cntrl_pkt_it if ingress::hdr.append.$valid
+    TH10: H15(10)  # ingress::hdr.append.recv_port if ingress::hdr.append.$valid
+    B4: H15(10)  # ingress::hdr.append.exp_type.8-15 if ingress::hdr.append.$valid
+    B1: H15(10)  # ingress::hdr.append.exp_type.0-7 if ingress::hdr.append.$valid
+    H4: H15(10)  # ingress::hdr.append.start_ts.32-47 if ingress::hdr.append.$valid
+    W8: H15(10)  # ingress::hdr.append.start_ts.0-31 if ingress::hdr.append.$valid
+    TH20: H15(11)  # ingress::hdr.read.nonce if ingress::hdr.read.$valid
+    TW13: H15(11)  # ingress::hdr.read.payload_size if ingress::hdr.read.$valid
+    TW12: H15(11)  # ingress::hdr.read.stream_id if ingress::hdr.read.$valid
+    TH11: H15(11)  # ingress::hdr.read.g_idx.16-31 if ingress::hdr.read.$valid
+    TH10: H15(11)  # ingress::hdr.read.g_idx.0-15 if ingress::hdr.read.$valid
+    TH9: H15(11)  # ingress::hdr.read.ring_view if ingress::hdr.read.$valid
+    TH8: H15(11)  # ingress::hdr.read.recv_port if ingress::hdr.read.$valid
+    TH11: H15(12)  # ingress::hdr.tail.nonce if ingress::hdr.tail.$valid
+    B1: H15(12)  # ingress::hdr.tail.hops if ingress::hdr.tail.$valid
+    B4: H15(12)  # ingress::hdr.tail.start_switch_id if ingress::hdr.tail.$valid
+    TH9: H15(12)  # ingress::hdr.tail.tail_seq_no.16-31 if ingress::hdr.tail.$valid
+    TH8: H15(12)  # ingress::hdr.tail.tail_seq_no.0-15 if ingress::hdr.tail.$valid
+    TH10: H15(12)  # ingress::hdr.tail.recv_port if ingress::hdr.tail.$valid
+    TW13: H15(13)  # ingress::hdr.sub.g_idx if ingress::hdr.sub.$valid
+    TW12: H15(13)  # ingress::hdr.sub.stream_id if ingress::hdr.sub.$valid
+    TH9: H15(13)  # ingress::hdr.sub.recv_port if ingress::hdr.sub.$valid
+    TH8: H15(13)  # ingress::hdr.sub.subscribe_port if ingress::hdr.sub.$valid
+    TB4: H15(3)  # ingress::hdr.canary.magic if ingress::hdr.canary.$valid
+  egress_unicast_port: H1(0..8)  # bit[8..0]: ingress::ig_intr_md_for_tm.ucast_egress_port
+  drop_ctl: B3(0..2)  # bit[2..0]: ingress::ig_intr_md_for_dprsr.drop_ctl
+  egress_multicast_group_0:
+    - H0  # ingress::ig_intr_md_for_tm.mcast_grp_a
+  mirror:
+    select: B2(0..2)  # bit[2..0]: ingress::ig_intr_md_for_dprsr.mirror_type
+    1:
+      - H2(0..9)  # bit[9..0]: ingress::meta.ing_mir_ses
+      - B6  # ingress::meta.pkt_type
+parser egress:
+  start: $entry_point
+  init_zero: [ W16, TH0, B17, B20, B25, B24, H23, H20, B23, W18, H22 ]
+  bitwise_or: [ H22 ]
+  hdr_len_adj: 27
+  meta_opt: 8191
+  states:
+    $entry_point:
+      *:
+        56..59: W16  # buffer mapped I/O: bit[448..479] -> W16 bit[31..0]: egress::eg_intr_md_from_prsr.global_tstamp[31:0].0-31
+        54..55: TH0  # buffer mapped I/O: bit[432..447] -> TH0 bit[15..0]: egress::eg_intr_md_from_prsr.global_tstamp[47:32].32-47
+        load: { byte1 : 27 }
+        buf_req: 28
+        next: start
+    start:
+      match: [ byte1 ]
+      0x02:
+        0..1: H19  # bit[7..15] -> H19 bit[8..0]: egress::eg_intr_md.egress_port
+        9..12: W19  # bit[88..103] -> W19 bit[15..0]: egress::eg_intr_md.deq_qdepth[15:0].0-15
+        10: B22  # bit[85..87] -> B22 bit[2..0]: egress::eg_intr_md.deq_qdepth[18:16].16-18
+        shift: 28
+        buf_req: 28
+        next: parse_ethernet
+      0x**:
+        0..1: H19  # bit[7..15] -> H19 bit[8..0]: egress::eg_intr_md.egress_port
+        9..12: W19  # bit[88..103] -> W19 bit[15..0]: egress::eg_intr_md.deq_qdepth[15:0].0-15
+        10: B22  # bit[85..87] -> B22 bit[2..0]: egress::eg_intr_md.deq_qdepth[18:16].16-18
+        shift: 27
+        buf_req: 27
+        next: parse_ethernet
+    parse_ethernet:
+      *:
+        0..1: TH25  # egress::hdr.ethernet.dst[47:32].32-47
+        2..3: TH15  # egress::hdr.ethernet.dst[31:16].16-31
+        4..5: TH14  # egress::hdr.ethernet.dst[15:0].0-15
+        6..7: TH24  # egress::hdr.ethernet.src[47:32].32-47
+        H22: 1  # value 1 -> H22 bit[0]: egress::hdr.ethernet.$valid
+        load: { half : 12..13 }
+        shift: 8
+        buf_req: 14
+        next: parse_ethernet.$split_0
+    parse_ethernet.$split_0:
+      match: [ half ]
+      0x0820:
+        0..1: TH13  # egress::hdr.ethernet.src[31:16].16-31
+        2..3: TH12  # egress::hdr.ethernet.src[15:0].0-15
+        4..5: H21  # egress::hdr.ethernet.type
+        shift: 6
+        buf_req: 6
+        next: parse_control
+      0x0890:
+        0..1: TH13  # egress::hdr.ethernet.src[31:16].16-31
+        2..3: TH12  # egress::hdr.ethernet.src[15:0].0-15
+        4..5: H21  # egress::hdr.ethernet.type
+        shift: 6
+        buf_req: 6
+        next: parse_induce_view
+      0x0900:
+        0..1: TH13  # egress::hdr.ethernet.src[31:16].16-31
+        2..3: TH12  # egress::hdr.ethernet.src[15:0].0-15
+        4..5: H21  # egress::hdr.ethernet.type
+        shift: 6
+        buf_req: 6
+        next: parse_trigger_view
+      0x0910:
+        0..1: TH13  # egress::hdr.ethernet.src[31:16].16-31
+        2..3: TH12  # egress::hdr.ethernet.src[15:0].0-15
+        4..5: H21  # egress::hdr.ethernet.type
+        shift: 6
+        buf_req: 6
+        next: parse_finalize_view
+      0x0800:
+        0..1: TH13  # egress::hdr.ethernet.src[31:16].16-31
+        2..3: TH12  # egress::hdr.ethernet.src[15:0].0-15
+        4..5: H21  # egress::hdr.ethernet.type
+        shift: 6
+        buf_req: 6
+        next: parse_ipv4
+      0x****:
+        0..1: TH13  # egress::hdr.ethernet.src[31:16].16-31
+        2..3: TH12  # egress::hdr.ethernet.src[15:0].0-15
+        4..5: H21  # egress::hdr.ethernet.type
+        shift: 6
+        buf_req: 6
+        next: end
+    parse_control:
+      *:
+        0..3: TW0  # egress::hdr.cntrl.global_seq_no
+        4..5: H16  # egress::hdr.cntrl.ring_view
+        H22: 2  # value 1 -> H22 bit[1]: egress::hdr.cntrl.$valid
+        shift: 6
+        buf_req: 6
+        next: parse_canary
+    parse_canary:
+      *:
+        0: B18  # egress::hdr.canary.magic
+        H22: 4  # value 1 -> H22 bit[2]: egress::hdr.canary.$valid
+        shift: 1
+        buf_req: 1
+        next: end
+    parse_induce_view:
+      *:
+        0: TB0  # egress::hdr.induce_view.drop_cntrl
+        H22: 8  # value 1 -> H22 bit[3]: egress::hdr.induce_view.$valid
+        shift: 1
+        buf_req: 1
+        next: parse_canary
+    parse_trigger_view:
+      *:
+        0: B19  # egress::hdr.trigger_view.leader_switch_id
+        1..2: H16  # egress::hdr.trigger_view.current_ring_view
+        3: TB1  # egress::hdr.trigger_view.view_member_switch_id
+        4..7: TW0  # egress::hdr.trigger_view.highest_seen_seq_no
+        8: TB0  # egress::hdr.trigger_view.hops
+        H22: 16  # value 1 -> H22 bit[4]: egress::hdr.trigger_view.$valid
+        shift: 9
+        buf_req: 9
+        next: parse_canary
+    parse_finalize_view:
+      *:
+        0..1: TH1
+            # - bit[0..7] -> TH1 bit[15..8]: egress::hdr.finalize_view.leader_switch_id
+            # - bit[8..15] -> TH1 bit[7..0]: egress::hdr.finalize_view.view_member_switch_id
+        2..3: H16  # egress::hdr.finalize_view.current_ring_view
+        4: TB1  # egress::hdr.finalize_view.next_switch_id
+        5..8: TW0  # egress::hdr.finalize_view.highest_quorum_seq_no
+        9: TB0  # egress::hdr.finalize_view.hops
+        H22: 32  # value 1 -> H22 bit[5]: egress::hdr.finalize_view.$valid
+        shift: 10
+        buf_req: 10
+        next: parse_canary
+    parse_ipv4:
+      *:
+        0..3: TW2
+            # - bit[0..3] -> TW2 bit[31..28]: egress::hdr.ipv4.version
+            # - bit[4..7] -> TW2 bit[27..24]: egress::hdr.ipv4.ihl
+            # - bit[8..15] -> TW2 bit[23..16]: egress::hdr.ipv4.tos
+            # - bit[16..31] -> TW2 bit[15..0]: egress::hdr.ipv4.len
+        4: TB2  # egress::hdr.ipv4.id[15:8].8-15
+        5: TB1  # egress::hdr.ipv4.id[7:0].0-7
+        6..7: TH1
+            # - bit[48..50] -> TH1 bit[15..13]: egress::hdr.ipv4.flags
+            # - bit[51..63] -> TH1 bit[12..0]: egress::hdr.ipv4.frag
+        8..11: TW3
+            # - bit[64..71] -> TW3 bit[31..24]: egress::hdr.ipv4.ttl
+            # - bit[72..79] -> TW3 bit[23..16]: egress::hdr.ipv4.proto
+            # - bit[80..95] -> TW3 bit[15..0]: egress::hdr.ipv4.chksum
+        12: TB10  # egress::hdr.ipv4.src[31:24].24-31
+        13: TB9  # egress::hdr.ipv4.src[23:16].16-23
+        16..17: TH17  # egress::hdr.ipv4.dst[31:16].16-31
+        18..19: TH16  # egress::hdr.ipv4.dst[15:0].0-15
+        20..23: TW8
+            # - bit[160..175] -> TW8 bit[31..16]: egress::hdr.udp.src_port
+            # - bit[176..191] -> TW8 bit[15..0]: egress::hdr.udp.dst_port
+        24..25: TH5  # egress::hdr.udp.len
+        shift: 14
+        buf_req: 26
+        next: parse_ipv4.$split_0
+    parse_ipv4.$split_0:
+      *:
+        0: TB8  # egress::hdr.ipv4.src[15:8].8-15
+        1: TB3  # egress::hdr.ipv4.src[7:0].0-7
+        12..13: TH4  # egress::hdr.udp.chksum
+        14: B21  # egress::hdr.ring_type.type[15:8].8-15
+        15: B19  # egress::hdr.ring_type.type[7:0].0-7
+        16..19: TW9
+            # - bit[128..143] -> TW9 bit[31..16]: egress::hdr.ring_type.num_entries
+            # - bit[144..159] -> TW9 bit[15..0]: egress::hdr.ring_type.shard_id
+        21..24: TW1  # egress::hdr.ring_type.start_ts[47:16].16-47
+        25..26: H17  # egress::hdr.ring_type.start_ts[15:0].0-15
+        27..30: TW0  # egress::hdr.ring_type.end_ts[47:16].16-47
+        H22: 448
+            # - value 1 -> H22 bit[6]: egress::hdr.ipv4.$valid
+            # - value 1 -> H22 bit[7]: egress::hdr.udp.$valid
+            # - value 1 -> H22 bit[8]: egress::hdr.ring_type.$valid
+        load: { half : 14..15 }
+        shift: 20
+        buf_req: 31
+        next: parse_ipv4.$split_1
+    parse_ipv4.$split_1:
+      match: [ half ]
+      0x0860:
+        0: TB0  # egress::hdr.ring_type.switch_to_process
+        11..12: H16  # egress::hdr.ring_type.end_ts[15:0].0-15
+        13..14: H18  # egress::hdr.ring_type.raw_elapsed_time
+        15..18: W17  # egress::hdr.ring_type.pipe_ts
+        shift: 19
+        buf_req: 19
+        next: parse_append
+      0x0862:
+        0: TB0  # egress::hdr.ring_type.switch_to_process
+        11..12: H16  # egress::hdr.ring_type.end_ts[15:0].0-15
+        13..14: H18  # egress::hdr.ring_type.raw_elapsed_time
+        15..18: W17  # egress::hdr.ring_type.pipe_ts
+        shift: 19
+        buf_req: 19
+        next: parse_append
+      0x0861:
+        0: TB0  # egress::hdr.ring_type.switch_to_process
+        11..12: H16  # egress::hdr.ring_type.end_ts[15:0].0-15
+        13..14: H18  # egress::hdr.ring_type.raw_elapsed_time
+        15..18: W17  # egress::hdr.ring_type.pipe_ts
+        shift: 19
+        buf_req: 19
+        next: parse_append
+      0x0870:
+        0: TB0  # egress::hdr.ring_type.switch_to_process
+        11..12: H16  # egress::hdr.ring_type.end_ts[15:0].0-15
+        13..14: H18  # egress::hdr.ring_type.raw_elapsed_time
+        15..18: W17  # egress::hdr.ring_type.pipe_ts
+        shift: 19
+        buf_req: 19
+        next: parse_read
+      0x0871:
+        0: TB0  # egress::hdr.ring_type.switch_to_process
+        11..12: H16  # egress::hdr.ring_type.end_ts[15:0].0-15
+        13..14: H18  # egress::hdr.ring_type.raw_elapsed_time
+        15..18: W17  # egress::hdr.ring_type.pipe_ts
+        shift: 19
+        buf_req: 19
+        next: parse_read
+      0x0840:
+        0: TB0  # egress::hdr.ring_type.switch_to_process
+        11..12: H16  # egress::hdr.ring_type.end_ts[15:0].0-15
+        13..14: H18  # egress::hdr.ring_type.raw_elapsed_time
+        15..18: W17  # egress::hdr.ring_type.pipe_ts
+        shift: 19
+        buf_req: 19
+        next: parse_tail
+      0x0850:
+        0: TB0  # egress::hdr.ring_type.switch_to_process
+        11..12: H16  # egress::hdr.ring_type.end_ts[15:0].0-15
+        13..14: H18  # egress::hdr.ring_type.raw_elapsed_time
+        15..18: W17  # egress::hdr.ring_type.pipe_ts
+        shift: 19
+        buf_req: 19
+        next: parse_sub
+      0x****:
+        0: TB0  # egress::hdr.ring_type.switch_to_process
+        11..12: H16  # egress::hdr.ring_type.end_ts[15:0].0-15
+        13..14: H18  # egress::hdr.ring_type.raw_elapsed_time
+        15..18: W17  # egress::hdr.ring_type.pipe_ts
+        shift: 19
+        buf_req: 19
+        next: parse_canary
+    parse_append:
+      *:
+        0..3: TW11
+            # - bit[0..15] -> TW11 bit[31..16]: egress::hdr.append.nonce
+            # - bit[16..31] -> TW11 bit[15..0]: egress::hdr.append.payload_size
+        4..7: TW18  # egress::hdr.append.stream_id
+        8..11: TW17  # egress::hdr.append.g_idx
+        12..15: TW10
+            # - bit[96..111] -> TW10 bit[31..16]: egress::hdr.append.cntrl_pkt_it
+            # - bit[112..127] -> TW10 bit[15..0]: egress::hdr.append.recv_port
+        16..17: TH3  # egress::hdr.append.exp_type
+        18..19: TH2  # egress::hdr.append.start_ts[47:32].32-47
+        H22: 512  # value 1 -> H22 bit[9]: egress::hdr.append.$valid
+        shift: 20
+        buf_req: 20
+        next: parse_append.$split_0
+    parse_append.$split_0:
+      *:
+        0..3: TW16  # egress::hdr.append.start_ts[31:0].0-31
+        shift: 4
+        buf_req: 4
+        next: parse_canary
+    parse_read:
+      *:
+        0..1: TH2  # egress::hdr.read.nonce
+        2..5: TW17  # egress::hdr.read.payload_size
+        6..9: TW16  # egress::hdr.read.stream_id
+        10..13: TW11  # egress::hdr.read.g_idx
+        14..17: TW10
+            # - bit[112..127] -> TW10 bit[31..16]: egress::hdr.read.ring_view
+            # - bit[128..143] -> TW10 bit[15..0]: egress::hdr.read.recv_port
+        H22: 1024  # value 1 -> H22 bit[10]: egress::hdr.read.$valid
+        shift: 18
+        buf_req: 18
+        next: parse_canary
+    parse_tail:
+      *:
+        0..1: TH3  # egress::hdr.tail.nonce
+        2..3: TH2
+            # - bit[16..23] -> TH2 bit[15..8]: egress::hdr.tail.hops
+            # - bit[24..31] -> TH2 bit[7..0]: egress::hdr.tail.start_switch_id
+        4..7: TW10  # egress::hdr.tail.tail_seq_no
+        8..9: TH26  # egress::hdr.tail.recv_port
+        H22: 2048  # value 1 -> H22 bit[11]: egress::hdr.tail.$valid
+        shift: 10
+        buf_req: 10
+        next: parse_canary
+    parse_sub:
+      *:
+        0..3: TW16  # egress::hdr.sub.g_idx
+        4..7: TW11  # egress::hdr.sub.stream_id
+        8..11: TW10
+            # - bit[64..79] -> TW10 bit[31..16]: egress::hdr.sub.recv_port
+            # - bit[80..95] -> TW10 bit[15..0]: egress::hdr.sub.subscribe_port
+        H22: 4096  # value 1 -> H22 bit[12]: egress::hdr.sub.$valid
+        shift: 12
+        buf_req: 12
+        next: parse_canary
+deparser egress:
+  dictionary:
+    TH25: H22(0)  # egress::hdr.ethernet.dst.32-47 if egress::hdr.ethernet.$valid
+    TH15: H22(0)  # egress::hdr.ethernet.dst.16-31 if egress::hdr.ethernet.$valid
+    TH14: H22(0)  # egress::hdr.ethernet.dst.0-15 if egress::hdr.ethernet.$valid
+    TH24: H22(0)  # egress::hdr.ethernet.src.32-47 if egress::hdr.ethernet.$valid
+    TH13: H22(0)  # egress::hdr.ethernet.src.16-31 if egress::hdr.ethernet.$valid
+    TH12: H22(0)  # egress::hdr.ethernet.src.0-15 if egress::hdr.ethernet.$valid
+    H21: H22(0)  # egress::hdr.ethernet.type if egress::hdr.ethernet.$valid
+    TW0: H22(1)  # egress::hdr.cntrl.global_seq_no if egress::hdr.cntrl.$valid
+    H16: H22(1)  # egress::hdr.cntrl.ring_view if egress::hdr.cntrl.$valid
+    TW2: H22(6)
+        # - bit[31..28]: egress::hdr.ipv4.version if egress::hdr.ipv4.$valid
+        # - bit[27..24]: egress::hdr.ipv4.ihl if egress::hdr.ipv4.$valid
+        # - bit[23..16]: egress::hdr.ipv4.tos if egress::hdr.ipv4.$valid
+        # - bit[15..0]: egress::hdr.ipv4.len if egress::hdr.ipv4.$valid
+    TB2: H22(6)  # egress::hdr.ipv4.id.8-15 if egress::hdr.ipv4.$valid
+    TB1: H22(6)  # egress::hdr.ipv4.id.0-7 if egress::hdr.ipv4.$valid
+    TH1: H22(6)
+        # - bit[15..13]: egress::hdr.ipv4.flags if egress::hdr.ipv4.$valid
+        # - bit[12..0]: egress::hdr.ipv4.frag if egress::hdr.ipv4.$valid
+    TW3: H22(6)
+        # - bit[31..24]: egress::hdr.ipv4.ttl if egress::hdr.ipv4.$valid
+        # - bit[23..16]: egress::hdr.ipv4.proto if egress::hdr.ipv4.$valid
+        # - bit[15..0]: egress::hdr.ipv4.chksum if egress::hdr.ipv4.$valid
+    TB10: H22(6)  # egress::hdr.ipv4.src.24-31 if egress::hdr.ipv4.$valid
+    TB9: H22(6)  # egress::hdr.ipv4.src.16-23 if egress::hdr.ipv4.$valid
+    TB8: H22(6)  # egress::hdr.ipv4.src.8-15 if egress::hdr.ipv4.$valid
+    TB3: H22(6)  # egress::hdr.ipv4.src.0-7 if egress::hdr.ipv4.$valid
+    TH17: H22(6)  # egress::hdr.ipv4.dst.16-31 if egress::hdr.ipv4.$valid
+    TH16: H22(6)  # egress::hdr.ipv4.dst.0-15 if egress::hdr.ipv4.$valid
+    TW8: H22(7)
+        # - bit[31..16]: egress::hdr.udp.src_port if egress::hdr.udp.$valid
+        # - bit[15..0]: egress::hdr.udp.dst_port if egress::hdr.udp.$valid
+    TH5: H22(7)  # egress::hdr.udp.len if egress::hdr.udp.$valid
+    TH4: H22(7)  # egress::hdr.udp.chksum if egress::hdr.udp.$valid
+    TB0: H22(3)  # egress::hdr.induce_view.drop_cntrl if egress::hdr.induce_view.$valid
+    B19: H22(4)  # egress::hdr.trigger_view.leader_switch_id if egress::hdr.trigger_view.$valid
+    H16: H22(4)  # egress::hdr.trigger_view.current_ring_view if egress::hdr.trigger_view.$valid
+    TB1: H22(4)  # egress::hdr.trigger_view.view_member_switch_id if egress::hdr.trigger_view.$valid
+    TW0: H22(4)  # egress::hdr.trigger_view.highest_seen_seq_no if egress::hdr.trigger_view.$valid
+    TB0: H22(4)  # egress::hdr.trigger_view.hops if egress::hdr.trigger_view.$valid
+    TH1: H22(5)
+        # - bit[15..8]: egress::hdr.finalize_view.leader_switch_id if egress::hdr.finalize_view.$valid
+        # - bit[7..0]: egress::hdr.finalize_view.view_member_switch_id if egress::hdr.finalize_view.$valid
+    H16: H22(5)  # egress::hdr.finalize_view.current_ring_view if egress::hdr.finalize_view.$valid
+    TB1: H22(5)  # egress::hdr.finalize_view.next_switch_id if egress::hdr.finalize_view.$valid
+    TW0: H22(5)  # egress::hdr.finalize_view.highest_quorum_seq_no if egress::hdr.finalize_view.$valid
+    TB0: H22(5)  # egress::hdr.finalize_view.hops if egress::hdr.finalize_view.$valid
+    B21: H22(8)  # egress::hdr.ring_type.type.8-15 if egress::hdr.ring_type.$valid
+    B19: H22(8)  # egress::hdr.ring_type.type.0-7 if egress::hdr.ring_type.$valid
+    TW9: H22(8)
+        # - bit[31..16]: egress::hdr.ring_type.num_entries if egress::hdr.ring_type.$valid
+        # - bit[15..0]: egress::hdr.ring_type.shard_id if egress::hdr.ring_type.$valid
+    TB0: H22(8)  # egress::hdr.ring_type.switch_to_process if egress::hdr.ring_type.$valid
+    TW1: H22(8)  # egress::hdr.ring_type.start_ts.16-47 if egress::hdr.ring_type.$valid
+    H17: H22(8)  # egress::hdr.ring_type.start_ts.0-15 if egress::hdr.ring_type.$valid
+    TW0: H22(8)  # egress::hdr.ring_type.end_ts.16-47 if egress::hdr.ring_type.$valid
+    H16: H22(8)  # egress::hdr.ring_type.end_ts.0-15 if egress::hdr.ring_type.$valid
+    H18: H22(8)  # egress::hdr.ring_type.raw_elapsed_time if egress::hdr.ring_type.$valid
+    W17: H22(8)  # egress::hdr.ring_type.pipe_ts if egress::hdr.ring_type.$valid
+    TW11: H22(9)
+        # - bit[31..16]: egress::hdr.append.nonce if egress::hdr.append.$valid
+        # - bit[15..0]: egress::hdr.append.payload_size if egress::hdr.append.$valid
+    TW18: H22(9)  # egress::hdr.append.stream_id if egress::hdr.append.$valid
+    TW17: H22(9)  # egress::hdr.append.g_idx if egress::hdr.append.$valid
+    TW10: H22(9)
+        # - bit[31..16]: egress::hdr.append.cntrl_pkt_it if egress::hdr.append.$valid
+        # - bit[15..0]: egress::hdr.append.recv_port if egress::hdr.append.$valid
+    TH3: H22(9)  # egress::hdr.append.exp_type if egress::hdr.append.$valid
+    TH2: H22(9)  # egress::hdr.append.start_ts.32-47 if egress::hdr.append.$valid
+    TW16: H22(9)  # egress::hdr.append.start_ts.0-31 if egress::hdr.append.$valid
+    TH2: H22(10)  # egress::hdr.read.nonce if egress::hdr.read.$valid
+    TW17: H22(10)  # egress::hdr.read.payload_size if egress::hdr.read.$valid
+    TW16: H22(10)  # egress::hdr.read.stream_id if egress::hdr.read.$valid
+    TW11: H22(10)  # egress::hdr.read.g_idx if egress::hdr.read.$valid
+    TW10: H22(10)
+        # - bit[31..16]: egress::hdr.read.ring_view if egress::hdr.read.$valid
+        # - bit[15..0]: egress::hdr.read.recv_port if egress::hdr.read.$valid
+    TH3: H22(11)  # egress::hdr.tail.nonce if egress::hdr.tail.$valid
+    TH2: H22(11)
+        # - bit[15..8]: egress::hdr.tail.hops if egress::hdr.tail.$valid
+        # - bit[7..0]: egress::hdr.tail.start_switch_id if egress::hdr.tail.$valid
+    TW10: H22(11)  # egress::hdr.tail.tail_seq_no if egress::hdr.tail.$valid
+    TH26: H22(11)  # egress::hdr.tail.recv_port if egress::hdr.tail.$valid
+    TW16: H22(12)  # egress::hdr.sub.g_idx if egress::hdr.sub.$valid
+    TW11: H22(12)  # egress::hdr.sub.stream_id if egress::hdr.sub.$valid
+    TW10: H22(12)
+        # - bit[31..16]: egress::hdr.sub.recv_port if egress::hdr.sub.$valid
+        # - bit[15..0]: egress::hdr.sub.subscribe_port if egress::hdr.sub.$valid
+    B18: H22(2)  # egress::hdr.canary.magic if egress::hdr.canary.$valid
+  drop_ctl: B17(0..2)  # bit[2..0]: egress::eg_intr_md_for_dprsr.drop_ctl
+  egress_unicast_port: H19(0..8)  # bit[8..0]: egress::eg_intr_md.egress_port
+stage 0 ingress:
+  phase0_match MyParser.$PORT_METADATA:
+    p4:
+      name: MyParser.$PORT_METADATA
+      size: 288
+      preferred_match_type: exact
+      match_type: exact
+    size: 288
+    p4_param_order:
+      standard_metadata.ingress_port: { type: exact, size: 9 }
+    format: {standard_metadata: 0..63}
+    constant_value: 0
+    actions:
+      set_port_metadata:
+      - handle: 0x20000000
+      - p4_param_order: { standard_metadata: 64 } 
+  ternary_match get_constants_1 0:
+    p4: { name: MyIngress1.get_constants, size: 1 }
+    hit: [  next_hop_routing_1 ]
+    miss:  next_hop_routing_1
+    indirect: get_constants_1$tind
+  ternary_indirect get_constants_1$tind:
+    row: 3
+    bus: 1
+    format: { action: 0..0, immediate: 1..24 }
+    action_bus: { 0 : immediate(0..7), 1 : immediate(8..15), 2 : immediate(16..23) }
+    action: get_constants_1$action_data($DIRECT, $DEFAULT)
+    instruction: get_constants_1$tind(action, $DEFAULT)
+    actions:
+      MyIngress1.constants(0, 1):
+      - p4_param_order: { switch_id: 8, shard_size: 32, number_of_shards: 16, ack_threshold: 32, num_recirc_ports: 8, num_wait_ports: 8, view_timeout: 32 }
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000001
+      - next_table: 0
+      - { ack_threshold: $adf_f0(0..31), switch_id: immediate(0..7), num_recirc_ports: immediate(8..15), num_wait_ports: immediate(16..23) }
+      - set meta.switch_id, switch_id
+      - set meta.ack_threshold, ack_threshold
+      - set meta.num_recirc_ports, num_recirc_ports
+      - set meta.num_wait_ports, num_wait_ports
+    default_action: MyIngress1.constants
+    default_action_parameters:
+      switch_id: "0x1"
+      shard_size: "0x0"
+      number_of_shards: "0x0"
+      ack_threshold: "0x1"
+      num_recirc_ports: "0x0"
+      num_wait_ports: "0x0"
+      view_timeout: "0x9C4"
+  action get_constants_1$action_data:
+    p4: { name: MyIngress1.get_constants$action }
+    row: 14
+    logical_bus: A
+    column: 3
+    vpns: [ 0 ]
+    home_row:
+    - 14
+    format MyIngress1.constants: { $adf_f0: 0..31 }
+    action_bus: { 96..99 : $adf_f0 }
+  exact_match next_hop_routing_1 1:
+    p4: { name: MyIngress1.next_hop_routing, size: 8 }
+    p4_param_order: 
+      hdr.tail.$valid: { type: exact, size: 1, full_size: 1 }
+      hdr.finalize_view.$valid: { type: exact, size: 1, full_size: 1 }
+      hdr.cntrl.$valid: { type: exact, size: 1, full_size: 1 }
+    row: 7
+    bus: 0
+    column: 2
+    stash: 
+      row: [ 7 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [0, 0, 0x0, [7, 2]]
+    input_xbar:
+      exact group 0: { 2: hdr.cntrl.$valid, 6: hdr.finalize_view.$valid, 12: hdr.tail.$valid }
+      hash 0:
+        0: hdr.cntrl.$valid
+        1: hdr.finalize_view.$valid
+        2: hdr.tail.$valid
+      hash group 0:
+        table: [0]
+        seed: 0x0
+    format: { action(0): 0..1, version(0): 112..115, meter_addr(0): 2..11, meter_pfe(0): 12..12, meter_type(0): 13..15 }
+    match_group_map: [ [ 0 ] ]
+    hit: [  tbl_full_test1904 ]
+    miss:  tbl_full_test1904
+    action_bus: { 4 : next_hop_routing_1$salu.MyIngress1.next_ring_hop_id(0..7) }
+    stateful: next_hop_routing_1$salu.MyIngress1.next_ring_hop_id(meter_addr, meter_pfe, meter_type)
+    instruction: next_hop_routing_1(action, $DEFAULT)
+    actions:
+      MyIngress1.get_next_hop(0, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000002c
+      - next_table: 0
+      - set meta.next_hop, next_hop_routing_1$salu.MyIngress1.next_ring_hop_id
+      - next_hop_routing_1$salu.MyIngress1.next_ring_hop_id(get_id_1, 0)
+      MyIngress1.update_next_hop(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000002d
+      - next_table: 0
+      - next_hop_routing_1$salu.MyIngress1.next_ring_hop_id(update_id_1, 0)
+      NoAction(2, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000002e
+      - next_table: 0
+    default_action: NoAction
+  stateful next_hop_routing_1$salu.MyIngress1.next_ring_hop_id:
+    p4: { name: MyIngress1.next_ring_hop_id, size: 1 }
+    row: 15
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 15
+    input_xbar:
+      exact group 0: { 64: hdr.finalize_view.next_switch_id }
+    format: { lo: 8 }
+    initial_value : { lo: 1 , hi: 0 }
+    actions:
+      get_id_1:
+      - output mem_lo
+      update_id_1:
+      - alu_a lo, phv_lo
+  ternary_match tbl_full_test1904 2:
+    p4: { name: tbl_full_test1904, hidden: true }
+    hit: [  tbl_full_test1796 ]
+    miss:  tbl_full_test1796
+    indirect: tbl_full_test1904$tind
+  ternary_indirect tbl_full_test1904$tind:
+    row: 4
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test1904$tind(action, $DEFAULT)
+    actions:
+      full_test1904(0, 4):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000004d
+      - next_table: 0
+      - set hdr.timer.$valid, 0
+    default_action: full_test1904
+  ternary_match tbl_full_test1796 3:
+    p4: { name: tbl_full_test1796, hidden: true }
+    gateway:
+      name: cond-100
+      input_xbar:
+        exact group 0: { 2: hdr.cntrl.$valid }
+      row: 3
+      bus: 0
+      unit: 0
+      match: { 2: hdr.cntrl.$valid }
+      0b*****1: run_table
+      miss:  tbl_full_test1801
+      condition: 
+        expression: "(hdr.cntrl.$valid == 1)"
+        true:  tbl_full_test1796
+        false:  tbl_full_test1801
+    hit: [  tbl_full_test1810 ]
+    miss:  tbl_full_test1810
+    indirect: tbl_full_test1796$tind
+  counter tbl_full_test1796$stats.MyIngress1.cntrl_counter_ig1:
+    p4: { name: MyIngress1.cntrl_counter_ig1, size: 1 }
+    row: 13
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    vpns: [ 0, 1 ]
+    home_row: 13
+    count: packets
+    format: {packets(0): 96..127, packets(1): 64..95, packets(2): 32..63, packets(3): 0..31}
+    per_flow_enable: counter_pfe
+    lrt:
+    - { threshold: 23718048, interval: 268435200 }
+    - { threshold: 23718048, interval: 268435200 }
+    - { threshold: 23718048, interval: 268435200 }
+  ternary_indirect tbl_full_test1796$tind:
+    row: 3
+    bus: 0
+    format: { action: 0..0, counter_addr: 1..10, counter_pfe: 11..11 }
+    stats: tbl_full_test1796$stats.MyIngress1.cntrl_counter_ig1(counter_addr, counter_pfe)
+    instruction: tbl_full_test1796$tind(action, $DEFAULT)
+    actions:
+      full_test1796(1, 5):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000002
+      - next_table: 0
+      - set meta.global_seq_no, hdr.cntrl.global_seq_no
+      - tbl_full_test1796$stats.MyIngress1.cntrl_counter_ig1(0)
+    default_action: full_test1796
+  ternary_match tbl_full_test1801 4:
+    p4: { name: tbl_full_test1801, hidden: true }
+    gateway:
+      name: cond-101
+      input_xbar:
+        exact group 0: { 9: hdr.ring_type.$valid }
+      row: 2
+      bus: 1
+      unit: 1
+      match: { 1: hdr.ring_type.$valid }
+      0b******1: run_table
+      miss:  tbl_full_test1810
+      condition: 
+        expression: "(hdr.ring_type.$valid == 1)"
+        true:  tbl_full_test1801
+        false:  tbl_full_test1810
+    hit: [  tbl_full_test1804 ]
+    miss:  tbl_full_test1804
+    indirect: tbl_full_test1801$tind
+  ternary_indirect tbl_full_test1801$tind:
+    row: 2
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1801$tind(action, $DEFAULT)
+    actions:
+      full_test1801(1, 6):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000003
+      - next_table: 0
+      - set meta.ring_process, hdr.ring_type.type
+      - set hdr.ring_type.pipe_ts, ig_intr_md_from_prsr.global_tstamp.0-31
+    default_action: full_test1801
+  ternary_match tbl_full_test1804 5:
+    p4: { name: tbl_full_test1804, hidden: true }
+    gateway:
+      name: cond-102
+      input_xbar:
+        exact group 0: { 10: hdr.append.$valid }
+      row: 2
+      bus: 0
+      unit: 0
+      match: { 2: hdr.append.$valid }
+      0b*****1: run_table
+      miss:  tbl_full_test1810
+      condition: 
+        expression: "(hdr.append.$valid == 1)"
+        true:  tbl_full_test1804
+        false:  tbl_full_test1810
+    hit: [  tbl_full_test1810 ]
+    miss:  tbl_full_test1810
+    indirect: tbl_full_test1804$tind
+  ternary_indirect tbl_full_test1804$tind:
+    row: 2
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test1804$tind(action, $DEFAULT)
+    actions:
+      full_test1804(1, 7):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000004
+      - next_table: 0
+      - set meta.global_seq_no, hdr.append.g_idx
+    default_action: full_test1804
+  ternary_match tbl_full_test1810 6:
+    p4: { name: tbl_full_test1810, hidden: true }
+    gateway:
+      name: cond-103
+      input_xbar:
+        exact group 0: { 10: hdr.append.$valid, 16: hdr.append.g_idx(16..31), 32: hdr.append.g_idx(0..15) }
+        hash 0:
+          40: hdr.append.$valid
+        hash group 0:
+          table: [0]
+          seed: 0x0
+      row: 1
+      bus: 1
+      unit: 1
+      match: { 32: hdr.append.$valid, 0: hdr.append.g_idx(0..7), 8: hdr.append.g_idx(8..15), 16: hdr.append.g_idx(16..23), 24: hdr.append.g_idx(24..31) }
+      0x100000000: run_table
+      miss:  tbl_full_test1827
+      condition: 
+        expression: "(hdr.append.$valid == 1 && hdr.append.g_idx == 0)"
+        true:  tbl_full_test1810
+        false:  tbl_full_test1827
+    hit: [  tbl_full_test1827 ]
+    miss:  tbl_full_test1827
+    indirect: tbl_full_test1810$tind
+  ternary_indirect tbl_full_test1810$tind:
+    row: 1
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1810$tind(action, $DEFAULT)
+    actions:
+      full_test1810(1, 8):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000005
+      - next_table: 0
+      - set meta.append_g_zero, 1
+      - set hdr.append.start_ts.0-31, ig_intr_md.ingress_mac_tstamp.0-31
+      - set hdr.append.start_ts.32-47, ig_intr_md.ingress_mac_tstamp.32-47
+    default_action: full_test1810
+  ternary_match tbl_full_test1827 7:
+    p4: { name: tbl_full_test1827, hidden: true }
+    gateway:
+      name: cond-106
+      input_xbar:
+        exact group 0: { 2: hdr.cntrl.$valid }
+      row: 1
+      bus: 0
+      unit: 0
+      match: { 2: hdr.cntrl.$valid }
+      0b*****1: run_table
+      miss:  cond-104
+      condition: 
+        expression: "(hdr.cntrl.$valid == 1)"
+        true:  tbl_full_test1827
+        false:  cond-104
+    hit: [  cond-104 ]
+    miss:  cond-104
+    indirect: tbl_full_test1827$tind
+  ternary_indirect tbl_full_test1827$tind:
+    row: 1
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test1827$tind(action, $DEFAULT)
+    actions:
+      full_test1827(1, 9):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000000b
+      - next_table: 0
+      - set meta.update_iteration, 1
+    default_action: full_test1827
+  gateway cond-104 8:
+    name: cond-104
+    input_xbar:
+      exact group 0: { 12: hdr.tail.$valid }
+    row: 0
+    bus: 1
+    unit: 1
+    match: { 4: hdr.tail.$valid }
+    0b***1:  tbl_full_test1819
+    miss:  cntrl_local_seq_1
+    condition: 
+      expression: "(hdr.tail.$valid == 1)"
+      true:  tbl_full_test1819
+      false:  cntrl_local_seq_1
+stage 1 ingress:
+  dependency: match
+  ternary_match tbl_full_test1819 0:
+    p4: { name: tbl_full_test1819, hidden: true }
+    gateway:
+      name: cond-105
+      input_xbar:
+        exact group 0: { 0: meta.switch_id, 8: hdr.tail.hops, 16: hdr.tail.start_switch_id }
+      row: 0
+      bus: 0
+      unit: 0
+      match: { 8: hdr.tail.hops, 0: hdr.tail.start_switch_id }
+      xor: { 0: meta.switch_id }
+      0x00**:  tbl_full_test1821
+      0x**00: run_table
+      miss:  tbl_full_test1821
+      condition: 
+        expression: "(hdr.tail.start_switch_id == meta.switch_id && hdr.tail.hops != 0)"
+        true:  tbl_full_test1819
+        false:  tbl_full_test1821
+    hit: [  cntrl_local_seq_1 ]
+    miss:  cntrl_local_seq_1
+    indirect: tbl_full_test1819$tind
+  ternary_indirect tbl_full_test1819$tind:
+    row: 1
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1819$tind(action, $DEFAULT)
+    actions:
+      full_test1819(1, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000007
+      - next_table: 0
+      - set meta.dst_addr, hdr.ipv4.dst
+    default_action: full_test1819
+  ternary_match tbl_full_test1821 1:
+    p4: { name: tbl_full_test1821, hidden: true }
+    hit: [  cntrl_local_seq_1 ]
+    miss:  cntrl_local_seq_1
+    indirect: tbl_full_test1821$tind
+  ternary_indirect tbl_full_test1821$tind:
+    row: 1
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test1821$tind(action, $DEFAULT)
+    actions:
+      full_test1821(0, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000006
+      - next_table: 0
+      - add hdr.tail.hops, hdr.tail.hops, 1
+    default_action: full_test1821
+  exact_match cntrl_local_seq_1 2:
+    p4: { name: MyIngress1.cntrl_local_seq, size: 64 }
+    p4_param_order: 
+      meta.ring_process: { type: exact, size: 16, full_size: 16 }
+      meta.append_g_zero: { type: exact, size: 8, full_size: 8 }
+      hdr.cntrl.$valid: { type: exact, size: 1, full_size: 1 }
+    row: 6
+    bus: 0
+    column: [ 2, 3, 4, 5 ]
+    stash: 
+      row: [ 6 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [0, 0, 0x0, [6, 2]]
+      - [0, 1, 0x0, [6, 3]]
+      - [0, 2, 0x0, [6, 4]]
+      - [0, 3, 0x0, [6, 5]]
+    input_xbar:
+      exact group 0: { 24: meta.ring_process(8..15), 32: meta.ring_process(0..7), 40: meta.append_g_zero, 50: hdr.cntrl.$valid }
+      hash 0:
+        0: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.ring_process(0)
+        1..8: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.append_g_zero
+        9: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ hdr.cntrl.$valid
+        11: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.ring_process(0)
+        12..19: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.append_g_zero
+        10: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ hdr.cntrl.$valid
+        22: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.ring_process(0)
+        23..29: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.append_g_zero(0..6)
+        20: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.append_g_zero(7)
+        21: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ hdr.cntrl.$valid
+        33: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.ring_process(0)
+        34..39: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.append_g_zero(0..5)
+        30..31: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ meta.append_g_zero(6..7)
+        32: random(meta.ring_process(8..15), meta.ring_process(1..7)) ^ hdr.cntrl.$valid
+      hash group 0:
+        table: [0]
+        seed: 0xc334c7c43
+    format: { action(0): 0..1, version(0): 112..115, meter_addr(0): 2..11, meter_pfe(0): 12..12, meter_type(0): 13..15, match(0): [41..47, 32..39 ] }
+    match: [ meta.ring_process(1..7), meta.ring_process(8..15) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  fill_cntrl_pkt_it_1 ]
+    miss:  fill_cntrl_pkt_it_1
+    action_bus: { 96..99 : cntrl_local_seq_1$salu.MyIngress1.local_seq_no(0..31) }
+    stateful: cntrl_local_seq_1$salu.MyIngress1.local_seq_no(meter_addr, meter_pfe, meter_type)
+    instruction: cntrl_local_seq_1(action, $DEFAULT)
+    actions:
+      MyIngress1.read_local(0, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000008
+      - next_table: 0
+      - set meta.local_seq_no, cntrl_local_seq_1$salu.MyIngress1.local_seq_no
+      - cntrl_local_seq_1$salu.MyIngress1.local_seq_no(read_local_seq_no_1, 0)
+      MyIngress1.write_local(1, 4):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000009
+      - next_table: 0
+      - set meta.local_seq_no, cntrl_local_seq_1$salu.MyIngress1.local_seq_no
+      - cntrl_local_seq_1$salu.MyIngress1.local_seq_no(write_local_seq_no_1, 0)
+      NoAction(2, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000000a
+      - next_table: 0
+    default_action: NoAction
+  stateful cntrl_local_seq_1$salu.MyIngress1.local_seq_no:
+    p4: { name: MyIngress1.local_seq_no, size: 1 }
+    row: 7
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 7
+    format: { lo: 32 }
+    actions:
+      read_local_seq_no_1:
+      - alu_a lo, 0
+      - output mem_lo
+      write_local_seq_no_1:
+      - add lo, lo, 1
+      - output alu_lo
+  exact_match fill_cntrl_pkt_it_1 3:
+    p4: { name: MyIngress1.fill_cntrl_pkt_it, size: 1024 }
+    p4_param_order: 
+      meta.ring_process: { type: exact, size: 16, full_size: 16 }
+      hdr.cntrl.$valid: { type: exact, size: 1, full_size: 1 }
+      meta.update_iteration: { type: exact, size: 8, full_size: 8 }
+    row: 7
+    bus: 0
+    column: [ 2, 3, 4, 5 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [1, 0, 0x0, [7, 2]]
+      - [1, 1, 0x0, [7, 3]]
+      - [1, 2, 0x0, [7, 4]]
+      - [1, 3, 0x0, [7, 5]]
+    input_xbar:
+      exact group 0: { 64: meta.ring_process, 82: hdr.cntrl.$valid, 88: meta.update_iteration }
+      hash 1:
+        0: random(meta.ring_process(1..15)) ^ meta.ring_process(0)
+        1: random(meta.ring_process(1..15)) ^ hdr.cntrl.$valid
+        2..9: random(meta.ring_process(1..15)) ^ meta.update_iteration
+        11: random(meta.ring_process(1..15)) ^ meta.ring_process(0)
+        12: random(meta.ring_process(1..15)) ^ hdr.cntrl.$valid
+        13..19: random(meta.ring_process(1..15)) ^ meta.update_iteration(0..6)
+        10: random(meta.ring_process(1..15)) ^ meta.update_iteration(7)
+        22: random(meta.ring_process(1..15)) ^ meta.ring_process(0)
+        23: random(meta.ring_process(1..15)) ^ hdr.cntrl.$valid
+        24..29: random(meta.ring_process(1..15)) ^ meta.update_iteration(0..5)
+        20..21: random(meta.ring_process(1..15)) ^ meta.update_iteration(6..7)
+        33: random(meta.ring_process(1..15)) ^ meta.ring_process(0)
+        34: random(meta.ring_process(1..15)) ^ hdr.cntrl.$valid
+        35..39: random(meta.ring_process(1..15)) ^ meta.update_iteration(0..4)
+        30..32: random(meta.ring_process(1..15)) ^ meta.update_iteration(5..7)
+      hash group 1:
+        table: [1]
+        seed: 0xc145a00840
+    format: { action(0): 0..2, version(0): 112..115, meter_addr(0): 3..12, meter_pfe(0): 13..13, meter_type(0): 14..16, match(0): [41..47, 32..39 ] }
+    match: [ meta.ring_process(1..7), meta.ring_process(8..15) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  tbl_full_test1831 ]
+    miss:  tbl_full_test1831
+    action_bus: { 32..33 : fill_cntrl_pkt_it_1$salu.MyIngress1.cntrl_pkt_it(0..15) }
+    stateful: fill_cntrl_pkt_it_1$salu.MyIngress1.cntrl_pkt_it(meter_addr, meter_pfe, meter_type)
+    instruction: fill_cntrl_pkt_it_1(action, $DEFAULT)
+    actions:
+      MyIngress1.get_it(0, 5):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000000c
+      - next_table: 0
+      - set meta.cntrl_pkt_it, fill_cntrl_pkt_it_1$salu.MyIngress1.cntrl_pkt_it
+      - fill_cntrl_pkt_it_1$salu.MyIngress1.cntrl_pkt_it(get_cntrl_pkt_it_1, 0)
+      MyIngress1.get_complete_it(1, 6):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000000d
+      - next_table: 0
+      - set meta.cntrl_pkt_it, fill_cntrl_pkt_it_1$salu.MyIngress1.cntrl_pkt_it
+      - fill_cntrl_pkt_it_1$salu.MyIngress1.cntrl_pkt_it(latest_complete_cntrl_pkt_it_1, 0)
+      MyIngress1.update_it(2, 8):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000000e
+      - next_table: 0
+      - set meta.cntrl_pkt_it, fill_cntrl_pkt_it_1$salu.MyIngress1.cntrl_pkt_it
+      - fill_cntrl_pkt_it_1$salu.MyIngress1.cntrl_pkt_it(update_cntrl_pkt_it_1, 0)
+      MyIngress1.get_append_it(3, 10):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000000f
+      - next_table: 0
+      - set meta.cntrl_pkt_it, hdr.append.cntrl_pkt_it
+      NoAction(4, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000010
+      - next_table: 0
+    default_action: NoAction
+  stateful fill_cntrl_pkt_it_1$salu.MyIngress1.cntrl_pkt_it:
+    p4: { name: MyIngress1.cntrl_pkt_it, size: 1 }
+    row: 11
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 11
+    format: { lo: 16 }
+    actions:
+      get_cntrl_pkt_it_1:
+      - output mem_lo
+      latest_complete_cntrl_pkt_it_1:
+      - equ lo, lo
+      - alu_a cmplo, hi, 65534
+      - add !cmplo, hi, lo, 65535
+      - output cmplo | !cmplo, alu_hi
+      update_cntrl_pkt_it_1:
+      - equ lo, lo, -65534
+      - alu_a cmplo, lo, 0
+      - add !cmplo, lo, lo, 1
+      - output mem_lo
+  ternary_match tbl_full_test1831 4:
+    p4: { name: tbl_full_test1831, hidden: true }
+    gateway:
+      name: cond-107
+      input_xbar:
+        exact group 0: { 40: meta.append_g_zero, 64: meta.ring_process }
+      row: 6
+      bus: 0
+      unit: 0
+      match: { 0: meta.ring_process(0..7), 8: meta.ring_process(8..15), 16: meta.append_g_zero }
+      0x000860: run_table
+      miss:  tbl_full_test1833
+      condition: 
+        expression: "(meta.ring_process == 2144 && meta.append_g_zero == 0)"
+        true:  tbl_full_test1831
+        false:  tbl_full_test1833
+    hit: [  append_first_tbl_1 ]
+    miss:  append_first_tbl_1
+    indirect: tbl_full_test1831$tind
+  ternary_indirect tbl_full_test1831$tind:
+    row: 0
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1831$tind(action, $DEFAULT)
+    actions:
+      full_test1831(1, 7):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000011
+      - next_table: 0
+      - set meta.cntrl_pkt_it_idx, hdr.append.cntrl_pkt_it
+    default_action: full_test1831
+stage 2 ingress:
+  dependency: match
+  ternary_match tbl_full_test1833 0:
+    p4: { name: tbl_full_test1833, hidden: true }
+    hit: [  append_first_tbl_1 ]
+    miss:  append_first_tbl_1
+    indirect: tbl_full_test1833$tind
+  ternary_indirect tbl_full_test1833$tind:
+    row: 4
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1833$tind(action, $DEFAULT)
+    actions:
+      full_test1833(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000012
+      - next_table: 0
+      - set meta.cntrl_pkt_it_idx, meta.cntrl_pkt_it
+    default_action: full_test1833
+  exact_match append_first_tbl_1 1:
+    p4: { name: MyIngress1.append_first_tbl, size: 1024 }
+    p4_param_order: 
+      meta.ring_process: { type: exact, size: 16, full_size: 16 }
+      meta.append_g_zero: { type: exact, size: 8, full_size: 8 }
+    row: 7
+    bus: 0
+    column: [ 2, 3, 4, 5 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [0, 0, 0x0, [7, 2]]
+      - [0, 1, 0x0, [7, 3]]
+      - [0, 2, 0x0, [7, 4]]
+      - [0, 3, 0x0, [7, 5]]
+    input_xbar:
+      exact group 0: { 0: meta.ring_process, 16: meta.append_g_zero }
+      hash 0:
+        0..1: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        2..9: random(meta.ring_process(2..15)) ^ meta.append_g_zero
+        11..12: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        13..19: random(meta.ring_process(2..15)) ^ meta.append_g_zero(0..6)
+        10: random(meta.ring_process(2..15)) ^ meta.append_g_zero(7)
+        22..23: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        24..29: random(meta.ring_process(2..15)) ^ meta.append_g_zero(0..5)
+        20..21: random(meta.ring_process(2..15)) ^ meta.append_g_zero(6..7)
+        33..34: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        35..39: random(meta.ring_process(2..15)) ^ meta.append_g_zero(0..4)
+        30..32: random(meta.ring_process(2..15)) ^ meta.append_g_zero(5..7)
+      hash group 0:
+        table: [0]
+        seed: 0xd63bec7d4f
+    format: { action(0): 0..2, version(0): 112..115, match(0): [42..47, 32..39 ] }
+    match: [ meta.ring_process(2..7), meta.ring_process(8..15) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  tbl_full_test1862 ]
+    miss:  tbl_full_test1862
+    instruction: append_first_tbl_1(action, $DEFAULT)
+    actions:
+      MyIngress1.get_local_idx(0, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000013
+      - next_table: 0
+      - set hdr.append.cntrl_pkt_it, meta.cntrl_pkt_it
+      - set hdr.append.g_idx, meta.local_seq_no
+      - set meta.recirc_port_type, 1
+      - set meta.port_idx, 0
+      - set meta.assign_sn, 0
+      MyIngress1.wait_append(1, 4):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000014
+      - next_table: 0
+      - set hdr.ring_type.end_ts.0-31, ig_intr_md.ingress_mac_tstamp.0-31
+      - set hdr.ring_type.end_ts.32-47, ig_intr_md.ingress_mac_tstamp.32-47
+      - set meta.recirc_port_type, 2
+      - set meta.port_idx, 0
+      - set meta.assign_sn, 0
+      MyIngress1.wait_ack_append(2, 6):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000015
+      - next_table: 0
+      - set meta.recirc_port_type, 2
+      - set meta.port_idx, 0
+      - set meta.assign_sn, 0
+      MyIngress1.wait_to_seq(3, 8):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000016
+      - next_table: 0
+      - set meta.recirc_port_type, 1
+      - set meta.port_idx, 0
+      - set meta.assign_sn, 0
+      MyIngress1.get_read_resp(4, 10):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000017
+      - next_table: 0
+      - set meta.dst_addr, hdr.ipv4.dst
+      - set meta.port_idx, 0
+      - set meta.assign_sn, 0
+      NoAction(5, 12):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000018
+      - next_table: 0
+      - set meta.port_idx, 0
+      - set meta.assign_sn, 0
+    default_action: NoAction
+  ternary_match tbl_full_test1862 3:
+    p4: { name: tbl_full_test1862, hidden: true }
+    gateway:
+      name: cond-112
+      input_xbar:
+        exact group 0: { 37: hdr.trigger_view.$valid }
+      row: 2
+      bus: 0
+      unit: 0
+      match: { 5: hdr.trigger_view.$valid }
+      0b**1: run_table
+      miss:  tbl_full_test1873
+      condition: 
+        expression: "(hdr.trigger_view.$valid == 1)"
+        true:  tbl_full_test1862
+        false:  tbl_full_test1873
+    hit: [  tbl_full_test1864 ]
+    miss:  tbl_full_test1864
+    indirect: tbl_full_test1862$tind
+  ternary_indirect tbl_full_test1862$tind:
+    row: 3
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1862$tind(action, $DEFAULT)
+    actions:
+      full_test1862(1, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000030
+      - next_table: 0
+      - set meta.view_hops, 1
+    default_action: full_test1862
+  ternary_match tbl_full_test1873 4:
+    p4: { name: tbl_full_test1873, hidden: true }
+    gateway:
+      name: cond-115
+      input_xbar:
+        exact group 0: { 38: hdr.finalize_view.$valid }
+      row: 7
+      bus: 0
+      unit: 0
+      match: { 6: hdr.finalize_view.$valid }
+      0b*1: run_table
+      miss:  process_gsn_1
+      condition: 
+        expression: "(hdr.finalize_view.$valid == 1)"
+        true:  tbl_full_test1873
+        false:  process_gsn_1
+    hit: [  tbl_full_test1876 ]
+    miss:  tbl_full_test1876
+    indirect: tbl_full_test1873$tind
+  ternary_indirect tbl_full_test1873$tind:
+    row: 3
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test1873$tind(action, $DEFAULT)
+    actions:
+      full_test1873(1, 5):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000035
+      - next_table: 0
+      - set meta.view_hops, 1
+    default_action: full_test1873
+  ternary_match tbl_full_test1876 5:
+    p4: { name: tbl_full_test1876, hidden: true }
+    gateway:
+      name: cond-116
+      input_xbar:
+        exact group 0: { 40: meta.switch_id, 48: hdr.finalize_view.hops, 56: hdr.finalize_view.view_member_switch_id }
+      row: 1
+      bus: 1
+      unit: 1
+      match: { 0: hdr.finalize_view.view_member_switch_id, 8: hdr.finalize_view.hops }
+      xor: { 0: meta.switch_id }
+      0x**00:  tbl_full_test1879
+      0x00**: run_table
+      miss:  tbl_full_test1879
+      condition: 
+        expression: "(hdr.finalize_view.view_member_switch_id != meta.switch_id && hdr.finalize_view.hops == 0)"
+        true:  tbl_full_test1876
+        false:  tbl_full_test1879
+    hit: [  process_gsn_1 ]
+    miss:  process_gsn_1
+    indirect: tbl_full_test1876$tind
+  ternary_indirect tbl_full_test1876$tind:
+    row: 2
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1876$tind(action, $DEFAULT)
+    actions:
+      full_test1876(1, 7):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000038
+      - next_table: 0
+      - set meta.next_hop, hdr.finalize_view.view_member_switch_id
+      - add hdr.finalize_view.hops, hdr.finalize_view.hops, 1
+    default_action: full_test1876
+  ternary_match tbl_full_test1879 9:
+    p4: { name: tbl_full_test1879, hidden: true }
+    gateway:
+      name: cond-117
+      input_xbar:
+        exact group 0: { 40: meta.switch_id, 64: hdr.finalize_view.leader_switch_id }
+      row: 0
+      bus: 0
+      unit: 0
+      match: { 0: hdr.finalize_view.leader_switch_id }
+      xor: { 0: meta.switch_id }
+      0x00:  tbl_full_test1881
+      miss: run_table
+      condition: 
+        expression: "(hdr.finalize_view.leader_switch_id != meta.switch_id)"
+        true:  tbl_full_test1879
+        false:  tbl_full_test1881
+    hit: [  process_gsn_1 ]
+    miss:  process_gsn_1
+    indirect: tbl_full_test1879$tind
+  ternary_indirect tbl_full_test1879$tind:
+    row: 0
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1879$tind(action, $DEFAULT)
+    actions:
+      full_test1879(1, 14):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000037
+      - next_table: 0
+      - set meta.next_hop, hdr.finalize_view.leader_switch_id
+    default_action: full_test1879
+  ternary_match tbl_full_test1881 10:
+    p4: { name: tbl_full_test1881, hidden: true }
+    hit: [  process_gsn_1 ]
+    miss:  process_gsn_1
+    indirect: tbl_full_test1881$tind
+  ternary_indirect tbl_full_test1881$tind:
+    row: 0
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test1881$tind(action, $DEFAULT)
+    actions:
+      full_test1881(0, 16):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000036
+      - next_table: 0
+      - set meta.next_hop, meta.switch_id
+    default_action: full_test1881
+  ternary_match tbl_full_test1864 6:
+    p4: { name: tbl_full_test1864, hidden: true }
+    gateway:
+      name: cond-113
+      input_xbar:
+        exact group 0: { 40: meta.switch_id, 48: hdr.trigger_view.hops, 56: hdr.trigger_view.view_member_switch_id }
+      row: 1
+      bus: 0
+      unit: 0
+      match: { 0: hdr.trigger_view.view_member_switch_id, 8: hdr.trigger_view.hops }
+      xor: { 0: meta.switch_id }
+      0x**00:  tbl_full_test1867
+      0x00**: run_table
+      miss:  tbl_full_test1867
+      condition: 
+        expression: "(hdr.trigger_view.view_member_switch_id != meta.switch_id && hdr.trigger_view.hops == 0)"
+        true:  tbl_full_test1864
+        false:  tbl_full_test1867
+    hit: [  tbl_full_test1871 ]
+    miss:  tbl_full_test1871
+    indirect: tbl_full_test1864$tind
+  ternary_indirect tbl_full_test1864$tind:
+    row: 2
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test1864$tind(action, $DEFAULT)
+    actions:
+      full_test1864(1, 9):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000033
+      - next_table: 0
+      - set meta.next_hop, hdr.trigger_view.view_member_switch_id
+    default_action: full_test1864
+  ternary_match tbl_full_test1867 7:
+    p4: { name: tbl_full_test1867, hidden: true }
+    gateway:
+      name: cond-114
+      input_xbar:
+        exact group 0: { 40: meta.switch_id, 64: hdr.trigger_view.leader_switch_id }
+      row: 0
+      bus: 1
+      unit: 1
+      match: { 0: hdr.trigger_view.leader_switch_id }
+      xor: { 0: meta.switch_id }
+      0x00:  tbl_full_test1869
+      miss: run_table
+      condition: 
+        expression: "(hdr.trigger_view.leader_switch_id != meta.switch_id)"
+        true:  tbl_full_test1867
+        false:  tbl_full_test1869
+    hit: [  tbl_full_test1871 ]
+    miss:  tbl_full_test1871
+    indirect: tbl_full_test1867$tind
+  ternary_indirect tbl_full_test1867$tind:
+    row: 1
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1867$tind(action, $DEFAULT)
+    actions:
+      full_test1867(1, 11):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000032
+      - next_table: 0
+      - set meta.next_hop, hdr.trigger_view.leader_switch_id
+    default_action: full_test1867
+  ternary_match tbl_full_test1869 8:
+    p4: { name: tbl_full_test1869, hidden: true }
+    hit: [  tbl_full_test1871 ]
+    miss:  tbl_full_test1871
+    indirect: tbl_full_test1869$tind
+  ternary_indirect tbl_full_test1869$tind:
+    row: 1
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test1869$tind(action, $DEFAULT)
+    actions:
+      full_test1869(0, 13):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000031
+      - next_table: 0
+      - set meta.next_hop, meta.switch_id
+    default_action: full_test1869
+  ternary_match tbl_full_test1871 11:
+    p4: { name: tbl_full_test1871, hidden: true }
+    hit: [  process_gsn_1 ]
+    miss:  process_gsn_1
+    indirect: tbl_full_test1871$tind
+  ternary_indirect tbl_full_test1871$tind:
+    row: 5
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test1871$tind(action, $DEFAULT)
+    actions:
+      full_test1871(0, 15):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000034
+      - next_table: 0
+      - add hdr.trigger_view.hops, hdr.trigger_view.hops, 1
+    default_action: full_test1871
+stage 3 ingress:
+  dependency: match
+  exact_match process_gsn_1 0:
+    p4: { name: MyIngress1.process_gsn, size: 1024 }
+    p4_param_order: 
+      meta.ring_process: { type: exact, size: 16, full_size: 16 }
+      meta.append_g_zero: { type: exact, size: 8, full_size: 8 }
+      hdr.cntrl.$valid: { type: exact, size: 1, full_size: 1 }
+    row: 7
+    bus: 0
+    column: [ 2, 3, 4, 5 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [0, 0, 0x0, [7, 2]]
+      - [0, 1, 0x0, [7, 3]]
+      - [0, 2, 0x0, [7, 4]]
+      - [0, 3, 0x0, [7, 5]]
+    hash_dist:
+      0: { hash: 1, mask: 0xffff, shift: 5 }
+    input_xbar:
+      exact group 0: { 0: meta.ring_process, 18: hdr.cntrl.$valid, 24: meta.append_g_zero }
+      hash 0:
+        0: random(meta.ring_process(1..15)) ^ meta.ring_process(0)
+        1: random(meta.ring_process(1..15)) ^ hdr.cntrl.$valid
+        2..9: random(meta.ring_process(1..15)) ^ meta.append_g_zero
+        11: random(meta.ring_process(1..15)) ^ meta.ring_process(0)
+        12: random(meta.ring_process(1..15)) ^ hdr.cntrl.$valid
+        13..19: random(meta.ring_process(1..15)) ^ meta.append_g_zero(0..6)
+        10: random(meta.ring_process(1..15)) ^ meta.append_g_zero(7)
+        22: random(meta.ring_process(1..15)) ^ meta.ring_process(0)
+        23: random(meta.ring_process(1..15)) ^ hdr.cntrl.$valid
+        24..29: random(meta.ring_process(1..15)) ^ meta.append_g_zero(0..5)
+        20..21: random(meta.ring_process(1..15)) ^ meta.append_g_zero(6..7)
+        33: random(meta.ring_process(1..15)) ^ meta.ring_process(0)
+        34: random(meta.ring_process(1..15)) ^ hdr.cntrl.$valid
+        35..39: random(meta.ring_process(1..15)) ^ meta.append_g_zero(0..4)
+        30..32: random(meta.ring_process(1..15)) ^ meta.append_g_zero(5..7)
+      hash group 0:
+        table: [0]
+        seed: 0xfc6a2658e4
+      exact group 0: { 96: meta.cntrl_pkt_it_idx }
+      hash 1:
+        0..15: meta.cntrl_pkt_it_idx
+      hash group 1:
+        table: [1]
+        seed: 0x0
+    format: { action(0): 0..2, version(0): 112..115, meter_pfe(0): 3..3, meter_type(0): 4..6, match(0): [41..47, 32..39 ] }
+    match: [ meta.ring_process(1..7), meta.ring_process(8..15) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  tbl_full_test1841 ]
+    miss:  tbl_full_test1841
+    action_bus: { 0 : process_gsn_1$salu.MyIngress1.map_from_gsn(0..7), 96..99 : process_gsn_1$salu.MyIngress1.map_from_gsn(0..31) }
+    stateful: process_gsn_1$salu.MyIngress1.map_from_gsn(hash_dist 0, meter_pfe, meter_type)
+    instruction: process_gsn_1(action, $DEFAULT)
+    actions:
+      MyIngress1.get_ack_readiness(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000019
+      - next_table: 0
+      - set meta.ready_for_ack, process_gsn_1$salu.MyIngress1.map_from_gsn(0..0)
+      - process_gsn_1$salu.MyIngress1.map_from_gsn(compare_gsn_1, $hash_dist)
+      MyIngress1.make_gsn_zero(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000001a
+      - next_table: 0
+      - process_gsn_1$salu.MyIngress1.map_from_gsn(zero_gsn_1, $hash_dist)
+      MyIngress1.assign_gsn(2, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000001b
+      - next_table: 0
+      - set meta.assign_sn, process_gsn_1$salu.MyIngress1.map_from_gsn
+      - process_gsn_1$salu.MyIngress1.map_from_gsn(get_gsn_1, $hash_dist)
+      MyIngress1.update_gsn(3, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000001c
+      - next_table: 0
+      - process_gsn_1$salu.MyIngress1.map_from_gsn(add_gsn_1, $hash_dist)
+      NoAction(4, 4):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000001d
+      - next_table: 0
+    default_action: NoAction
+  stateful process_gsn_1$salu.MyIngress1.map_from_gsn:
+    p4: { name: MyIngress1.map_from_gsn, size: 65535 }
+    row: [ 15, 13, 11, 9 ]
+    logical_bus: [ S, O, O, O ]
+    column:
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 2, 3, 4, 5 ]
+    - 0
+    maprams: 
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 2, 3, 4, 5 ]
+    - 0
+    home_row: 15
+    input_xbar:
+      exact group 0: { 64: meta.global_seq_no }
+    format: { lo: 32 }
+    actions:
+      compare_gsn_1:
+      - lss.u lo, phv_lo, -lo
+      - equ hi, phv_lo, -lo
+      - alu_a cmplo | cmphi, hi, 1
+      - output cmplo | cmphi, alu_hi
+      zero_gsn_1:
+      - alu_a lo, 0
+      get_gsn_1:
+      - output mem_lo
+      add_gsn_1:
+      - alu_a lo, phv_lo
+  ternary_match tbl_full_test1841 1:
+    p4: { name: tbl_full_test1841, hidden: true }
+    gateway:
+      name: cond-108
+      input_xbar:
+        exact group 1: { 0: meta.local_seq_no, 34: hdr.cntrl.$valid }
+        hash 2:
+          40: hdr.cntrl.$valid
+        hash group 0:
+          table: [2]
+          seed: 0x0
+      row: 0
+      bus: 0
+      unit: 0
+      match: { 32: hdr.cntrl.$valid, 0: meta.local_seq_no(0..7), 8: meta.local_seq_no(8..15), 16: meta.local_seq_no(16..23), 24: meta.local_seq_no(24..31) }
+      0x0********:  tbl_full_test1850
+      0b*00000000000000000000000000000000:  tbl_full_test1850
+      miss: run_table
+      condition: 
+        expression: "(hdr.cntrl.$valid == 1 && meta.local_seq_no != 0)"
+        true:  tbl_full_test1841
+        false:  tbl_full_test1850
+    hit: [  tbl_full_test1844 ]
+    miss:  tbl_full_test1844
+    indirect: tbl_full_test1841$tind
+  ternary_indirect tbl_full_test1841$tind:
+    row: 1
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1841$tind(action, $DEFAULT)
+    actions:
+      full_test1841(1, 5):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000026
+      - next_table: 0
+      - add hdr.cntrl.global_seq_no, meta.global_seq_no, meta.local_seq_no
+      - set meta.batch_size, meta.local_seq_no
+    default_action: full_test1841
+  ternary_match tbl_full_test1844 5:
+    p4: { name: tbl_full_test1844, hidden: true }
+    hit: [  tbl_full_test1843 ]
+    miss:  tbl_full_test1843
+    indirect: tbl_full_test1844$tind
+  ternary_indirect tbl_full_test1844$tind:
+    row: 2
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10 }
+    instruction: tbl_full_test1844$tind(action, $DEFAULT)
+    actions:
+      full_test1844(0, 6):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000028
+      - next_table: 0
+      - set MyIngress1.active_batches$index(0..0), 0
+    default_action: full_test1844
+stage 4 ingress:
+  dependency: match
+  ternary_match tbl_full_test1850 0:
+    p4: { name: tbl_full_test1850, hidden: true }
+    gateway:
+      name: cond-109
+      input_xbar:
+        exact group 0: { 0: meta.cntrl_pkt_it, 16: meta.ring_process, 32: hdr.append.cntrl_pkt_it }
+      row: 2
+      bus: 0
+      unit: 0
+      match: { 0: hdr.append.cntrl_pkt_it(0..7), 8: hdr.append.cntrl_pkt_it(8..15), 16: meta.ring_process(0..7), 24: meta.ring_process(8..15) }
+      xor: { 0: meta.cntrl_pkt_it(0..7), 8: meta.cntrl_pkt_it(8..15) }
+      0x****0000:  tbl_full_test1859
+      0x0860****: run_table
+      miss:  tbl_full_test1859
+      condition: 
+        expression: "(meta.ring_process == 2144 && hdr.append.cntrl_pkt_it != meta.cntrl_pkt_it)"
+        true:  tbl_full_test1850
+        false:  tbl_full_test1859
+    hit: [  tbl_full_test1846 ]
+    miss:  tbl_full_test1846
+    indirect: tbl_full_test1850$tind
+  ternary_indirect tbl_full_test1850$tind:
+    row: 2
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1850$tind(action, $DEFAULT)
+    actions:
+      full_test1850(1, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000020
+      - next_table: 0
+      - add hdr.append.g_idx, hdr.append.g_idx, meta.assign_sn
+    default_action: full_test1850
+  hash_action tbl_full_test1846 1:
+    p4: { name: tbl_full_test1846, hidden: true }
+    row: 0
+    result_bus: 1
+    hash_dist:
+      0: { hash: 0, mask: 0xffff, shift: 5 }
+    input_xbar:
+      exact group 0: { 32: hdr.append.cntrl_pkt_it }
+      hash 0:
+        0..15: hdr.append.cntrl_pkt_it
+      hash group 0:
+        table: [0]
+        seed: 0x0
+    gateway:
+      name: tbl_full_test1846-gateway
+      row: 3
+      bus: 0
+      unit: 1
+      0x0:  append_second_tbl_1
+      miss:  append_second_tbl_1
+      condition: 
+        expression: "true(always hit)"
+        true:  append_second_tbl_1
+        false:  append_second_tbl_1
+    next: []
+    action_bus: { 96..99 : tbl_full_test1843$salu.MyIngress1.map_from_batch_sz(0..31) }
+    stateful: tbl_full_test1843$salu.MyIngress1.map_from_batch_sz(hash_dist 0, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test1846($DEFAULT, $DEFAULT)
+    actions:
+      full_test1846(0, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000001e
+      - next_table: 0
+      - set cnt_1, tbl_full_test1843$salu.MyIngress1.map_from_batch_sz
+      - tbl_full_test1843$salu.MyIngress1.map_from_batch_sz(update_batch_sz_1, $hash_dist)
+    default_action: full_test1846
+  hash_action tbl_full_test1843 2:
+    p4: { name: tbl_full_test1843, hidden: true }
+    row: 0
+    result_bus: 0
+    hash_dist:
+      1: { hash: 0, mask: 0xffff, shift: 5 }
+    input_xbar:
+      exact group 0: { 0: meta.cntrl_pkt_it }
+      hash 0:
+        16..31: meta.cntrl_pkt_it
+      hash group 0:
+        table: [0]
+        seed: 0x0
+    gateway:
+      name: tbl_full_test1843-gateway
+      row: 3
+      bus: 0
+      unit: 0
+      0x0:  tbl_full_test1844$st1
+      miss:  tbl_full_test1844$st1
+      condition: 
+        expression: "true(always hit)"
+        true:  tbl_full_test1844$st1
+        false:  tbl_full_test1844$st1
+    next: []
+    stateful: tbl_full_test1843$salu.MyIngress1.map_from_batch_sz(hash_dist 1, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test1843($DEFAULT, $DEFAULT)
+    actions:
+      full_test1843(0, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000027
+      - next_table: 0
+      - tbl_full_test1843$salu.MyIngress1.map_from_batch_sz(set_batch_sz_1, $hash_dist)
+    default_action: full_test1843
+  stateful tbl_full_test1843$salu.MyIngress1.map_from_batch_sz:
+    p4: { name: MyIngress1.map_from_batch_sz, size: 65535 }
+    row: [ 15, 13, 11, 9 ]
+    logical_bus: [ S, O, O, O ]
+    column:
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 2, 3, 4, 5 ]
+    - 0
+    maprams: 
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 2, 3, 4, 5 ]
+    - 0
+    home_row: 15
+    input_xbar:
+      exact group 0: { 64: meta.batch_size }
+    format: { lo: 32 }
+    actions:
+      set_batch_sz_1:
+      - alu_a lo, phv_lo
+      update_batch_sz_1:
+      - add lo, lo, 4294967295
+      - output alu_lo
+stage 5 ingress:
+  dependency: match
+  exact_match append_second_tbl_1 0:
+    p4: { name: MyIngress1.append_second_tbl, size: 1024 }
+    p4_param_order: 
+      hdr.append.exp_type: { type: exact, size: 16, full_size: 16 }
+    row: [ 7, 6 ]
+    bus: [ 1, 0 ]
+    column:
+    - [ 6, 7 ]
+    - [ 2, 3 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 6 ]
+      unit: [ 1 ]
+    ways:
+      - [0, 0, 0x0, [7, 6]]
+      - [0, 1, 0x0, [7, 7]]
+      - [0, 2, 0x0, [6, 2]]
+      - [0, 3, 0x0, [6, 3]]
+    input_xbar:
+      exact group 0: { 0: hdr.append.exp_type.0-7, 8: hdr.append.exp_type.8-15 }
+      hash 0:
+        0..7: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.0-7
+        8..9: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.8-15(0..1)
+        11..18: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.0-7
+        19: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.8-15(0)
+        10: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.8-15(1)
+        22..29: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.0-7
+        20..21: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.8-15(0..1)
+        33..39: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.0-7(0..6)
+        30: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.0-7(7)
+        31..32: random(hdr.append.exp_type.8-15(2..7)) ^ hdr.append.exp_type.8-15(0..1)
+      hash group 0:
+        table: [0]
+        seed: 0x2963a1727d
+    format: { action(0): 0..2, version(0): 112..115, counter_addr(0): 3..12, counter_pfe(0): 13..13, match(0): 34..39 }
+    match: [ hdr.append.exp_type.8-15(2..7) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  tbl_full_test1848 ]
+    miss:  tbl_full_test1848
+    stats: append_second_tbl_1$stats.MyIngress1.seq_only_packet_counter(counter_addr, counter_pfe)
+    instruction: append_second_tbl_1(action, $DEFAULT)
+    actions:
+      MyIngress1.exp_type_one(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000021
+      - next_table: 0
+      - set ig_intr_md_for_dprsr.drop_ctl, 1
+      - append_second_tbl_1$stats.MyIngress1.seq_only_packet_counter(0)
+      MyIngress1.exp_type_two(1, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000022
+      - next_table: 0
+      - set hdr.ring_type.start_ts.0-31, ig_intr_md.ingress_mac_tstamp.0-31
+      - set hdr.ring_type.start_ts.32-47, ig_intr_md.ingress_mac_tstamp.32-47
+      - set hdr.ring_type.end_ts.0-31, ig_intr_md.ingress_mac_tstamp.0-31
+      - set hdr.ring_type.end_ts.32-47, ig_intr_md.ingress_mac_tstamp.32-47
+      - set hdr.ring_type.type, 2146
+      - set meta.recirc_port_type, 2
+      MyIngress1.regular_stream(2, 4):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000023
+      - next_table: 0
+      - set hdr.ring_type.shard_id, hdr.append.stream_id(0..15)
+      - set B3(3..5), 4
+      MyIngress1.regular_idx(3, 6):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000024
+      - next_table: 0
+      - set hdr.ring_type.shard_id, hdr.append.g_idx(0..15)
+      - set B3(3..5), 4
+      NoAction(4, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000025
+      - next_table: 0
+    default_action: NoAction
+  counter append_second_tbl_1$stats.MyIngress1.seq_only_packet_counter:
+    p4: { name: MyIngress1.seq_only_packet_counter, size: 1 }
+    row: 13
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    vpns: [ 0, 1 ]
+    home_row: 13
+    count: packets
+    format: {packets(0): 96..127, packets(1): 64..95, packets(2): 32..63, packets(3): 0..31}
+    per_flow_enable: counter_pfe
+    lrt:
+    - { threshold: 23718048, interval: 268435200 }
+    - { threshold: 23718048, interval: 268435200 }
+    - { threshold: 23718048, interval: 268435200 }
+  ternary_match tbl_full_test1848 1:
+    p4: { name: tbl_full_test1848, hidden: true }
+    gateway:
+      name: cond-110
+      input_xbar:
+        exact group 0: { 16: cnt_1(16..31), 32: cnt_1(0..15) }
+      row: 7
+      bus: 1
+      unit: 0
+      match: { 0: cnt_1(0..7), 8: cnt_1(8..15), 16: cnt_1(16..23), 24: cnt_1(24..31) }
+      0x00000000: run_table
+      miss:  tbl_full_test1859
+      condition: 
+        expression: "(cnt_1 == 0)"
+        true:  tbl_full_test1848
+        false:  tbl_full_test1859
+    hit: [  tbl_full_test1859 ]
+    miss:  tbl_full_test1859
+    indirect: tbl_full_test1848$tind
+  ternary_indirect tbl_full_test1848$tind:
+    row: 1
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10, meter_pfe: 11..11, meter_type: 12..14 }
+    stateful: tbl_full_test1844$st1$salu.MyIngress1.active_batches(meter_addr, meter_pfe, meter_type)
+    instruction: tbl_full_test1848$tind(action, $DEFAULT)
+    actions:
+      full_test1848(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000001f
+      - next_table: 0
+      - tbl_full_test1844$st1$salu.MyIngress1.active_batches(sub_batch_1, 0)
+    default_action: full_test1848
+  hash_action tbl_full_test1844$st1 2:
+    row: 0
+    result_bus: 0
+    hash_dist:
+      0: { hash: 1, mask: 0x3ff, shift: 4 }
+    input_xbar:
+      exact group 0: { 64: MyIngress1.active_batches$index }
+      hash 1:
+        0..9: MyIngress1.active_batches$index
+      hash group 1:
+        table: [1]
+        seed: 0x0
+    gateway:
+      name: tbl_full_test1844-gateway
+      row: 0
+      bus: 0
+      unit: 0
+      0x0:  tbl_full_test1859
+      miss:  tbl_full_test1859
+      condition: 
+        expression: "true(always hit)"
+        true:  tbl_full_test1859
+        false:  tbl_full_test1859
+    next: []
+    stateful: tbl_full_test1844$st1$salu.MyIngress1.active_batches(hash_dist 0, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test1844$st1($DEFAULT, $DEFAULT)
+    actions:
+      full_test1844(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, reason: hit_path_only, is_constant: true }
+      - handle: 0x20000028
+      - next_table: 0
+      - tbl_full_test1844$st1$salu.MyIngress1.active_batches(add_batch_1, $hash_dist)
+    default_action: full_test1844
+  stateful tbl_full_test1844$st1$salu.MyIngress1.active_batches:
+    p4: { name: MyIngress1.active_batches, size: 1 }
+    row: 15
+    logical_bus: S
+    column: [ 2, 3 ]
+    maprams: [ 2, 3 ]
+    home_row: 15
+    format: { lo: 16 }
+    actions:
+      add_batch_1:
+      - add lo, lo, 1
+      sub_batch_1:
+      - add lo, lo, 65535
+  ternary_match tbl_full_test1859 3:
+    p4: { name: tbl_full_test1859, hidden: true }
+    gateway:
+      name: cond-111
+      input_xbar:
+        exact group 0: { 53: hdr.trigger_view.$valid }
+      row: 6
+      bus: 0
+      unit: 0
+      match: { 5: hdr.trigger_view.$valid }
+      0b**1: run_table
+      miss:  get_port_idx_1
+      condition: 
+        expression: "(hdr.trigger_view.$valid == 1)"
+        true:  tbl_full_test1859
+        false:  get_port_idx_1
+    hit: [  get_port_idx_1 ]
+    miss:  get_port_idx_1
+    indirect: tbl_full_test1859$tind
+  ternary_indirect tbl_full_test1859$tind:
+    row: 0
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1859$tind(action, $DEFAULT)
+    actions:
+      full_test1859(1, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000002f
+      - next_table: 0
+      - set hdr.trigger_view.highest_seen_seq_no, meta.assign_sn
+    default_action: full_test1859
+stage 6 ingress:
+  dependency: match
+  exact_match get_port_idx_1 0:
+    p4: { name: MyIngress1.get_port_idx, size: 4 }
+    p4_param_order: 
+      meta.recirc_port_type: { type: exact, size: 2, full_size: 2 }
+    row: 7
+    bus: 0
+    column: 2
+    stash: 
+      row: [ 7 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [0, 0, 0x0, [7, 2]]
+    input_xbar:
+      exact group 0: { 3: meta.recirc_port_type }
+      hash 0:
+        0..1: meta.recirc_port_type
+      hash group 0:
+        table: [0]
+        seed: 0x0
+    format: { action(0): 0..1, version(0): 112..115, meter_addr(0): 2..11, meter_pfe(0): 12..12, meter_type(0): 13..15 }
+    match_group_map: [ [ 0 ] ]
+    hit: [  tbl_full_test1888 ]
+    miss:  tbl_full_test1888
+    action_bus: { 0 : get_port_idx_1$salu.MyIngress1.recirc_port_idx(0..7) }
+    stateful: get_port_idx_1$salu.MyIngress1.recirc_port_idx(meter_addr, meter_pfe, meter_type)
+    instruction: get_port_idx_1(action, $DEFAULT)
+    actions:
+      MyIngress1.emulate_storage_ports(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000029
+      - next_table: 0
+      - set meta.port_idx, get_port_idx_1$salu.MyIngress1.recirc_port_idx
+      - get_port_idx_1$salu.MyIngress1.recirc_port_idx(get_storagerecirc_idx_1, 1)
+      MyIngress1.await_sequencing_ports(1, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000002a
+      - next_table: 0
+      - set meta.port_idx, get_port_idx_1$salu.MyIngress1.recirc_port_idx
+      - get_port_idx_1$salu.MyIngress1.recirc_port_idx(get_seqrecirc_idx_1, 0)
+      NoAction(2, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000002b
+      - next_table: 0
+    default_action: NoAction
+  stateful get_port_idx_1$salu.MyIngress1.recirc_port_idx:
+    p4: { name: MyIngress1.recirc_port_idx, size: 2 }
+    row: 11
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 11
+    input_xbar:
+      exact group 0: { 64: meta.num_wait_ports, 72: meta.num_recirc_ports }
+    format: { lo: 8 }
+    actions:
+      get_storagerecirc_idx_1:
+      - equ lo, lo, 1, -phv_lo
+      - alu_a cmplo, lo, 0
+      - add !cmplo, lo, lo, 1
+      - output !cmplo, alu_lo
+      get_seqrecirc_idx_1:
+      - equ lo, lo, 1, -phv_hi
+      - alu_a cmplo, lo, 0
+      - add !cmplo, lo, lo, 1
+      - output !cmplo, alu_lo
+  ternary_match tbl_full_test1888 1:
+    p4: { name: tbl_full_test1888, hidden: true }
+    gateway:
+      name: cond-118
+      input_xbar:
+        exact group 0: { 6: meta.ready_for_ack }
+      row: 7
+      bus: 0
+      unit: 0
+      match: { 6: meta.ready_for_ack }
+      0b*1: run_table
+      miss:  update_replicated_seq_no_1
+      condition: 
+        expression: "(meta.ready_for_ack == 1)"
+        true:  tbl_full_test1888
+        false:  update_replicated_seq_no_1
+    hit: [  tbl_full_test1891 ]
+    miss:  tbl_full_test1891
+    indirect: tbl_full_test1888$tind
+  stateful tbl_full_test1888$salu.MyIngress1.ack_idx:
+    p4: { name: MyIngress1.ack_idx, size: 1 }
+    row: 15
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 15
+    input_xbar:
+      exact group 1: { 64: hdr.append.g_idx }
+    format: { lo: 32 }
+    actions:
+      get_ack_idx_1:
+      - and hi, phv_lo, 65535
+      - output alu_hi
+  ternary_indirect tbl_full_test1888$tind:
+    row: 1
+    bus: 1
+    format: { action: 0..0, meter_addr: 1..10, meter_pfe: 11..11, meter_type: 12..14 }
+    action_bus: { 96..99 : tbl_full_test1888$salu.MyIngress1.ack_idx(0..31) }
+    stateful: tbl_full_test1888$salu.MyIngress1.ack_idx(meter_addr, meter_pfe, meter_type)
+    instruction: tbl_full_test1888$tind(action, $DEFAULT)
+    actions:
+      full_test1888(1, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000039
+      - next_table: 0
+      - set slot_1, tbl_full_test1888$salu.MyIngress1.ack_idx
+      - tbl_full_test1888$salu.MyIngress1.ack_idx(get_ack_idx_1, 0)
+    default_action: full_test1888
+  ternary_match tbl_full_test1891 2:
+    p4: { name: tbl_full_test1891, hidden: true }
+    hit: [  tbl_drop_0 ]
+    miss:  tbl_drop_0
+    indirect: tbl_full_test1891$tind
+  counter tbl_full_test1891$stats.MyIngress1.tot_packet_counter1:
+    p4: { name: MyIngress1.tot_packet_counter1, size: 1 }
+    row: 13
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    vpns: [ 0, 1 ]
+    home_row: 13
+    count: packets
+    format: {packets(0): 96..127, packets(1): 64..95, packets(2): 32..63, packets(3): 0..31}
+    lrt:
+    - { threshold: 23718048, interval: 268435200 }
+    - { threshold: 23718048, interval: 268435200 }
+    - { threshold: 23718048, interval: 268435200 }
+  ternary_indirect tbl_full_test1891$tind:
+    row: 1
+    bus: 0
+    format: { action: 0..0, counter_addr: 1..10 }
+    stats: tbl_full_test1891$stats.MyIngress1.tot_packet_counter1(counter_addr, $DEFAULT)
+    instruction: tbl_full_test1891$tind(action, $DEFAULT)
+    actions:
+      full_test1891(0, 4):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000003e
+      - next_table: 0
+      - sub meta.duration, hdr.ring_type.end_ts.0-31, hdr.append.start_ts.0-31
+      - set meta.overflow, 0
+      - tbl_full_test1891$stats.MyIngress1.tot_packet_counter1(0)
+    default_action: full_test1891
+  ternary_match tbl_drop_0 3:
+    p4: { name: tbl_drop_0, hidden: true }
+    gateway:
+      name: cond-119
+      input_xbar:
+        exact group 1: { 0: hdr.append.exp_type.0-7, 10: hdr.append.$valid, 16: hdr.append.exp_type.8-15 }
+      row: 0
+      bus: 0
+      unit: 0
+      match: { 18: hdr.append.$valid, 0: hdr.append.exp_type.0-7, 8: hdr.append.exp_type.8-15 }
+      0b*****1**0000000000000010: run_table
+      miss:  tbl_full_test1889
+      condition: 
+        expression: "(hdr.append.$valid == 1 && hdr.append.exp_type == 2)"
+        true:  tbl_drop_0
+        false:  tbl_full_test1889
+    hit: [  tbl_full_test1889 ]
+    miss:  tbl_full_test1889
+    indirect: tbl_drop_0$tind
+  ternary_indirect tbl_drop_0$tind:
+    row: 0
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_drop_0$tind(action, $DEFAULT)
+    actions:
+      MyIngress1.drop(1, 5):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000043
+      - next_table: 0
+      - set ig_intr_md_for_dprsr.drop_ctl, 1
+    default_action: MyIngress1.drop
+stage 7 ingress:
+  dependency: match
+  hash_action tbl_full_test1889 0:
+    p4: { name: tbl_full_test1889, hidden: true }
+    row: 0
+    result_bus: 0
+    hash_dist:
+      0: { hash: 0, mask: 0x7fffff, shift: 5, expand: 0 }
+    input_xbar:
+      exact group 0: { 0: slot_1 }
+      hash 0:
+        0..15: slot_1(0..15)
+        32..38: slot_1(16..22)
+      hash group 0:
+        table: [0]
+        seed: 0x0
+    gateway:
+      name: tbl_full_test1889-gateway
+      row: 1
+      bus: 0
+      unit: 1
+      0x0:  tbl_full_test1898
+      miss:  tbl_full_test1898
+      condition: 
+        expression: "true(always hit)"
+        true:  tbl_full_test1898
+        false:  tbl_full_test1898
+    next: []
+    action_bus: { 0 : tbl_full_test1889$salu.MyIngress1.ack_array(0..7) }
+    stateful: tbl_full_test1889$salu.MyIngress1.ack_array(hash_dist 0, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test1889($DEFAULT, $DEFAULT)
+    actions:
+      full_test1889(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000003a
+      - next_table: 0
+      - set meta.ack_ready, tbl_full_test1889$salu.MyIngress1.ack_array
+      - tbl_full_test1889$salu.MyIngress1.ack_array(check_ack_1, $hash_dist)
+    default_action: full_test1889
+  stateful tbl_full_test1889$salu.MyIngress1.ack_array:
+    p4: { name: MyIngress1.ack_array, size: 65536 }
+    row: [ 15, 13, 11, 9 ]
+    logical_bus: [ S, O, O, O ]
+    column:
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 2, 3, 4, 5 ]
+    - [ 2, 3, 4, 5 ]
+    - [ 0, 1, 2 ]
+    maprams: 
+    - [ 0, 1, 2, 3, 4, 5 ]
+    - [ 2, 3, 4, 5 ]
+    - [ 2, 3, 4, 5 ]
+    - [ 0, 1, 2 ]
+    home_row: 15
+    input_xbar:
+      exact group 0: { 64: meta.ack_threshold }
+    format: { lo: 32 }
+    actions:
+      check_ack_1:
+      - equ lo, lo, -phv_lo
+      - alu_a cmplo, lo, 0
+      - alu_a cmplo, hi, 1
+      - add !cmplo, lo, lo, 1
+      - output cmplo, alu_hi
+  ternary_match tbl_full_test1898 1:
+    p4: { name: tbl_full_test1898, hidden: true }
+    hit: [  ack_get_lower_lat_1 ]
+    miss:  ack_get_lower_lat_1
+    indirect: tbl_full_test1898$tind
+  ternary_indirect tbl_full_test1898$tind:
+    row: 1
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test1898$tind(action, $DEFAULT)
+    actions:
+      full_test1898(0, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000044
+      - next_table: 0
+      - set meta.recirc_port_type, 0
+      - set meta.port_idx, 0
+    default_action: full_test1898
+stage 8 ingress:
+  dependency: match
+  exact_match ack_get_lower_lat_1 0:
+    p4: { name: MyIngress1.ack_get_lower_lat, size: 64 }
+    p4_param_order: 
+      meta.ring_process: { type: exact, size: 16, full_size: 16 }
+      meta.ack_ready: { type: exact, size: 8, full_size: 8 }
+    row: 7
+    bus: 1
+    column: [ 6, 7, 8, 9 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 6 ]
+      unit: [ 1 ]
+    ways:
+      - [0, 0, 0x0, [7, 6]]
+      - [0, 1, 0x0, [7, 7]]
+      - [0, 2, 0x0, [7, 8]]
+      - [0, 3, 0x0, [7, 9]]
+    input_xbar:
+      exact group 0: { 0: meta.ring_process, 16: meta.ack_ready }
+      hash 0:
+        0..1: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        2..9: random(meta.ring_process(2..15)) ^ meta.ack_ready
+        11..12: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        13..19: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..6)
+        10: random(meta.ring_process(2..15)) ^ meta.ack_ready(7)
+        22..23: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        24..29: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..5)
+        20..21: random(meta.ring_process(2..15)) ^ meta.ack_ready(6..7)
+        33..34: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        35..39: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..4)
+        30..32: random(meta.ring_process(2..15)) ^ meta.ack_ready(5..7)
+      hash group 0:
+        table: [0]
+        seed: 0x2202a3bc63
+    format: { action(0): 0..0, version(0): 112..115, meter_addr(0): 1..10, meter_pfe(0): 11..11, match(0): [42..47, 32..39 ] }
+    match: [ meta.ring_process(2..7), meta.ring_process(8..15) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  ack_action_tbl_1 ]
+    miss:  ack_action_tbl_1
+    action_bus: { 96..99 : ack_get_lower_lat_1$salu.MyIngress1.latency_lower(0..31) }
+    stateful: ack_get_lower_lat_1$salu.MyIngress1.latency_lower(meter_addr, meter_pfe, $DEFAULT)
+    instruction: ack_get_lower_lat_1(action, $DEFAULT)
+    actions:
+      MyIngress1.low_latency(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000003f
+      - next_table: 0
+      - set meta.overflow, ack_get_lower_lat_1$salu.MyIngress1.latency_lower
+      - ack_get_lower_lat_1$salu.MyIngress1.latency_lower(update_low_lat_cntr_1, 0)
+      NoAction(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000040
+      - next_table: 0
+    default_action: NoAction
+  stateful ack_get_lower_lat_1$salu.MyIngress1.latency_lower:
+    p4: { name: MyIngress1.latency_lower, size: 1 }
+    row: 15
+    logical_bus: S
+    column: [ 4, 5 ]
+    maprams: [ 4, 5 ]
+    home_row: 15
+    input_xbar:
+      exact group 0: { 64: meta.duration }
+    format: { lo: 32 }
+    math_table:
+      invert: false
+      shift: 0
+      scale: -6
+      data: [ 0, 0, 0, 0, 0, 0, 0, 0, 128, 144, 160, 176, 192, 208, 224, 240 ]
+    actions:
+      update_low_lat_cntr_1:
+      - lss.s lo, lo
+      - alu_a cmplo, lo, math_table(phv_lo)
+      - add !cmplo, lo, lo, phv_lo
+      - output mem_lo
+  exact_match ack_action_tbl_1 1:
+    p4: { name: MyIngress1.ack_action_tbl, size: 64 }
+    p4_param_order: 
+      meta.ring_process: { type: exact, size: 16, full_size: 16 }
+      meta.ack_ready: { type: exact, size: 8, full_size: 8 }
+    row: 7
+    bus: 0
+    column: [ 2, 3, 4, 5 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [1, 0, 0x0, [7, 2]]
+      - [1, 1, 0x0, [7, 3]]
+      - [1, 2, 0x0, [7, 4]]
+      - [1, 3, 0x0, [7, 5]]
+    input_xbar:
+      exact group 0: { 96: meta.ring_process, 112: meta.ack_ready }
+      hash 1:
+        0..1: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        2..9: random(meta.ring_process(2..15)) ^ meta.ack_ready
+        11..12: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        13..19: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..6)
+        10: random(meta.ring_process(2..15)) ^ meta.ack_ready(7)
+        22..23: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        24..29: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..5)
+        20..21: random(meta.ring_process(2..15)) ^ meta.ack_ready(6..7)
+        33..34: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        35..39: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..4)
+        30..32: random(meta.ring_process(2..15)) ^ meta.ack_ready(5..7)
+      hash group 1:
+        table: [1]
+        seed: 0x9ecd1a8331
+    format: { action(0): 0..1, version(0): 112..115, match(0): [42..47, 32..39 ] }
+    match: [ meta.ring_process(2..7), meta.ring_process(8..15) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  ack_get_upper_lat_1 ]
+    miss:  ack_get_upper_lat_1
+    instruction: ack_action_tbl_1(action, $DEFAULT)
+    actions:
+      MyIngress1.ack_append(0, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000003b
+      - next_table: 0
+      - set meta.dst_addr, hdr.ipv4.dst
+      MyIngress1.ack_read(1, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000003c
+      - next_table: 0
+      - set meta.route_to_shard, 1
+      - set hdr.ring_type.shard_id, hdr.append.g_idx(0..15)
+      NoAction(2, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000003d
+      - next_table: 0
+    default_action: NoAction
+stage 9 ingress:
+  dependency: match
+  exact_match ack_get_upper_lat_1 0:
+    p4: { name: MyIngress1.ack_get_upper_lat, size: 64 }
+    p4_param_order: 
+      meta.ring_process: { type: exact, size: 16, full_size: 16 }
+      meta.ack_ready: { type: exact, size: 8, full_size: 8 }
+    row: [ 7, 6 ]
+    bus: [ 1, 0 ]
+    column:
+    - 7
+    - [ 2, 3, 4 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 7 ]
+      unit: [ 1 ]
+    ways:
+      - [0, 0, 0x0, [7, 7]]
+      - [0, 1, 0x0, [6, 2]]
+      - [0, 2, 0x0, [6, 3]]
+      - [0, 3, 0x0, [6, 4]]
+    input_xbar:
+      exact group 0: { 0: meta.ring_process, 16: meta.ack_ready }
+      hash 0:
+        0..1: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        2..9: random(meta.ring_process(2..15)) ^ meta.ack_ready
+        11..12: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        13..19: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..6)
+        10: random(meta.ring_process(2..15)) ^ meta.ack_ready(7)
+        22..23: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        24..29: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..5)
+        20..21: random(meta.ring_process(2..15)) ^ meta.ack_ready(6..7)
+        33..34: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        35..39: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..4)
+        30..32: random(meta.ring_process(2..15)) ^ meta.ack_ready(5..7)
+      hash group 0:
+        table: [0]
+        seed: 0x4875d038ed
+    format: { action(0): 0..0, version(0): 112..115, meter_addr(0): 1..10, meter_pfe(0): 11..11, match(0): [42..47, 32..39 ] }
+    match: [ meta.ring_process(2..7), meta.ring_process(8..15) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  update_replicated_seq_no_1 ]
+    miss:  update_replicated_seq_no_1
+    stateful: ack_get_upper_lat_1$salu.MyIngress1.latency_higher(meter_addr, meter_pfe, $DEFAULT)
+    instruction: ack_get_upper_lat_1(action, $DEFAULT)
+    actions:
+      MyIngress1.upper_latency(0, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000041
+      - next_table: 0
+      - ack_get_upper_lat_1$salu.MyIngress1.latency_higher(update_high_lat_cntr_1, 0)
+      NoAction(1, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000042
+      - next_table: 0
+    default_action: NoAction
+  stateful ack_get_upper_lat_1$salu.MyIngress1.latency_higher:
+    p4: { name: MyIngress1.latency_higher, size: 1 }
+    row: 11
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 11
+    input_xbar:
+      exact group 0: { 64: meta.overflow }
+    format: { lo: 32 }
+    actions:
+      update_high_lat_cntr_1:
+      - lss.s lo, phv_lo
+      - add cmplo, lo, lo, 1
+  exact_match update_replicated_seq_no_1 1:
+    p4: { name: MyIngress1.update_replicated_seq_no, size: 64 }
+    p4_param_order: 
+      meta.ring_process: { type: exact, size: 16, full_size: 16 }
+      meta.ack_ready: { type: exact, size: 8, full_size: 8 }
+    row: 7
+    bus: 0
+    column: [ 2, 3, 4, 6 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [1, 0, 0x0, [7, 2]]
+      - [1, 1, 0x0, [7, 3]]
+      - [1, 2, 0x0, [7, 4]]
+      - [1, 3, 0x0, [7, 6]]
+    input_xbar:
+      exact group 0: { 96: meta.ring_process, 112: meta.ack_ready }
+      hash 1:
+        0..1: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        2..9: random(meta.ring_process(2..15)) ^ meta.ack_ready
+        11..12: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        13..19: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..6)
+        10: random(meta.ring_process(2..15)) ^ meta.ack_ready(7)
+        22..23: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        24..29: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..5)
+        20..21: random(meta.ring_process(2..15)) ^ meta.ack_ready(6..7)
+        33..34: random(meta.ring_process(2..15)) ^ meta.ring_process(0..1)
+        35..39: random(meta.ring_process(2..15)) ^ meta.ack_ready(0..4)
+        30..32: random(meta.ring_process(2..15)) ^ meta.ack_ready(5..7)
+      hash group 1:
+        table: [1]
+        seed: 0x98894dcfaa
+    format: { action(0): 0..0, version(0): 112..115, meter_addr(0): 1..10, meter_pfe(0): 11..11, match(0): [42..47, 32..39 ] }
+    match: [ meta.ring_process(2..7), meta.ring_process(8..15) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  routing_1 ]
+    miss:  routing_1
+    stateful: update_replicated_seq_no_1$salu.MyIngress1.highest_replicated_seq_no(meter_addr, meter_pfe, $DEFAULT)
+    instruction: update_replicated_seq_no_1(action, $DEFAULT)
+    actions:
+      MyIngress1.write_rep_seq_no(0, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000004b
+      - next_table: 0
+      - update_replicated_seq_no_1$salu.MyIngress1.highest_replicated_seq_no(write_replicated_seq_no_1, 0)
+      NoAction(1, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000004c
+      - next_table: 0
+    default_action: NoAction
+  stateful update_replicated_seq_no_1$salu.MyIngress1.highest_replicated_seq_no:
+    p4: { name: MyIngress1.highest_replicated_seq_no, size: 1 }
+    row: 15
+    logical_bus: S
+    column: [ 2, 3 ]
+    maprams: [ 2, 3 ]
+    home_row: 15
+    input_xbar:
+      exact group 1: { 64: hdr.append.g_idx }
+    format: { lo: 32 }
+    actions:
+      write_replicated_seq_no_1:
+      - grt.u lo, phv_lo, -lo
+      - alu_a cmplo, lo, phv_lo
+  ternary_match routing_1 2:
+    p4: { name: MyIngress1.routing, size: 1024 }
+    p4_param_order: 
+      meta.next_hop: { type: exact, size: 8, full_size: 8 }
+      meta.dst_addr: { type: lpm, size: 32, full_size: 32 }
+      meta.recirc_port_type: { type: exact, size: 2, full_size: 2 }
+      meta.port_idx: { type: exact, size: 8, full_size: 8 }
+      meta.route_to_shard: { type: exact, size: 1, full_size: 1 }
+      meta.view_hops: { type: exact, size: 8, full_size: 8 }
+    row: [ 0, 1, 2, 3 ]
+    bus: [ 0, 0, 0, 0 ]
+    column:
+    - 0
+    - 0
+    - 0
+    - 0
+    input_xbar:
+      ternary group 0: { 0: meta.dst_addr, 32: meta.view_hops }
+      ternary group 1: { 3: meta.recirc_port_type, 5: meta.route_to_shard, 8: meta.next_hop, 16: meta.port_idx }
+    match:
+    - { group: 0, byte_config: 3, dirtcam: 0x155 }
+    - { group: 1, dirtcam: 0x15 }
+    hit: [  END ]
+    miss:  END
+    indirect: routing_1$tind
+  ternary_indirect routing_1$tind:
+    row: 0
+    bus: 0
+    column: 2
+    input_xbar:
+      ternary group 0: { 0: meta.dst_addr, 32: meta.view_hops }
+      ternary group 1: { 3: meta.recirc_port_type, 5: meta.route_to_shard, 8: meta.next_hop, 16: meta.port_idx }
+    format: { action: 0..2 }
+    action: routing_1$action_data($DIRECT, $DEFAULT)
+    instruction: routing_1$tind(action, $DEFAULT)
+    actions:
+      MyIngress1.send_to(0, 3):
+      - p4_param_order: { port: 9 }
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000045
+      - next_table: 0
+      - { port: $adf_h0(0..8) }
+      - set ig_intr_md_for_tm.ucast_egress_port, port
+      MyIngress1.eth_forward(1, 4):
+      - p4_param_order: { dst_addr: 48, port: 9 }
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000046
+      - next_table: 0
+      - { port: $adf_h0(0..8), dst_addr.32-47: $adf_h1(0..15), dst_addr.0-31: $adf_f1(0..31) }
+      - set ig_intr_md_for_tm.ucast_egress_port, port
+      - set hdr.ethernet.src.0-31, hdr.ethernet.dst.0-31
+      - set hdr.ethernet.src.32-47, hdr.ethernet.dst.32-47
+      - set hdr.ethernet.dst.0-31, dst_addr.0-31
+      - set hdr.ethernet.dst.32-47, dst_addr.32-47
+      - add hdr.ipv4.ttl, hdr.ipv4.ttl, 255
+      MyIngress1.send_multicast(2, 5):
+      - p4_param_order: { group_id: 16 }
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000047
+      - next_table: 0
+      - { group_id: $adf_h0(0..15) }
+      - set ig_intr_md_for_tm.mcast_grp_a, group_id
+      MyIngress1.forward_to_subscribers(3, 6):
+      - p4_param_order: { mirror_session_id: 10, group_id: 16 }
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000048
+      - next_table: 0
+      - { group_id: $adf_h0(0..15), mirror_session_id: $adf_h1(0..9) }
+      - set meta.ing_mir_ses, mirror_session_id
+      - set meta.pkt_type, 2
+      - set ig_intr_md_for_dprsr.mirror_type, 1
+      - set ig_intr_md_for_tm.mcast_grp_a, group_id
+      MyIngress1.receive_subscription(4, 7):
+      - p4_param_order: { port: 9 }
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000049
+      - next_table: 0
+      - { port: $adf_h0(0..8) }
+      - set ig_intr_md_for_tm.ucast_egress_port, port
+      MyIngress1.drop(5, 8):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000004a
+      - next_table: 0
+      - {  }
+      - set ig_intr_md_for_dprsr.drop_ctl, 1
+    default_action: MyIngress1.drop
+  action routing_1$action_data:
+    p4: { name: MyIngress1.routing$action }
+    row: 15
+    logical_bus: A
+    column: 4
+    vpns: [ 0 ]
+    home_row:
+    - 15
+    format MyIngress1.send_to: { $adf_h0: 0..15 }
+    format MyIngress1.eth_forward: { $adf_h0: 0..15, $adf_h1: 16..31, $adf_f1: 32..63 }
+    format MyIngress1.send_multicast: { $adf_h0: 0..15 }
+    format MyIngress1.forward_to_subscribers: { $adf_h0: 0..15, $adf_h1: 16..31 }
+    format MyIngress1.receive_subscription: { $adf_h0: 0..15 }
+    action_bus: { 32..33 : $adf_h0, 34..35 : $adf_h1, 100..103 : $adf_f1 }
+stage 0 egress:
+  ternary_match tbl_full_test2636 9:
+    p4: { name: tbl_full_test2636, hidden: true }
+    gateway:
+      name: cond-123
+      input_xbar:
+        exact group 0: { 52: hdr.trigger_view.$valid }
+      row: 0
+      bus: 0
+      unit: 0
+      match: { 4: hdr.trigger_view.$valid }
+      0b***1: run_table
+      miss:  tbl_full_test2653
+      condition: 
+        expression: "(hdr.trigger_view.$valid == 1)"
+        true:  tbl_full_test2636
+        false:  tbl_full_test2653
+    hit: [  tbl_full_test2637 ]
+    miss:  tbl_full_test2637
+    indirect: tbl_full_test2636$tind
+  ternary_indirect tbl_full_test2636$tind:
+    row: 0
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test2636$tind(action, $DEFAULT)
+    actions:
+      full_test2636(1, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000058
+      - next_table: 0
+      - set meta.leader_switch_id, hdr.trigger_view.leader_switch_id
+    default_action: full_test2636
+  ternary_match tbl_full_test2653 10:
+    p4: { name: tbl_full_test2653, hidden: true }
+    gateway:
+      name: cond-127
+      input_xbar:
+        exact group 0: { 49: hdr.cntrl.$valid }
+      row: 7
+      bus: 0
+      unit: 0
+      match: { 1: hdr.cntrl.$valid }
+      0b******1: run_table
+      miss:  tbl_full_test2663
+      condition: 
+        expression: "(hdr.cntrl.$valid == 1)"
+        true:  tbl_full_test2653
+        false:  tbl_full_test2663
+    hit: [  tbl_full_test2654 ]
+    miss:  tbl_full_test2654
+    indirect: tbl_full_test2653$tind
+  ternary_indirect tbl_full_test2653$tind:
+    row: 0
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test2653$tind(action, $DEFAULT)
+    actions:
+      full_test2653(1, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000005e
+      - next_table: 0
+      - set meta.ring_view, hdr.cntrl.ring_view
+    default_action: full_test2653
+stage 1 egress:
+  dependency: match
+  ternary_match tbl_full_test2663 6:
+    p4: { name: tbl_full_test2663, hidden: true }
+    gateway:
+      name: cond-129
+      input_xbar:
+        exact group 0: { 101: hdr.finalize_view.$valid }
+      row: 7
+      bus: 0
+      unit: 0
+      match: { 5: hdr.finalize_view.$valid }
+      0b**1: run_table
+      miss:  tbl_full_test2618
+      condition: 
+        expression: "(hdr.finalize_view.$valid == 1)"
+        true:  tbl_full_test2663
+        false:  tbl_full_test2618
+    hit: [  tbl_full_test2665 ]
+    miss:  tbl_full_test2665
+    indirect: tbl_full_test2663$tind
+  ternary_indirect tbl_full_test2663$tind:
+    row: 2
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10, meter_pfe: 11..11, meter_type: 12..14 }
+    stateful: tbl_full_test2637$salu.MyEgress1.view_leader(meter_addr, meter_pfe, meter_type)
+    instruction: tbl_full_test2663$tind(action, $DEFAULT)
+    actions:
+      full_test2663(1, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000062
+      - next_table: 0
+      - set meta.ring_view, hdr.finalize_view.current_ring_view
+      - tbl_full_test2637$salu.MyEgress1.view_leader(unset_view_leader_1, 0)
+    default_action: full_test2663
+  ternary_match tbl_full_test2637 5:
+    p4: { name: tbl_full_test2637, hidden: true }
+    hit: [  tbl_full_test2640 ]
+    miss:  tbl_full_test2640
+    indirect: tbl_full_test2637$tind
+  stateful tbl_full_test2637$salu.MyEgress1.view_leader:
+    p4: { name: MyEgress1.view_leader, size: 1 }
+    row: 15
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 15
+    input_xbar:
+      exact group 1: { 64: meta.leader_switch_id }
+    format: { lo: 8 }
+    actions:
+      record_view_leader_1:
+      - equ lo, lo
+      - alu_a cmplo, lo, phv_lo
+      - alu_a cmplo, hi, 1
+      - output cmplo, alu_hi
+      unset_view_leader_1:
+      - alu_a lo, 0
+  ternary_indirect tbl_full_test2637$tind:
+    row: 0
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10 }
+    action_bus: { 0 : tbl_full_test2637$salu.MyEgress1.view_leader(0..7) }
+    stateful: tbl_full_test2637$salu.MyEgress1.view_leader(meter_addr, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test2637$tind(action, $DEFAULT)
+    actions:
+      full_test2637(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000059
+      - next_table: 0
+      - set meta.accept_finalize_view, tbl_full_test2637$salu.MyEgress1.view_leader
+      - tbl_full_test2637$salu.MyEgress1.view_leader(record_view_leader_1, 0)
+    default_action: full_test2637
+stage 2 egress:
+  dependency: match
+  ternary_match tbl_full_test2640 2:
+    p4: { name: tbl_full_test2640, hidden: true }
+    gateway:
+      name: cond-124
+      input_xbar:
+        exact group 0: { 24: meta.accept_finalize_view }
+      row: 2
+      bus: 1
+      unit: 1
+      match: { 0: meta.accept_finalize_view }
+      0x01: run_table
+      miss:  tbl_full_test2648
+      condition: 
+        expression: "(meta.accept_finalize_view == 1)"
+        true:  tbl_full_test2640
+        false:  tbl_full_test2648
+    hit: [  tbl_full_test2641 ]
+    miss:  tbl_full_test2641
+    indirect: tbl_full_test2640$tind
+  ternary_indirect tbl_full_test2640$tind:
+    row: 4
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test2640$tind(action, $DEFAULT)
+    actions:
+      full_test2640(1, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000005a
+      - next_table: 0
+      - set meta.ring_view, hdr.trigger_view.current_ring_view
+    default_action: full_test2640
+stage 3 egress:
+  dependency: match
+  ternary_match tbl_full_test2665 4:
+    p4: { name: tbl_full_test2665, hidden: true }
+    hit: [  tbl_full_test2618 ]
+    miss:  tbl_full_test2618
+    indirect: tbl_full_test2665$tind
+  stateful tbl_full_test2665$salu.MyEgress1.egress_current_view:
+    p4: { name: MyEgress1.egress_current_view, size: 1 }
+    row: 11
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 11
+    input_xbar:
+      exact group 1: { 64: meta.ring_view }
+    format: { lo: 16 }
+    actions:
+      trigger_view_change_1:
+      - leq.u lo, lo, -phv_lo
+      - alu_a cmplo, hi, 1
+      - output cmplo, alu_hi
+      check_cntrl_view_1:
+      - equ lo, lo, -phv_lo
+      - alu_a !cmplo, hi, 1
+      - output !cmplo, alu_hi
+      update_view_1:
+      - alu_a lo, phv_lo
+  ternary_indirect tbl_full_test2665$tind:
+    row: 0
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10 }
+    stateful: tbl_full_test2665$salu.MyEgress1.egress_current_view(meter_addr, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test2665$tind(action, $DEFAULT)
+    actions:
+      full_test2665(0, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000063
+      - next_table: 0
+      - set meta.view_change_active, 0
+      - tbl_full_test2665$salu.MyEgress1.egress_current_view(update_view_1, 0)
+    default_action: full_test2665
+  ternary_match tbl_full_test2654 3:
+    p4: { name: tbl_full_test2654, hidden: true }
+    hit: [  tbl_full_test2657 ]
+    miss:  tbl_full_test2657
+    indirect: tbl_full_test2654$tind
+  ternary_indirect tbl_full_test2654$tind:
+    row: 0
+    bus: 1
+    format: { action: 0..0, meter_addr: 1..10 }
+    action_bus: { 32..33 : tbl_full_test2665$salu.MyEgress1.egress_current_view(0..15) }
+    stateful: tbl_full_test2665$salu.MyEgress1.egress_current_view(meter_addr, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test2654$tind(action, $DEFAULT)
+    actions:
+      full_test2654(0, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000005f
+      - next_table: 0
+      - set meta.accept_view_change, tbl_full_test2665$salu.MyEgress1.egress_current_view
+      - tbl_full_test2665$salu.MyEgress1.egress_current_view(check_cntrl_view_1, 0)
+    default_action: full_test2654
+  ternary_match tbl_full_test2641 2:
+    p4: { name: tbl_full_test2641, hidden: true }
+    hit: [  tbl_full_test2648 ]
+    miss:  tbl_full_test2648
+    indirect: tbl_full_test2641$tind
+  ternary_indirect tbl_full_test2641$tind:
+    row: 1
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10 }
+    action_bus: { 32..33 : tbl_full_test2665$salu.MyEgress1.egress_current_view(0..15) }
+    stateful: tbl_full_test2665$salu.MyEgress1.egress_current_view(meter_addr, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test2641$tind(action, $DEFAULT)
+    actions:
+      full_test2641(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000005b
+      - next_table: 0
+      - set meta.accept_view_change, tbl_full_test2665$salu.MyEgress1.egress_current_view
+      - tbl_full_test2665$salu.MyEgress1.egress_current_view(trigger_view_change_1, 0)
+    default_action: full_test2641
+stage 4 egress:
+  dependency: match
+  ternary_match tbl_full_test2657 3:
+    p4: { name: tbl_full_test2657, hidden: true }
+    gateway:
+      name: cond-128
+      input_xbar:
+        exact group 0: { 96: meta.accept_view_change }
+      row: 1
+      bus: 1
+      unit: 1
+      match: { 0: meta.accept_view_change(0..7), 8: meta.accept_view_change(8..15) }
+      0x0001: run_table
+      miss:  tbl_full_test2659
+      condition: 
+        expression: "(meta.accept_view_change == 1)"
+        true:  tbl_full_test2657
+        false:  tbl_full_test2659
+    hit: [  tbl_full_test2618 ]
+    miss:  tbl_full_test2618
+    indirect: tbl_full_test2657$tind
+  ternary_indirect tbl_full_test2657$tind:
+    row: 2
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10, meter_pfe: 11..11, meter_type: 12..14 }
+    action_bus: { 0 : tbl_full_test2648$salu.MyEgress1.view_change_active(0..7) }
+    stateful: tbl_full_test2648$salu.MyEgress1.view_change_active(meter_addr, meter_pfe, meter_type)
+    instruction: tbl_full_test2657$tind(action, $DEFAULT)
+    actions:
+      full_test2657(1, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000060
+      - next_table: 0
+      - set meta.view_change_active, tbl_full_test2648$salu.MyEgress1.view_change_active
+      - tbl_full_test2648$salu.MyEgress1.view_change_active(set_active_view_change_1, 0)
+    default_action: full_test2657
+  ternary_match tbl_full_test2659 4:
+    p4: { name: tbl_full_test2659, hidden: true }
+    hit: [  tbl_full_test2618 ]
+    miss:  tbl_full_test2618
+    indirect: tbl_full_test2659$tind
+  ternary_indirect tbl_full_test2659$tind:
+    row: 1
+    bus: 1
+    format: { action: 0..0, meter_addr: 1..10 }
+    action_bus: { 0 : tbl_full_test2648$salu.MyEgress1.view_change_active(0..7) }
+    stateful: tbl_full_test2648$salu.MyEgress1.view_change_active(meter_addr, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test2659$tind(action, $DEFAULT)
+    actions:
+      full_test2659(0, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000061
+      - next_table: 0
+      - set meta.view_change_active, tbl_full_test2648$salu.MyEgress1.view_change_active
+      - tbl_full_test2648$salu.MyEgress1.view_change_active(unset_active_view_change_1, 0)
+    default_action: full_test2659
+  ternary_match tbl_full_test2648 5:
+    p4: { name: tbl_full_test2648, hidden: true }
+    gateway:
+      name: cond-125
+      input_xbar:
+        exact group 0: { 96: meta.accept_view_change }
+      row: 1
+      bus: 0
+      unit: 0
+      match: { 0: meta.accept_view_change(0..7), 8: meta.accept_view_change(8..15) }
+      0x0001: run_table
+      miss:  tbl_full_test2650
+      condition: 
+        expression: "(meta.accept_view_change == 1)"
+        true:  tbl_full_test2648
+        false:  tbl_full_test2650
+    hit: [  tbl_full_test2618 ]
+    miss:  tbl_full_test2618
+    indirect: tbl_full_test2648$tind
+  stateful tbl_full_test2648$salu.MyEgress1.view_change_active:
+    p4: { name: MyEgress1.view_change_active, size: 1 }
+    row: 11
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 11
+    format: { lo: 8 }
+    actions:
+      set_active_view_change_1:
+      - alu_a lo, 1
+      - alu_a hi, 1
+      - output alu_hi
+      unset_active_view_change_1:
+      - alu_a lo, 0
+  ternary_indirect tbl_full_test2648$tind:
+    row: 1
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10, meter_pfe: 11..11, meter_type: 12..14 }
+    action_bus: { 0 : tbl_full_test2648$salu.MyEgress1.view_change_active(0..7) }
+    stateful: tbl_full_test2648$salu.MyEgress1.view_change_active(meter_addr, meter_pfe, meter_type)
+    instruction: tbl_full_test2648$tind(action, $DEFAULT)
+    actions:
+      full_test2648(1, 4):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000005c
+      - next_table: 0
+      - set meta.view_change_active, tbl_full_test2648$salu.MyEgress1.view_change_active
+      - tbl_full_test2648$salu.MyEgress1.view_change_active(set_active_view_change_1, 0)
+    default_action: full_test2648
+  ternary_match tbl_full_test2650 6:
+    p4: { name: tbl_full_test2650, hidden: true }
+    gateway:
+      name: cond-126
+      input_xbar:
+        exact group 0: { 96: meta.accept_view_change }
+      row: 0
+      bus: 1
+      unit: 1
+      match: { 0: meta.accept_view_change(0..7), 8: meta.accept_view_change(8..15) }
+      0x0000: run_table
+      miss:  tbl_full_test2618
+      condition: 
+        expression: "(meta.accept_view_change == 0)"
+        true:  tbl_full_test2650
+        false:  tbl_full_test2618
+    hit: [  tbl_full_test2618 ]
+    miss:  tbl_full_test2618
+    indirect: tbl_full_test2650$tind
+  ternary_indirect tbl_full_test2650$tind:
+    row: 0
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test2650$tind(action, $DEFAULT)
+    actions:
+      full_test2650(1, 6):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000005d
+      - next_table: 0
+      - set meta.view_change_active, 0
+    default_action: full_test2650
+  ternary_match tbl_full_test2618 7:
+    p4: { name: tbl_full_test2618, hidden: true }
+    gateway:
+      name: cond-120
+      input_xbar:
+        exact group 0: { 120: hdr.ring_type.$valid }
+      row: 0
+      bus: 0
+      unit: 0
+      match: { 0: hdr.ring_type.$valid }
+      0b*******1: run_table
+      miss:  check_view_change_1
+      condition: 
+        expression: "(hdr.ring_type.$valid == 1)"
+        true:  tbl_full_test2618
+        false:  check_view_change_1
+    hit: [  tbl_full_test2614 ]
+    miss:  tbl_full_test2614
+    indirect: tbl_full_test2618$tind
+  ternary_indirect tbl_full_test2618$tind:
+    row: 0
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test2618$tind(action, $DEFAULT)
+    actions:
+      full_test2618(1, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000051
+      - next_table: 0
+      - set meta.queue_congest.19-26, 0
+      - set meta.queue_congest.27-31, 0
+    default_action: full_test2618
+  ternary_match tbl_full_test2614 8:
+    p4: { name: tbl_full_test2614, hidden: true }
+    gateway:
+      name: cond-121
+      input_xbar:
+        exact group 1: { 0: eg_intr_md_for_dprsr.mirror_type }
+      row: 2
+      bus: 1
+      unit: 1
+      match: { 0: eg_intr_md_for_dprsr.mirror_type }
+      0b*****000:  tbl_full_test2618_0
+      miss: run_table
+      condition: 
+        expression: "(eg_intr_md_for_dprsr.mirror_type != 0)"
+        true:  tbl_full_test2614
+        false:  tbl_full_test2618_0
+    hit: [  tbl_full_test2618_0 ]
+    miss:  tbl_full_test2618_0
+    indirect: tbl_full_test2614$tind
+  ternary_indirect tbl_full_test2614$tind:
+    row: 3
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test2614$tind(action, $DEFAULT)
+    actions:
+      full_test2614(1, 5):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x2000004e
+      - next_table: 0
+      - set hdr.ring_type.type.0-7, 81
+      - set hdr.ring_type.type.8-15, 8
+    default_action: full_test2614
+stage 5 egress:
+  dependency: match
+  ternary_match tbl_full_test2618_0 4:
+    p4: { name: tbl_full_test2618_0, hidden: true }
+    hit: [  get_packet_type_1 ]
+    miss:  get_packet_type_1
+    indirect: tbl_full_test2618_0$tind
+  ternary_indirect tbl_full_test2618_0$tind:
+    row: 0
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_full_test2618_0$tind(action, $DEFAULT)
+    actions:
+      full_test2618_0(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000052
+      - next_table: 0
+      - set meta.queue_congest.0-15, eg_intr_md.deq_qdepth.0-15
+      - set meta.queue_congest.16-18, eg_intr_md.deq_qdepth.16-18
+    default_action: full_test2618_0
+  exact_match get_packet_type_1 5:
+    p4: { name: MyEgress1.get_packet_type, size: 256 }
+    p4_param_order: 
+      hdr.ring_type.type: { type: exact, size: 16, full_size: 16 }
+    row: 7
+    bus: 0
+    column: [ 2, 3, 4, 5 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [2, 0, 0x0, [7, 2]]
+      - [2, 1, 0x0, [7, 3]]
+      - [2, 2, 0x0, [7, 4]]
+      - [2, 3, 0x0, [7, 5]]
+    input_xbar:
+      exact group 1: { 0: hdr.ring_type.type.0-7, 8: hdr.ring_type.type.8-15 }
+      hash 2:
+        0..7: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.0-7
+        8..9: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.8-15(0..1)
+        11..18: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.0-7
+        19: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.8-15(0)
+        10: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.8-15(1)
+        22..29: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.0-7
+        20..21: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.8-15(0..1)
+        33..39: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.0-7(0..6)
+        30: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.0-7(7)
+        31..32: random(hdr.ring_type.type.8-15(2..7)) ^ hdr.ring_type.type.8-15(0..1)
+      hash group 2:
+        table: [2]
+        seed: 0x5ef5ea487d
+    format: { action(0): 0..0, version(0): 112..115, match(0): 34..39 }
+    match: [ hdr.ring_type.type.8-15(2..7) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  tbl_full_test2625 ]
+    miss:  tbl_full_test2625
+    instruction: get_packet_type_1(action, $DEFAULT)
+    actions:
+      MyEgress1.set_ring_process(0, 0):
+      - p4_param_order: { process_type: 16 }
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x2000004f
+      - next_table: 0
+      NoAction(1, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000050
+      - next_table: 0
+    default_action: NoAction
+  ternary_match tbl_full_test2625 6:
+    p4: { name: tbl_full_test2625, hidden: true }
+    gateway:
+      name: cond-122
+      input_xbar:
+        exact group 1: { 0: hdr.ring_type.type.0-7, 8: hdr.ring_type.type.8-15 }
+      row: 7
+      bus: 0
+      unit: 1
+      match: { 0: hdr.ring_type.type.0-7, 8: hdr.ring_type.type.8-15 }
+      0x0862: run_table
+      miss:  tbl_full_test2619
+      condition: 
+        expression: "(hdr.ring_type.type == 2146)"
+        true:  tbl_full_test2625
+        false:  tbl_full_test2619
+    hit: [  check_duration_1 ]
+    miss:  check_duration_1
+    indirect: tbl_full_test2625$tind
+  ternary_indirect tbl_full_test2625$tind:
+    row: 1
+    bus: 1
+    format: { action: 0..0 }
+    instruction: tbl_full_test2625$tind(action, $DEFAULT)
+    actions:
+      full_test2625(1, 3):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000055
+      - next_table: 0
+      - sub hdr.ring_type.raw_elapsed_time, hdr.ring_type.end_ts.0-15, hdr.ring_type.start_ts.0-15
+    default_action: full_test2625
+stage 6 egress:
+  dependency: match
+  ternary_match check_duration_1 4:
+    p4: { name: MyEgress1.check_duration, size: 64 }
+    p4_param_order: 
+      hdr.ring_type.raw_elapsed_time: { type: range, size: 16, full_size: 16 }
+    row: 0
+    bus: 0
+    column: 0
+    input_xbar:
+      ternary group 0: { 0: hdr.ring_type.raw_elapsed_time, 16: hdr.ring_type.raw_elapsed_time }
+    match:
+    - { group: 0, byte_config: 3, dirtcam: 0xfa }
+    hit: [  tbl_full_test2619 ]
+    miss:  tbl_full_test2619
+    indirect: check_duration_1$tind
+  ternary_indirect check_duration_1$tind:
+    row: 0
+    bus: 0
+    column: 2
+    input_xbar:
+      ternary group 0: { 0: hdr.ring_type.raw_elapsed_time, 16: hdr.ring_type.raw_elapsed_time }
+    format: { action: 0..0 }
+    instruction: check_duration_1$tind(action, $DEFAULT)
+    actions:
+      MyEgress1.update_type(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000056
+      - next_table: 0
+      - set hdr.ring_type.type.0-7, 97
+      - set hdr.ring_type.type.8-15, 8
+      NoAction(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000057
+      - next_table: 0
+    default_action: NoAction
+  ternary_match tbl_full_test2619 5:
+    p4: { name: tbl_full_test2619, hidden: true }
+    hit: [  tbl_full_test2622 ]
+    miss:  tbl_full_test2622
+    indirect: tbl_full_test2619$tind
+  stateful tbl_full_test2619$salu.MyEgress1.queue_cnt:
+    p4: { name: MyEgress1.queue_cnt, size: 1 }
+    row: 7
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 7
+    input_xbar:
+      exact group 0: { 80: meta.queue_congest.0-15, 99: meta.queue_congest.16-18, 107: meta.queue_congest.27-31, 112: meta.queue_congest.19-26 }
+      hash 1:
+        0..15: meta.queue_congest.0-15
+        16..18: meta.queue_congest.16-18
+        27..31: meta.queue_congest.27-31
+        19..26: meta.queue_congest.19-26
+      hash group 1:
+        table: [1]
+        seed: 0x0
+    format: { lo: 32 }
+    actions:
+      curr_queue_cnt_1:
+      - alu_a lo, phv_lo
+  ternary_indirect tbl_full_test2619$tind:
+    row: 2
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10 }
+    stateful: tbl_full_test2619$salu.MyEgress1.queue_cnt(meter_addr, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test2619$tind(action, $DEFAULT)
+    actions:
+      full_test2619(0, 2):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000053
+      - next_table: 0
+      - sub meta.elapse_time, eg_intr_md_from_prsr.global_tstamp.0-31, hdr.ring_type.pipe_ts
+      - tbl_full_test2619$salu.MyEgress1.queue_cnt(curr_queue_cnt_1, 0)
+    default_action: full_test2619
+stage 7 egress:
+  dependency: match
+  ternary_match tbl_full_test2622 2:
+    p4: { name: tbl_full_test2622, hidden: true }
+    hit: [  check_view_change_1 ]
+    miss:  check_view_change_1
+    indirect: tbl_full_test2622$tind
+  stateful tbl_full_test2622$salu.MyEgress1.time_in_pipeline:
+    p4: { name: MyEgress1.time_in_pipeline, size: 1 }
+    row: 7
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 7
+    input_xbar:
+      exact group 1: { 64: meta.elapse_time }
+    format: { lo: 32 }
+    actions:
+      update_pipeline_time_1:
+      - alu_a lo, phv_lo
+  ternary_indirect tbl_full_test2622$tind:
+    row: 1
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10 }
+    stateful: tbl_full_test2622$salu.MyEgress1.time_in_pipeline(meter_addr, $DEFAULT, $DEFAULT)
+    instruction: tbl_full_test2622$tind(action, $DEFAULT)
+    actions:
+      full_test2622(0, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000054
+      - next_table: 0
+      - tbl_full_test2622$salu.MyEgress1.time_in_pipeline(update_pipeline_time_1, 0)
+    default_action: full_test2622
+  exact_match check_view_change_1 3:
+    p4: { name: MyEgress1.check_view_change, size: 64 }
+    p4_param_order: 
+      meta.view_change_active: { type: exact, size: 8, full_size: 8 }
+      hdr.ethernet.type: { type: exact, size: 16, full_size: 16 }
+    row: 7
+    bus: 0
+    column: [ 2, 3, 4, 5 ]
+    stash: 
+      row: [ 7 ]
+      col: [ 2 ]
+      unit: [ 0 ]
+    ways:
+      - [1, 0, 0x0, [7, 2]]
+      - [1, 1, 0x0, [7, 3]]
+      - [1, 2, 0x0, [7, 4]]
+      - [1, 3, 0x0, [7, 5]]
+    input_xbar:
+      exact group 0: { 96: hdr.ethernet.type, 112: meta.view_change_active }
+      hash 1:
+        0..1: random(hdr.ethernet.type(2..15)) ^ hdr.ethernet.type(0..1)
+        2..9: random(hdr.ethernet.type(2..15)) ^ meta.view_change_active
+        11..12: random(hdr.ethernet.type(2..15)) ^ hdr.ethernet.type(0..1)
+        13..19: random(hdr.ethernet.type(2..15)) ^ meta.view_change_active(0..6)
+        10: random(hdr.ethernet.type(2..15)) ^ meta.view_change_active(7)
+        22..23: random(hdr.ethernet.type(2..15)) ^ hdr.ethernet.type(0..1)
+        24..29: random(hdr.ethernet.type(2..15)) ^ meta.view_change_active(0..5)
+        20..21: random(hdr.ethernet.type(2..15)) ^ meta.view_change_active(6..7)
+        33..34: random(hdr.ethernet.type(2..15)) ^ hdr.ethernet.type(0..1)
+        35..39: random(hdr.ethernet.type(2..15)) ^ meta.view_change_active(0..4)
+        30..32: random(hdr.ethernet.type(2..15)) ^ meta.view_change_active(5..7)
+      hash group 1:
+        table: [1]
+        seed: 0xf1a50d9c29
+    format: { action(0): 0..0, version(0): 112..115, match(0): [42..47, 32..39 ] }
+    match: [ hdr.ethernet.type(2..7), hdr.ethernet.type(8..15) ]
+    match_group_map: [ [ 0 ] ]
+    hit: [  tbl_full_test2678 ]
+    miss:  tbl_full_test2678
+    instruction: check_view_change_1(action, $DEFAULT)
+    actions:
+      MyEgress1.drop(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000066
+      - next_table: 0
+      - set eg_intr_md_for_dprsr.drop_ctl, 1
+      NoAction(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true }
+      - handle: 0x20000067
+      - next_table: 0
+    default_action: NoAction
+  ternary_match tbl_full_test2678 4:
+    p4: { name: tbl_full_test2678, hidden: true }
+    gateway:
+      name: cond-130
+      input_xbar:
+        exact group 1: { 1: hdr.cntrl.$valid, 8: meta.view_change_active }
+      row: 0
+      bus: 1
+      unit: 1
+      match: { 9: hdr.cntrl.$valid, 0: meta.view_change_active }
+      0b******1*00000000: run_table
+      miss:  tbl_full_test2680
+      condition: 
+        expression: "(hdr.cntrl.$valid == 1 && meta.view_change_active == 0)"
+        true:  tbl_full_test2678
+        false:  tbl_full_test2680
+    hit: [  tbl_full_test2687 ]
+    miss:  tbl_full_test2687
+    indirect: tbl_full_test2678$tind
+  ternary_indirect tbl_full_test2678$tind:
+    row: 0
+    bus: 1
+    format: { action: 0..0, meter_addr: 1..10, meter_pfe: 11..11, meter_type: 12..14 }
+    stateful: tbl_full_test2680$salu.MyEgress1.view_change_start_time(meter_addr, meter_pfe, meter_type)
+    instruction: tbl_full_test2678$tind(action, $DEFAULT)
+    actions:
+      full_test2678(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000064
+      - next_table: 0
+      - tbl_full_test2680$salu.MyEgress1.view_change_start_time(log_view_change_time_1, 1)
+    default_action: full_test2678
+  ternary_match tbl_full_test2680 5:
+    p4: { name: tbl_full_test2680, hidden: true }
+    gateway:
+      name: cond-131
+      input_xbar:
+        exact group 1: { 4: hdr.trigger_view.$valid, 8: meta.view_change_active }
+      row: 0
+      bus: 0
+      unit: 0
+      match: { 12: hdr.trigger_view.$valid, 0: meta.view_change_active }
+      0b***1****00000001: run_table
+      miss:  tbl_full_test2687
+      condition: 
+        expression: "(hdr.trigger_view.$valid == 1 && meta.view_change_active == 1)"
+        true:  tbl_full_test2680
+        false:  tbl_full_test2687
+    hit: [  tbl_full_test2687 ]
+    miss:  tbl_full_test2687
+    indirect: tbl_full_test2680$tind
+  stateful tbl_full_test2680$salu.MyEgress1.view_change_start_time:
+    p4: { name: MyEgress1.view_change_start_time, size: 2 }
+    row: 11
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    home_row: 11
+    input_xbar:
+      exact group 2: { 64: eg_intr_md_from_prsr.global_tstamp.0-31 }
+    format: { lo: 32 }
+    actions:
+      log_view_change_time_1:
+      - alu_a lo, phv_lo
+  ternary_indirect tbl_full_test2680$tind:
+    row: 0
+    bus: 0
+    format: { action: 0..0, meter_addr: 1..10, meter_pfe: 11..11, meter_type: 12..14 }
+    stateful: tbl_full_test2680$salu.MyEgress1.view_change_start_time(meter_addr, meter_pfe, meter_type)
+    instruction: tbl_full_test2680$tind(action, $DEFAULT)
+    actions:
+      full_test2680(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000065
+      - next_table: 0
+      - tbl_full_test2680$salu.MyEgress1.view_change_start_time(log_view_change_time_1, 0)
+    default_action: full_test2680
+  ternary_match tbl_full_test2687 6:
+    p4: { name: tbl_full_test2687, hidden: true }
+    gateway:
+      name: cond-132
+      input_xbar:
+        exact group 1: { 1: hdr.cntrl.$valid, 16: hdr.canary.magic, 24: hdr.ring_type.$valid }
+      row: 1
+      bus: 0
+      unit: 0
+      match: { 0: hdr.canary.magic, 8: hdr.ring_type.$valid, 17: hdr.cntrl.$valid }
+      0x****a5:  END
+      0b******0********0********:  END
+      miss: run_table
+      condition: 
+        expression: "((hdr.ring_type.$valid == 1 || hdr.cntrl.$valid == 1) && hdr.canary.magic != 165)"
+        true:  tbl_full_test2687
+        false:  END
+    hit: [  tbl_drop_2 ]
+    miss:  tbl_drop_2
+    indirect: tbl_full_test2687$tind
+  counter tbl_full_test2687$stats.MyEgress1.canary_no_match_counter_eg1:
+    p4: { name: MyEgress1.canary_no_match_counter_eg1, size: 1 }
+    row: 13
+    logical_bus: S
+    column: [ 0, 1 ]
+    maprams: [ 0, 1 ]
+    vpns: [ 0, 1 ]
+    home_row: 13
+    count: packets
+    format: {packets(0): 96..127, packets(1): 64..95, packets(2): 32..63, packets(3): 0..31}
+    per_flow_enable: counter_pfe
+    lrt:
+    - { threshold: 23718048, interval: 268435200 }
+    - { threshold: 23718048, interval: 268435200 }
+    - { threshold: 23718048, interval: 268435200 }
+  ternary_indirect tbl_full_test2687$tind:
+    row: 2
+    bus: 0
+    format: { action: 0..0, counter_addr: 1..10, counter_pfe: 11..11 }
+    stats: tbl_full_test2687$stats.MyEgress1.canary_no_match_counter_eg1(counter_addr, counter_pfe)
+    instruction: tbl_full_test2687$tind(action, $DEFAULT)
+    actions:
+      full_test2687(1, 0):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000068
+      - next_table: 0
+      - tbl_full_test2687$stats.MyEgress1.canary_no_match_counter_eg1(0)
+    default_action: full_test2687
+stage 8 egress:
+  dependency: action
+  ternary_match tbl_drop_2 2:
+    p4: { name: tbl_drop_2, hidden: true }
+    hit: [  END ]
+    miss:  END
+    indirect: tbl_drop_2$tind
+  ternary_indirect tbl_drop_2$tind:
+    row: 0
+    bus: 0
+    format: { action: 0..0 }
+    instruction: tbl_drop_2$tind(action, $DEFAULT)
+    actions:
+      MyEgress1.drop(0, 1):
+      - hit_allowed: { allowed: true }
+      - default_action: { allowed: true, is_constant: true }
+      - handle: 0x20000069
+      - next_table: 0
+      - set eg_intr_md_for_dprsr.drop_ctl, 1
+    default_action: MyEgress1.drop
+
+
+primitives: "./viewchange/pipe1//full_test.prim.json"
+dynhash: "./viewchange/pipe1//full_test.dynhash.json"
