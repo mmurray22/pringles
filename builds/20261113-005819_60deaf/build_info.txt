@@ -1,0 +1,7 @@
+date        : 2026-11-13T00:58:19+00:00
+p4 source   : /root/pringles/code/p4/pktgen_tests/full_test/full_test.p4
+p4 sha1     : 60deaf9b6add884c74445c688ec223f43fb45601
+note        : pipe0+1 stopped drop cntrl clobbering, fixed append seq logic
+pipe0      : run_id 91755450ebc4122a  ingress 10 stages, egress 9 stages
+pipe1      : run_id 91755450ebc4122a  ingress 10 stages, egress 9 stages
+repo HEAD   : 2f4b27e  (uncommitted source changes: 1)
