@@ -1,0 +1,7 @@
+date        : 2026-11-13T08:12:27+00:00
+p4 source   : /root/pringles/code/p4/pktgen_tests/full_test/full_test.p4
+p4 sha1     : 33a2fbc956cb293e95248c6e3b8809051d2e99a7
+note        : pipe0+1 view change seems to work with appends, big test to actually see the seq no must be done, only one switch
+pipe0      : run_id 9b0e2d8f3af5d1ed  ingress 10 stages, egress 9 stages
+pipe1      : run_id 9b0e2d8f3af5d1ed  ingress 10 stages, egress 9 stages
+repo HEAD   : 4ccd7c5  (uncommitted source changes: 1)
