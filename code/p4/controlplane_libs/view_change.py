@@ -76,17 +76,17 @@ class ViewChange:
     #def __exit__(self):
     
     ##################################### Helper functions (TODO deduplicate) ############################
-    def get_register_number(self, bfrt_info, target, register_name, idx):
+    def get_register_number(self, bfrt_info, target, register_name, idx, pipe_idx=0):
         reg_table = bfrt_info.table_get(register_name)
 	table_resp = reg_table.entry_get(
 	    target,
-	    [reg_table.make_key([gc.KeyTuple('$REGISTER_INDEX', 0)])],
+	    [reg_table.make_key([gc.KeyTuple('$REGISTER_INDEX', idx)])],
 	    {"from_hw": True}
 	)
 	reg_data, _ = next(table_resp)
 	reg_data_dict = reg_data.to_dict()
         register_entry_name = register_name + ".f1"
-        return reg_data_dict[register_entry_name][idx]
+        return reg_data_dict[register_entry_name][pipe_idx] if len(reg_data_dict[register_entry_name]) > 1 else reg_data_dict[register_entry_name][0]
    
 
     ##################################### Send View Change Packets ############################
@@ -160,18 +160,9 @@ class ViewChange:
         highest_quorum_seq_no = 0
         members = []
         ring_idx = 0
-        for pkt in view_pkts:
-            # TODO? Get the sequence number seen by ALL switches in the new quorum from the last view
-
-            # Get the highest quorum sequence number
-            if highest_quorum_seq_no == 0:
-                highest_quorum_seq_no = pkt[TriggerViewChange].highest_seen_seq_no
-            elif pkt[TriggerViewChange].highest_seen_seq_no < highest_quorum_seq_no:
-                highest_quorum_seq_no = pkt[TriggerViewChange].highest_seen_seq_no
-
-            # Construct members of the new ring
-            members.append(pkt[TriggerViewChange].view_member_switch_id)
-        return (highest_quorum_seq_no, members)
+	highest_quorum_seq_no = min(p[TriggerViewChange].highest_seen_seq_no for p in view_pkts)
+	members = sorted([pkt[TriggerViewChange].view_member_switch_id for pkt in view_pkts])
+	return (highest_quorum_seq_no, members)
 
     #################### View Change Leader #################################
     def run_view_change(self, bfrt_info, target, pkt_it, duration, pipe_id):
@@ -180,13 +171,13 @@ class ViewChange:
         # Start dataplane response sniffing thread
         #print("========================================MADE IT HERE!!!!!")
         register_name = "MyIngress{}.map_from_gsn".format(pipe_id)
+        print("====================================== Packet iteration: {}".format(pkt_it))
         highest_quorum_seq_no = self.get_register_number(bfrt_info, target, register_name, pkt_it)
-        #print("======================================= Packet iteration: {}, Highest quorum sequence number: {}".format(pkt_it, highest_quorum_seq_no))
+        print("====================================== Highest quorum sequence number: {}".format(highest_quorum_seq_no))
 
         # Send StartView packet 
         self.send_start_view_change(highest_quorum_seq_no)
-        #sleep_time = float("5e-9")
-        sleep_time = .0000000005
+        sleep_time = .001
         total_time_waited = 0
         start_time = time.time()
         list_of_start_view_pkts = []

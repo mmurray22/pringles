@@ -1,7 +1,0 @@
-date        : 2026-11-12T21:21:41+00:00
-p4 source   : /root/pringles/code/p4/pktgen_tests/full_test/full_test.p4
-p4 sha1     : 82e6650e30924e3c159f4191e9e3c839eda1bc8b
-note        : pipe0+1 batch changes ported
-pipe0      : run_id 8da95f01ce9ea5dd  ingress 12 stages, egress 9 stages
-pipe1      : run_id 8da95f01ce9ea5dd  ingress 12 stages, egress 9 stages
-repo HEAD   : a7b0b01  (uncommitted source changes: 1)

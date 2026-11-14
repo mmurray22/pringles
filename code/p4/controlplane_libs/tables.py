@@ -65,7 +65,6 @@ class P4Tables:
                               number_of_shards,
                               shard_size,
                               switch_id,
-                              view_timeout,
                               pipe_idx):
         table_constants = self.bfrt_info.table_get("MyIngress{}.get_constants".format(pipe_idx))
         table_constants.attribute_entry_scope_set(self.general_target,
@@ -80,14 +79,14 @@ class P4Tables:
                                                            gc.DataTuple(name="number_of_shards", val=number_of_shards),
                                                            gc.DataTuple(name="ack_threshold", val=ack_threshold),
                                                            gc.DataTuple(name="num_recirc_ports", val=num_recirc_ports),
-                                                           gc.DataTuple(name="num_wait_ports", val=num_wait_ports),
-                                                           gc.DataTuple(name="view_timeout", val=view_timeout)]))
+                                                           gc.DataTuple(name="num_wait_ports", val=num_wait_ports)]))
          
 
     ################## TABLE #######################
     def setup_local_seq(self, pipe_idx):
         table_local_seq = self.bfrt_info.table_get("MyIngress{}.cntrl_local_seq".format(pipe_idx))
         table_local_seq.info.key_field_annotation_add("meta.ring_process", "bit<16>")
+        table_local_seq.info.key_field_annotation_add("meta.append_g_zero", "bit<8>")
         table_local_seq.attribute_entry_scope_set(self.general_target,
                 predefined_pipe_scope=True,
                 predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
@@ -95,8 +94,19 @@ class P4Tables:
         # Control packet: Read current local sequence number
         table_local_seq.entry_add(
                 self.pipe_targets[pipe_idx],
-                [table_local_seq.make_key([gc.KeyTuple('meta.ring_process', 0), gc.KeyTuple(CNTRL_VALID, 1)])],
+                [table_local_seq.make_key([gc.KeyTuple('meta.ring_process', 0), 
+					   gc.KeyTuple('meta.append_g_zero', 0),
+					   gc.KeyTuple(CNTRL_VALID, 1)])],
                 [table_local_seq.make_data([], 'MyIngress{}.read_local'.format(pipe_idx))])
+        # Append packet: Read current local sequence number
+        table_local_seq.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_local_seq.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND), 
+					   gc.KeyTuple('meta.append_g_zero', 1),
+					   gc.KeyTuple(CNTRL_VALID, 0)])],
+                [table_local_seq.make_data([], 'MyIngress{}.write_local'.format(pipe_idx))])
+
+
 
     def setup_pkt_it(self, pipe_idx):
         table_pkt_it = self.bfrt_info.table_get("MyIngress{}.fill_cntrl_pkt_it".format(pipe_idx))
@@ -130,6 +140,24 @@ class P4Tables:
                                        )],
                 [table_pkt_it.make_data([], 'MyIngress{}.update_it'.format(pipe_idx))])
 
+        # Append packet: Gets control packet iteration
+        table_pkt_it.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_pkt_it.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND), 
+                                        gc.KeyTuple(CNTRL_VALID, 0), 
+                                        gc.KeyTuple('meta.update_iteration', 0)]
+                                       )],
+                [table_pkt_it.make_data([], 'MyIngress{}.get_it'.format(pipe_idx))])
+	table_pkt_it.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_pkt_it.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND_RESP), 
+                                        gc.KeyTuple(CNTRL_VALID, 0), 
+                                        gc.KeyTuple('meta.update_iteration', 0)]
+                                       )],
+                [table_pkt_it.make_data([], 'MyIngress{}.get_complete_it'.format(pipe_idx))])
+
+
+
     def setup_cntrl_next_hop(self, pipe_idx):
         table_hop_routing = self.bfrt_info.table_get("MyIngress{}.next_hop_routing".format(pipe_idx))
         table_hop_routing.attribute_entry_scope_set(self.general_target,
@@ -149,14 +177,14 @@ class P4Tables:
                                              gc.KeyTuple(FINALIZE_VIEW_VALID, 0),
                                              gc.KeyTuple(CNTRL_VALID, 0)])],
                 [table_hop_routing.make_data([], 'MyIngress{}.get_next_hop'.format(pipe_idx))])
-        #table_hop_routing.entry_add(
-        #        self.pipe_targets[pipe_idx],
-        #        [table_hop_routing.make_key([gc.KeyTuple(TAIL_VALID, 0),
-        #                                     gc.KeyTuple(FINALIZE_VIEW_VALID, 1),
-        #                                     gc.KeyTuple(CNTRL_VALID, 0)])],
-        #        [table_hop_routing.make_data([], 'MyIngress{}.update_next_hop'.format(pipe_idx))])
+        table_hop_routing.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_hop_routing.make_key([gc.KeyTuple(TAIL_VALID, 0),
+                                             gc.KeyTuple(FINALIZE_VIEW_VALID, 1),
+                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                [table_hop_routing.make_data([], 'MyIngress{}.update_next_hop'.format(pipe_idx))])
 
-    def setup_edit_batch_size(self, pipe_idx):
+    def setup_edit_batch_size(self, pipe_idx): # TODO DEPRECATED
         table_edit_batch = self.bfrt_info.table_get("MyIngress{}.edit_batch_size".format(pipe_idx))
         table_edit_batch.info.key_field_annotation_add("meta.update_iteration", "bit<16>")
         table_edit_batch.info.key_field_annotation_add("meta.ring_process", "bit<16>")
@@ -172,8 +200,17 @@ class P4Tables:
                                             gc.KeyTuple(CNTRL_VALID, 1),
                                             gc.KeyTuple('meta.ring_process', 0)])],
                 [table_edit_batch.make_data([], 'MyIngress{}.set_batch_size'.format(pipe_idx))])
+        # Append packet: Set the batch size for the control packet iteration
+        table_edit_batch.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_edit_batch.make_key([gc.KeyTuple('meta.update_iteration', 1),
+                                            gc.KeyTuple(CNTRL_VALID, 0),
+                                            gc.KeyTuple('meta.ring_process', TYPE_APPEND)])],
+                [table_edit_batch.make_data([], 'MyIngress{}.update_batch_size'.format(pipe_idx))])
 
-    def setup_update_batches(self, pipe_idx):
+
+
+    def setup_update_batches(self, pipe_idx): # TODO: Deprecated
         table_update_batches = self.bfrt_info.table_get("MyIngress{}.update_batches".format(pipe_idx))
         table_update_batches.info.key_field_annotation_add("meta.update_iteration", "bit<16>")
         table_update_batches.info.key_field_annotation_add("meta.ring_process", "bit<16>")
@@ -194,7 +231,6 @@ class P4Tables:
         table_process_gsn = self.bfrt_info.table_get("MyIngress{}.process_gsn".format(pipe_idx))
         table_process_gsn.info.key_field_annotation_add("meta.ring_process", "bit<16>")
         table_process_gsn.info.key_field_annotation_add("meta.append_g_zero", "bit<8>")
-        table_process_gsn.info.key_field_annotation_add("meta.update_iteration", "bit<8>")
 
         table_process_gsn.attribute_entry_scope_set(self.general_target,
                 predefined_pipe_scope=True,
@@ -205,16 +241,26 @@ class P4Tables:
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', 0),
                                              gc.KeyTuple('meta.append_g_zero', 0),
-                                             gc.KeyTuple('meta.update_iteration', 1),
                                              gc.KeyTuple(CNTRL_VALID, 1)])],
                 [table_process_gsn.make_data([], 'MyIngress{}.update_gsn'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
-                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', 0),
+                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
                                              gc.KeyTuple('meta.append_g_zero', 0),
-                                             gc.KeyTuple('meta.update_iteration', 0),
-                                             gc.KeyTuple(CNTRL_VALID, 1)])],
-                [table_process_gsn.make_data([], 'MyIngress{}.update_gsn'.format(pipe_idx))])
+                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                [table_process_gsn.make_data([], 'MyIngress{}.assign_gsn'.format(pipe_idx))])
+        table_process_gsn.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
+                                             gc.KeyTuple('meta.append_g_zero', 1),
+                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                [table_process_gsn.make_data([], 'MyIngress{}.make_gsn_zero'.format(pipe_idx))])
+        table_process_gsn.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND_RESP),
+                                             gc.KeyTuple('meta.append_g_zero', 0),
+                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                [table_process_gsn.make_data([], 'MyIngress{}.get_ack_readiness'.format(pipe_idx))])
     
     def setup_rep_seq_no(self, pipe_idx):
         table_rep = self.bfrt_info.table_get("MyIngress{}.update_replicated_seq_no".format(pipe_idx))
@@ -244,17 +290,27 @@ class P4Tables:
         # TYPE_APPEND
         table_append_first.entry_add(
                 self.pipe_targets[pipe_idx],
-                [table_append_first.make_key([gc.KeyTuple('meta.ring_process', self.list_of_types[1]),
+                [table_append_first.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
                                   gc.KeyTuple('meta.append_g_zero', 1)])],
                 [table_append_first.make_data([], 'MyIngress{}.get_local_idx'.format(pipe_idx))])
-        
+	# TYPE_APPEND, but already sequenced
+        table_append_first.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_append_first.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
+                                  gc.KeyTuple('meta.append_g_zero', 0)])],
+                [table_append_first.make_data([], 'MyIngress{}.wait_to_seq'.format(pipe_idx))])
         # TYPE_APPEND_WAIT
         table_append_first.entry_add(
                 self.pipe_targets[pipe_idx],
-                [table_append_first.make_key([gc.KeyTuple('meta.ring_process', self.list_of_types[1]),
+                [table_append_first.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND_WAIT),
                                              gc.KeyTuple('meta.append_g_zero', 0)])],
                 [table_append_first.make_data([], 'MyIngress{}.wait_append'.format(pipe_idx))])
-        
+	# TYPE_APPEND_RESP
+        table_append_first.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_append_first.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND_RESP),
+                                             gc.KeyTuple('meta.append_g_zero', 0)])],
+                [table_append_first.make_data([], 'MyIngress{}.wait_ack_append'.format(pipe_idx))])
         # TYPE_READ_RESP
         table_append_first.entry_add(
                 self.pipe_targets[pipe_idx],
@@ -316,7 +372,7 @@ class P4Tables:
                                             gc.KeyTuple('meta.ack_ready', 1)])],
                 [table_ack_action.make_data([], 'MyIngress{}.ack_read'.format(pipe_idx))])
      
-    def setup_port_recirc(self, recirc_port_type, pipe_idx):
+    def setup_seq_port_recirc(self, recirc_port_type, pipe_idx):
         table_port_idx = self.bfrt_info.table_get("MyIngress{}.get_port_idx".format(pipe_idx))
         table_port_idx.info.key_field_annotation_add("meta.recirc_port_type", "bit<2>")
 
@@ -328,6 +384,19 @@ class P4Tables:
                 self.pipe_targets[pipe_idx],
                 [table_port_idx.make_key([gc.KeyTuple('meta.recirc_port_type', recirc_port_type)])],
                 [table_port_idx.make_data([], 'MyIngress{}.await_sequencing_ports'.format(pipe_idx))])
+
+    def setup_stor_port_recirc(self, recirc_port_type, pipe_idx):
+        table_port_idx = self.bfrt_info.table_get("MyIngress{}.get_port_idx".format(pipe_idx))
+        table_port_idx.info.key_field_annotation_add("meta.recirc_port_type", "bit<2>")
+
+        table_port_idx.attribute_entry_scope_set(self.general_target,
+                predefined_pipe_scope=True,
+                predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
+       
+        table_port_idx.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_port_idx.make_key([gc.KeyTuple('meta.recirc_port_type', recirc_port_type)])],
+                [table_port_idx.make_data([], 'MyIngress{}.emulate_storage_ports'.format(pipe_idx))])
 
     def setup_ack_latency(self, pipe_idx):
         table_ack_lat_low = self.bfrt_info.table_get("MyIngress{}.ack_get_lower_lat".format(pipe_idx))
@@ -387,42 +456,31 @@ class P4Tables:
         table_routing.attribute_entry_scope_set(self.general_target,
                 predefined_pipe_scope=True,
                 predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
-        table_routing.entry_add(
-                self.pipe_targets[pipe_idx],
-                [table_routing.make_key([gc.KeyTuple('meta.next_hop', 1),
-                                         gc.KeyTuple('meta.dst_addr', 0, prefix_len=32),
-                                         gc.KeyTuple('meta.recirc_port_type', 0),
-                                         gc.KeyTuple('meta.port_idx', 0),
-                                         gc.KeyTuple('meta.route_to_shard', 0),
-                                         gc.KeyTuple('meta.view_hops', 0)])],
-                [table_routing.make_data(action_name="MyIngress{}.send_to".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=156)])])
-   
 
         # Send control packet to next hop in ring OR Send (from view leader) FinalizeView to all ring members
         print("============== DIRECT SWITCH-TO-SWITCH PACKET ROUTING ==================")
         # Used by the: control packet, trigger view change, finalize view change
-        #for i in range(0, len(physical_switch_to_logical)):
-        #    for j in range(0, len(physical_switch_to_logical[i])):
-        #        port = 0
-        #        logical_switch_id = physical_switch_to_logical[i][j]
-        #        if i == self.physical_switch_id:
-        #            if j == 0:
-        #                port = port_to_pipe_0
-        #            elif j == 1:
-        #                port = ring_members[i]
-        #        else:
-        #            port = ring_members[i]
-
-        #        print("Table Entry: Switch ID: {} to port: {}".format(logical_switch_id, port))
-        #        table_routing.entry_add(
-        #                self.pipe_targets[pipe_idx],
-        #                [table_routing.make_key([gc.KeyTuple('meta.next_hop', logical_switch_id),
-        #                                         gc.KeyTuple('meta.dst_addr', 0, prefix_len=32),
-        #                                         gc.KeyTuple('meta.recirc_port_type', 0),
-        #                                         gc.KeyTuple('meta.port_idx', 0),
-        #                                         gc.KeyTuple('meta.route_to_shard', 0),
-        #                                         gc.KeyTuple('meta.view_hops', 0)])],
-        #                [table_routing.make_data(action_name="MyIngress{}.send_to".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=port)])])
+        for i in range(0, len(physical_switch_to_logical)):
+            for j in range(0, len(physical_switch_to_logical[i])):
+                port = 0
+                logical_switch_id = physical_switch_to_logical[i][j]
+                if i == self.physical_switch_id:
+                    if j == 0:
+                        port = port_to_pipe_0
+                    elif j == 1:
+                        port = ring_members[i]
+                else:
+                    port = ring_members[i]
+                print("Table Entry: Switch ID: {} to port: {}".format(logical_switch_id, port))
+                table_routing.entry_add(
+                        self.pipe_targets[pipe_idx],
+                        [table_routing.make_key([gc.KeyTuple('meta.next_hop', logical_switch_id),
+                                                 gc.KeyTuple('meta.dst_addr', 0, prefix_len=32),
+                                                 gc.KeyTuple('meta.recirc_port_type', 0),
+                                                 gc.KeyTuple('meta.port_idx', 0),
+                                                 gc.KeyTuple('meta.route_to_shard', 0),
+                                                 gc.KeyTuple('meta.view_hops', 0)])],
+                        [table_routing.make_data(action_name="MyIngress{}.send_to".format(pipe_idx), data_field_list_in=[gc.DataTuple(name="port", val=port)])])
    
     def setup_cpu_dummy(self, pipe_idx, cpu_port):
         table_routing = self.bfrt_info.table_get("MyIngress{}.routing".format(pipe_idx))
@@ -465,7 +523,7 @@ class P4Tables:
         # Recirculating appends for sequencing
         print("============== SEQUENCING RECIRCULATION PORTS ==================")
         for i in range(0, len(ports)):
-            #print("Recirc port idx: {} and port {}".format(i, recirc_ports[i]))
+            print("Recirc port idx: {} and port {}".format(i,ports[i]))
             table_routing.entry_add(
                     self.pipe_targets[pipe_idx],
                     [table_routing.make_key([gc.KeyTuple('meta.next_hop', 0),

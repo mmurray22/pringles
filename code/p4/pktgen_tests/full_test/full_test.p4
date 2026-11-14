@@ -194,7 +194,7 @@ control MyIngress0(inout headers hdr,
     };
     RegisterAction<bit<32>, bit<16>, bit<32>>(map_from_gsn) compare_gsn = {
         void apply(inout bit<32> gsn_slot, out bit<32> higher) { // inout = register, out = output 
-	    if (hdr.append.g_idx > gsn_slot || hdr.append.g_idx == gsn_slot) {
+	    if (meta.global_seq_no < gsn_slot || meta.global_seq_no == gsn_slot) { // hdr.append.g_idx
 	        higher = 1;
 	    } else {
 	        higher = 0;
@@ -209,8 +209,7 @@ control MyIngress0(inout headers hdr,
 		     bit<16> number_of_shards,
 		     bit<32> ack_threshold,
 		     bit<8> num_recirc_ports,
-		     bit<8> num_wait_ports,
-		     bit<32> view_timeout) {
+		     bit<8> num_wait_ports) {
 	
 	meta.switch_id = switch_id;
 	meta.shard_size = shard_size;	
@@ -218,7 +217,6 @@ control MyIngress0(inout headers hdr,
 	meta.ack_threshold = ack_threshold;	
         meta.num_recirc_ports = num_recirc_ports;
         meta.num_wait_ports = num_wait_ports;
-        meta.view_timeout = view_timeout;
     }
     @pragma ternary 1 
     table get_constants {
@@ -226,7 +224,7 @@ control MyIngress0(inout headers hdr,
 	    constants;
 	}
 	size = 1;
-	default_action = constants(1, 0, 0, 1, 0, 0, 2500);
+	default_action = constants(1, 0, 0, 1, 0, 0);
     }
 
     /**** ROUTING *****/
@@ -267,7 +265,7 @@ control MyIngress0(inout headers hdr,
     RegisterAction<bit<16>, bit<1>, bit<16>>(cntrl_pkt_it) update_cntrl_pkt_it = {
         void apply(inout bit<16> cur_cntrl_pkt_it, out bit<16> output_cntrl_pkt_it) {
 	    output_cntrl_pkt_it = cur_cntrl_pkt_it;
-	    if (cur_cntrl_pkt_it == (bit<16>)MAX_GSN_MAP_SIZE) {
+	    if (cur_cntrl_pkt_it == (bit<16>)MAX_GSN_MAP_IDX_VAL) {
                 cur_cntrl_pkt_it = 0;
 	    } else {
                 cur_cntrl_pkt_it = cur_cntrl_pkt_it + 1;
@@ -281,7 +279,11 @@ control MyIngress0(inout headers hdr,
     };
     RegisterAction<bit<16>, bit<1>, bit<16>>(cntrl_pkt_it) latest_complete_cntrl_pkt_it = {
         void apply(inout bit<16> cur_cntrl_pkt_it, out bit<16> output_cntrl_pkt_it) {
-	    output_cntrl_pkt_it = cur_cntrl_pkt_it - 1;
+	    if (cur_cntrl_pkt_it == 0) {
+	        output_cntrl_pkt_it = (bit<16>)MAX_GSN_MAP_IDX_VAL;
+	    } else {
+	        output_cntrl_pkt_it = cur_cntrl_pkt_it - 1;
+	    }	
 	}
     };
 
@@ -458,6 +460,7 @@ control MyIngress0(inout headers hdr,
     table cntrl_local_seq {
         key = {
             meta.ring_process: exact;
+	    meta.append_g_zero: exact;
  	    hdr.cntrl.isValid(): exact;
         }
         actions = {
@@ -553,6 +556,12 @@ control MyIngress0(inout headers hdr,
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
 	meta.recirc_port_type = 2;
     }
+    action wait_ack_append() {
+	meta.recirc_port_type = 2;
+    }
+    action wait_to_seq() {
+	meta.recirc_port_type = 1;
+    }
     action get_read_resp() {
 	meta.dst_addr = hdr.ipv4.dst;
     }
@@ -564,6 +573,8 @@ control MyIngress0(inout headers hdr,
         actions = {
             get_local_idx;
 	    wait_append;
+	    wait_ack_append;
+	    wait_to_seq;
 	    get_read_resp; // TYPE_READ_RESP
             NoAction;
         }
@@ -572,7 +583,7 @@ control MyIngress0(inout headers hdr,
     }
 
     action exp_type_one() {
-	seq_only_packet_counter.count(0); // TODO
+	seq_only_packet_counter.count(0);
 	drop();
     }
     action exp_type_two() {
@@ -583,10 +594,12 @@ control MyIngress0(inout headers hdr,
     }
     action regular_stream() {
 	meta.route_to_shard = 1;
+	meta.recirc_port_type = 0;
 	hdr.ring_type.shard_id = (bit<16>)hdr.append.stream_id;
     }
     action regular_idx() {
 	meta.route_to_shard = 1;
+	meta.recirc_port_type = 0;
 	hdr.ring_type.shard_id = (bit<16>)hdr.append.g_idx;
     }
     table append_second_tbl {
@@ -606,22 +619,21 @@ control MyIngress0(inout headers hdr,
 
 
     action update_gsn() {
-	add_gsn.execute(meta.cntrl_pkt_it); // TODO: What is the order? Check this!
+	add_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
     }
     action get_ack_readiness() {
-	meta.ready_for_ack = (bit<1>)compare_gsn.execute(meta.cntrl_pkt_it);
+	meta.ready_for_ack = (bit<1>)compare_gsn.execute(meta.cntrl_pkt_it_idx);
     }
     action make_gsn_zero() {
-	zero_gsn.execute(meta.cntrl_pkt_it); // Get Global sequence number
+	zero_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     action assign_gsn() {
-        meta.assign_sn = get_gsn.execute(meta.cntrl_pkt_it); // Get Global sequence number
+        meta.assign_sn = get_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     table process_gsn {
         key = {
             meta.ring_process: exact;
 	    meta.append_g_zero: exact;
-	    meta.update_iteration: exact;
             hdr.cntrl.isValid(): exact;
         }
         actions = {
@@ -641,7 +653,6 @@ control MyIngress0(inout headers hdr,
     action await_sequencing_ports() {
 	meta.port_idx = get_seqrecirc_idx.execute(0);
     }
-    @stage(10)
     table get_port_idx {
 	key = {
 	   meta.recirc_port_type: exact; 
@@ -673,7 +684,7 @@ control MyIngress0(inout headers hdr,
 
 
     action ack_append() {
-	//tot_packet_counter0.count(0);
+	//tot_packet_counter0.count(0); TODO
 	//meta.output = update_low_pkt_cntr.execute(0);
 	//update_high_pkt_cntr.execute(0);
         //update_raw_elapsed_time.execute(0); TODO: Make separate table
@@ -808,7 +819,7 @@ control MyIngress0(inout headers hdr,
 	   update_next_hop;
 	   NoAction;
 	}
-	size = 64;
+	size = 8;
 	default_action = NoAction;
     }
 
@@ -841,6 +852,7 @@ control MyIngress0(inout headers hdr,
 
     /* Start of Ingress Pipeline */
     apply {	
+	ig_dprsr_md.drop_ctl = 0;
         meta.recirc_port_type = 0;
         meta.route_to_shard= 0;
         meta.ready_for_ack = 0;
@@ -872,7 +884,6 @@ control MyIngress0(inout headers hdr,
         meta.overflow = 0;
         meta.output = 0;
         meta.ack_threshold = 0;
-        meta.view_timeout = 0;
         meta.last_time = 0;
         meta.current_time = 0;
 
@@ -886,17 +897,21 @@ control MyIngress0(inout headers hdr,
         meta.end_ts = 0;
         meta.elapse_time = 0;
 
-	hdr.timer.setInvalid();
+
 
 	get_constants.apply();
 
 	if (hdr.cntrl.isValid()) {
 	    meta.ring_process = 0;
 	    cntrl_counter_ig0.count(0);
+	    meta.global_seq_no = hdr.cntrl.global_seq_no;
 	} else if (hdr.ring_type.isValid()) {
 	    // Determine if this packet needs to be routed to another switch
 	    meta.ring_process = hdr.ring_type.type;
 	    hdr.ring_type.pipe_ts = ig_prsr_md.global_tstamp[31:0];
+	    if (hdr.append.isValid()) {
+	        meta.global_seq_no = hdr.append.g_idx;
+	    }
 	} else {
 	    meta.ring_process = 0;
 	}
@@ -917,20 +932,31 @@ control MyIngress0(inout headers hdr,
 
 	
 	cntrl_local_seq.apply();
-	if (meta.local_seq_no != 0) {
+	if (hdr.cntrl.isValid()) { // && meta.local_seq_no != 0) { // Only update pkt it if cntrl packet
 	    meta.update_iteration = 1;
 	}
 
-
 	fill_cntrl_pkt_it.apply();
+	if (meta.ring_process == TYPE_APPEND && meta.append_g_zero == 0) {
+	    meta.cntrl_pkt_it_idx = hdr.append.cntrl_pkt_it;
+	} else {
+	    meta.cntrl_pkt_it_idx = meta.cntrl_pkt_it;
+	}
 
 	append_first_tbl.apply(); // handles g_idx == 0 and TYPE_WAIT
 
-	edit_batch_size.apply();
-	update_batches.apply();
 	process_gsn.apply(); // handles TYPE_APPEND_RESP, handles GSN updates
 	
-	if (meta.ring_process == TYPE_APPEND && hdr.append.cntrl_pkt_it != meta.cntrl_pkt_it) {
+	if (hdr.cntrl.isValid() && meta.update_iteration == 1) {
+            hdr.cntrl.global_seq_no = meta.global_seq_no + meta.local_seq_no;
+	    meta.batch_size = meta.local_seq_no;
+	    set_batch_sz.execute(meta.cntrl_pkt_it);
+	    add_batch.execute(0);
+	} else if (meta.ring_process == TYPE_APPEND && hdr.append.cntrl_pkt_it != meta.cntrl_pkt_it) {
+	    bit<32> cnt = update_batch_sz.execute(hdr.append.cntrl_pkt_it);
+	    if (cnt == 0) {
+	        sub_batch.execute(0);
+	    }
 	    hdr.append.g_idx = hdr.append.g_idx + meta.assign_sn;	    
 	    append_second_tbl.apply(); // handles post-sequencing exp_type
 	}
@@ -974,14 +1000,16 @@ control MyIngress0(inout headers hdr,
 	    meta.duration = (bit<32>)(hdr.ring_type.end_ts - hdr.append.start_ts);
 	    ack_get_lower_lat.apply();
 	    ack_get_upper_lat.apply();
-            if (hdr.append.isValid() && hdr.append.exp_type == 2) {
-	        drop(); // <-- TODO put in routing table?
+            if (hdr.append.isValid() && hdr.append.exp_type == 2) { 
+		drop(); // <-- TODO fold into the ack action table!
 	    }
+	    meta.recirc_port_type = 0;
+	    meta.port_idx = 0;
 	} 
-
 
         routing.apply();
 	update_replicated_seq_no.apply();
+	hdr.timer.setInvalid();
      }
 }
 
@@ -1050,7 +1078,7 @@ control MyIngress1(inout headers hdr,
     };
     RegisterAction<bit<32>, bit<16>, bit<32>>(map_from_gsn) compare_gsn = {
         void apply(inout bit<32> gsn_slot, out bit<32> higher) { // inout = register, out = output 
-	    if (hdr.append.g_idx > gsn_slot || hdr.append.g_idx == gsn_slot) {
+	    if (meta.global_seq_no < gsn_slot || meta.global_seq_no == gsn_slot) {
 	        higher = 1;
 	    } else {
 	        higher = 0;
@@ -1065,16 +1093,13 @@ control MyIngress1(inout headers hdr,
 		     bit<16> number_of_shards,
 		     bit<32> ack_threshold,
 		     bit<8> num_recirc_ports,
-		     bit<8> num_wait_ports,
-		     bit<32> view_timeout) {
-	
+		     bit<8> num_wait_ports) {
 	meta.switch_id = switch_id;
 	meta.shard_size = shard_size;	
 	meta.num_shards = number_of_shards;
 	meta.ack_threshold = ack_threshold;	
         meta.num_recirc_ports = num_recirc_ports;
         meta.num_wait_ports = num_wait_ports;
-        meta.view_timeout = view_timeout;
     }
     @pragma ternary 1 
     table get_constants {
@@ -1082,7 +1107,7 @@ control MyIngress1(inout headers hdr,
 	    constants;
 	}
 	size = 1;
-	default_action = constants(1, 0, 0, 1, 0, 0, 2500);
+	default_action = constants(1, 0, 0, 1, 0, 0);
     }
 
     /**** ROUTING *****/
@@ -1123,7 +1148,7 @@ control MyIngress1(inout headers hdr,
     RegisterAction<bit<16>, bit<1>, bit<16>>(cntrl_pkt_it) update_cntrl_pkt_it = {
         void apply(inout bit<16> cur_cntrl_pkt_it, out bit<16> output_cntrl_pkt_it) {
 	    output_cntrl_pkt_it = cur_cntrl_pkt_it;
-	    if (cur_cntrl_pkt_it == (bit<16>)MAX_GSN_MAP_SIZE) {
+	    if (cur_cntrl_pkt_it == (bit<16>)MAX_GSN_MAP_IDX_VAL) {
                 cur_cntrl_pkt_it = 0;
 	    } else {
                 cur_cntrl_pkt_it = cur_cntrl_pkt_it + 1;
@@ -1137,7 +1162,11 @@ control MyIngress1(inout headers hdr,
     };
     RegisterAction<bit<16>, bit<1>, bit<16>>(cntrl_pkt_it) latest_complete_cntrl_pkt_it = {
         void apply(inout bit<16> cur_cntrl_pkt_it, out bit<16> output_cntrl_pkt_it) {
-	    output_cntrl_pkt_it = cur_cntrl_pkt_it - 1;
+	    if (cur_cntrl_pkt_it == 0) {
+	        output_cntrl_pkt_it = (bit<16>)MAX_GSN_MAP_IDX_VAL;
+	    } else {
+	        output_cntrl_pkt_it = cur_cntrl_pkt_it - 1;
+	    }	
 	}
     };
 
@@ -1314,6 +1343,7 @@ control MyIngress1(inout headers hdr,
     table cntrl_local_seq {
         key = {
             meta.ring_process: exact;
+	    meta.append_g_zero: exact;
  	    hdr.cntrl.isValid(): exact;
         }
         actions = {
@@ -1405,8 +1435,14 @@ control MyIngress1(inout headers hdr,
 	hdr.append.g_idx = meta.local_seq_no;	    
 	meta.recirc_port_type = 1;
     }
+    action wait_to_seq() {
+	meta.recirc_port_type = 1;
+    }
     action wait_append() {
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
+	meta.recirc_port_type = 2;
+    }
+    action wait_ack_append() {
 	meta.recirc_port_type = 2;
     }
     action get_read_resp() {
@@ -1420,7 +1456,8 @@ control MyIngress1(inout headers hdr,
         actions = {
             get_local_idx;
 	    wait_append;
-
+	    wait_ack_append;
+	    wait_to_seq;
 	    get_read_resp; // TYPE_READ_RESP
             NoAction;
         }
@@ -1430,22 +1467,21 @@ control MyIngress1(inout headers hdr,
 
 
     action update_gsn() {
-	add_gsn.execute(meta.cntrl_pkt_it); // TODO: What is the order? Check this!
+	add_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
     }
     action get_ack_readiness() {
-	meta.ready_for_ack = (bit<1>)compare_gsn.execute(meta.cntrl_pkt_it);
+	meta.ready_for_ack = (bit<1>)compare_gsn.execute(meta.cntrl_pkt_it_idx);
     }
     action make_gsn_zero() {
-	zero_gsn.execute(meta.cntrl_pkt_it); // Get Global sequence number
+	zero_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     action assign_gsn() {
-        meta.assign_sn = get_gsn.execute(meta.cntrl_pkt_it); // Get Global sequence number
+        meta.assign_sn = get_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     table process_gsn {
         key = {
             meta.ring_process: exact;
 	    meta.append_g_zero: exact;
-	    meta.update_iteration: exact;
             hdr.cntrl.isValid(): exact;
         }
         actions = {
@@ -1472,10 +1508,12 @@ control MyIngress1(inout headers hdr,
     }
     action regular_stream() {
 	meta.route_to_shard = 1;
+	meta.recirc_port_type = 0;
 	hdr.ring_type.shard_id = (bit<16>)hdr.append.stream_id;
     }
     action regular_idx() {
 	meta.route_to_shard = 1;
+	meta.recirc_port_type = 0;
 	hdr.ring_type.shard_id = (bit<16>)hdr.append.g_idx;
     }
     table append_second_tbl {
@@ -1500,7 +1538,6 @@ control MyIngress1(inout headers hdr,
     action await_sequencing_ports() {
 	meta.port_idx = get_seqrecirc_idx.execute(0);
     }
-    @stage(10)
     table get_port_idx {
 	key = {
 	   meta.recirc_port_type: exact; 
@@ -1568,7 +1605,6 @@ control MyIngress1(inout headers hdr,
 	    meta.ack_ready: exact;
 	}
 	actions = {
-	    read_rep_seq_no;
 	    write_rep_seq_no;
 	    NoAction;
 	}
@@ -1668,7 +1704,7 @@ control MyIngress1(inout headers hdr,
 	   update_next_hop;
 	   NoAction;
 	}
-	size = 64;
+	size = 8;
 	default_action = NoAction;
     }
 
@@ -1702,6 +1738,7 @@ control MyIngress1(inout headers hdr,
 
     /* Start of Ingress Pipeline */
     apply {	
+	ig_dprsr_md.drop_ctl = 0;
         meta.recirc_port_type = 0;
         meta.route_to_shard= 0;
         meta.ready_for_ack = 0;
@@ -1733,7 +1770,6 @@ control MyIngress1(inout headers hdr,
         meta.overflow = 0;
         meta.output = 0;
         meta.ack_threshold = 0;
-        meta.view_timeout = 0;
         meta.last_time = 0;
         meta.current_time = 0;
 
@@ -1752,21 +1788,24 @@ control MyIngress1(inout headers hdr,
 	if (hdr.cntrl.isValid()) {
 	    meta.ring_process = 0;
 	    cntrl_counter_ig1.count(0);
-
-	} 
-
-        if (hdr.ring_type.isValid()) {
+	    meta.global_seq_no = hdr.cntrl.global_seq_no;
+	} else if (hdr.ring_type.isValid()) {
 	    // Determine if this packet needs to be routed to another switch
 	    meta.ring_process = hdr.ring_type.type;
 	    hdr.ring_type.pipe_ts = ig_prsr_md.global_tstamp[31:0];
+	    if (hdr.append.isValid()) {
+	        meta.global_seq_no = hdr.append.g_idx;
+	    }
 	} else {
 	    meta.ring_process = 0;
 	}
 	if (hdr.append.isValid() && hdr.append.g_idx == 0) {
-	    hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
 	    meta.append_g_zero = 1;
-	    tot_packet_counter1.count(0);
-        }
+	    hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
+
+        } else {
+            meta.append_g_zero = 0;
+	}
 
 	if (hdr.tail.isValid()) {
 	    if (hdr.tail.start_switch_id == meta.switch_id && hdr.tail.hops != 0) {
@@ -1777,23 +1816,36 @@ control MyIngress1(inout headers hdr,
 	}
 
 	cntrl_local_seq.apply();
-	if (meta.local_seq_no != 0) {
+	if (hdr.cntrl.isValid()) { //&& meta.local_seq_no != 0) { // Only update pkt it if cntrl packet
 	    meta.update_iteration = 1;
 	}
-	fill_cntrl_pkt_it.apply();
-	append_first_tbl.apply(); // handles g_idx == 0 and TYPE_WAIT
-	edit_batch_size.apply();
-	update_batches.apply();
-	process_gsn.apply(); // handles TYPE_APPEND_RESP, handles GSN updates	 // Triggered on a FinalizeView
-
-	if (meta.ring_process == TYPE_APPEND && hdr.append.cntrl_pkt_it != meta.cntrl_pkt_it) {
-	    hdr.append.g_idx = hdr.append.g_idx + meta.assign_sn;	    
-	    append_second_tbl.apply(); // handles post-sequencing exp_type
-
+	fill_cntrl_pkt_it.apply(); // TODO: SHOULD THIS UPDATE BE INVOKED FOR EVERY CONTROL PACKET???? 
+	if (meta.ring_process == TYPE_APPEND && meta.append_g_zero == 0) {
+	    meta.cntrl_pkt_it_idx = hdr.append.cntrl_pkt_it;
+	} else {
+	    meta.cntrl_pkt_it_idx = meta.cntrl_pkt_it;
 	}
 
-	get_port_idx.apply();
+	
+	append_first_tbl.apply(); // handles g_idx == 0 and TYPE_WAIT
+	process_gsn.apply(); // handles TYPE_APPEND_RESP, handles GSN updates
+	
+	if (hdr.cntrl.isValid() && meta.local_seq_no != 0) {
+            hdr.cntrl.global_seq_no = meta.global_seq_no + meta.local_seq_no;
+	    meta.batch_size = meta.local_seq_no;
+	    set_batch_sz.execute(meta.cntrl_pkt_it);
+	    add_batch.execute(0);
+	} else if (meta.ring_process == TYPE_APPEND && hdr.append.cntrl_pkt_it != meta.cntrl_pkt_it) {
+	    bit<32> cnt = update_batch_sz.execute(hdr.append.cntrl_pkt_it);
+	    if (cnt == 0) {
+	        sub_batch.execute(0);
+	    }
+	    hdr.append.g_idx = hdr.append.g_idx + meta.assign_sn;	    
+	    append_second_tbl.apply(); // handles post-sequencing exp_type
+	}
 
+
+	get_port_idx.apply();
 
 	next_hop_routing.apply();
 	if (hdr.trigger_view.isValid()) {
@@ -1829,12 +1881,15 @@ control MyIngress1(inout headers hdr,
 	    bit<32> slot = get_ack_idx.execute(0);
 	    meta.ack_ready = check_ack.execute(slot);
 	    ack_action_tbl.apply();
+	    tot_packet_counter1.count(0);
 	    meta.duration = (bit<32>)(hdr.ring_type.end_ts - hdr.append.start_ts);
 	    ack_get_lower_lat.apply();
 	    ack_get_upper_lat.apply();
 	    if (hdr.append.isValid() && hdr.append.exp_type == 2) {
 	        drop(); // <-- TODO put in routing table?
 	    }
+	    meta.recirc_port_type = 0;
+	    meta.port_idx = 0;
 	}
 	
         routing.apply();
@@ -1855,7 +1910,7 @@ control MyIngressDeparser(
 
     apply {
 	if (ig_dprsr_md.digest_type == 1) {
-	    // We have: meta.view_timeout, meta.last_time, and meta.current_time
+	    // We have: meta.last_time, and meta.current_time
 	    bit<8> hello = 0;
 	    //digest_timeout.pack({hello});
 	}
@@ -2177,6 +2232,7 @@ control MyEgress0(inout headers hdr,
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) canary_no_match_counter_eg1; 
 
     apply { 
+	eg_dprsr_md.drop_ctl = 0;
         meta.route_to_shard= 0;
         meta.ready_for_ack = 0;
         meta.ack_ready = 0;
@@ -2209,7 +2265,6 @@ control MyEgress0(inout headers hdr,
         meta.overflow = 0;
         meta.output = 0;
         meta.ack_threshold = 0;
-        meta.view_timeout = 0;
         meta.last_time = 0;
         meta.current_time = 0;
 
@@ -2499,6 +2554,7 @@ control MyEgress1(inout headers hdr,
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) canary_no_match_counter_eg1; 
 
     apply { 
+	eg_dprsr_md.drop_ctl = 0;
         meta.route_to_shard= 0;
         meta.ready_for_ack = 0;
         meta.ack_ready = 0;
@@ -2531,7 +2587,6 @@ control MyEgress1(inout headers hdr,
         meta.overflow = 0;
         meta.output = 0;
         meta.ack_threshold = 0;
-        meta.view_timeout = 0;
         meta.last_time = 0;
         meta.current_time = 0;
 

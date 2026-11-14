@@ -51,6 +51,7 @@ const bit<16> TYPE_VIEW_ACK = 0x0910;
 
 const bit<32> MAX_INFLIGHT_ACKS = 65536;
 const bit<32> MAX_GSN_MAP_SIZE = 65535;
+const bit<32> MAX_GSN_MAP_IDX_VAL = 65534;
 const bit<8> CANARY_VALUE = 165; //0xA5;
 
 const pkt_type_t PKT_TYPE_NORMAL = 1;
@@ -298,6 +299,7 @@ struct metadata {
     bit<8> append_g_zero;
     
     bit<16> cntrl_pkt_it;
+    bit<16> cntrl_pkt_it_idx;
     bit<16> wait_time;
     bit<16> nonce;
     bit<16> ring_view;
@@ -315,7 +317,6 @@ struct metadata {
     int<32> overflow;
     bit<32> output;
     bit<32> ack_threshold;
-    bit<32> view_timeout;
     bit<32> last_time;
     bit<32> current_time;
 
