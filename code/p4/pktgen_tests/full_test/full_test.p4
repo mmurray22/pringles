@@ -30,6 +30,10 @@ parser MyParser(packet_in packet,
     state start {
 	tofino_parser.apply(packet, standard_metadata);
         transition select(standard_metadata.ingress_port) {
+	    68      : parse_pktgen_timer; // Generated packet!
+            69      : parse_pktgen_timer; // Generated packet!
+            70      : parse_pktgen_timer; // Generated packet!
+            71      : parse_pktgen_timer; // Generated packet!
             196      : parse_pktgen_timer; // Generated packet!
             197      : parse_pktgen_timer; // Generated packet!
             198      : parse_pktgen_timer; // Generated packet!
@@ -2044,13 +2048,12 @@ control MyEgress0(inout headers hdr,
 		 inout egress_intrinsic_metadata_for_deparser_t eg_dprsr_md,
 		 inout egress_intrinsic_metadata_for_output_port_t eg_oport_md) {
 
-    Register<bit<32>, bit<1>>(1, 0) queue_cnt; 
-    RegisterAction<bit<32>, bit<1>, bit<32>>(queue_cnt) curr_queue_cnt = {
+    Register<bit<32>, bit<16>>(MAX_NUM_QUEUES, 0) queue_cnt; 
+    RegisterAction<bit<32>, bit<16>, bit<32>>(queue_cnt) curr_queue_cnt = {
         void apply(inout bit<32> new_queue_cnt) {
 	    new_queue_cnt = meta.queue_congest;
 	}
     };
-
     Register<bit<8>, bit<1>>(1, 0) view_change_status;  // TODO : Setting the point at which the view change happens
     RegisterAction<bit<8>, bit<1>, bit<8>>(view_change_status) received_start_view = {
         void apply(inout bit<8> is_active, out bit<8> output) {
@@ -2285,7 +2288,8 @@ control MyEgress0(inout headers hdr,
 
 	    get_packet_type.apply();
             meta.queue_congest = (bit<32>)(standard_metadata.deq_qdepth);
-            curr_queue_cnt.execute(0);
+	    bit<16> queue_indx = (bit<16>)(standard_metadata.egress_port ++ standard_metadata.egress_qid);
+            curr_queue_cnt.execute(queue_indx);
 
 	    meta.elapse_time = eg_prsr_md.global_tstamp[31:0] - hdr.ring_type.pipe_ts;
 	    update_pipeline_time.execute(0);
@@ -2366,8 +2370,8 @@ control MyEgress1(inout headers hdr,
 		 inout egress_intrinsic_metadata_for_deparser_t eg_dprsr_md,
 		 inout egress_intrinsic_metadata_for_output_port_t eg_oport_md) {
 
-    Register<bit<32>, bit<1>>(1, 0) queue_cnt; 
-    RegisterAction<bit<32>, bit<1>, bit<32>>(queue_cnt) curr_queue_cnt = {
+    Register<bit<32>, bit<16>>(MAX_NUM_QUEUES, 0) queue_cnt; 
+    RegisterAction<bit<32>, bit<16>, bit<32>>(queue_cnt) curr_queue_cnt = {
         void apply(inout bit<32> new_queue_cnt) {
 	    new_queue_cnt = meta.queue_congest;
 	}
@@ -2607,7 +2611,9 @@ control MyEgress1(inout headers hdr,
 
 	    get_packet_type.apply();
             meta.queue_congest = (bit<32>)(standard_metadata.deq_qdepth);
-            curr_queue_cnt.execute(0);
+	    //bit<16> queue_indx = ((bit<16>)standard_metadata.egress_port << 5) | ((bit<16>)standard_metadata.egress_qid);
+	    bit<16> queue_indx = (bit<16>)(standard_metadata.egress_port ++ standard_metadata.egress_qid);
+            curr_queue_cnt.execute(queue_indx);
 
 	    meta.elapse_time = eg_prsr_md.global_tstamp[31:0] - hdr.ring_type.pipe_ts;
 	    update_pipeline_time.execute(0);

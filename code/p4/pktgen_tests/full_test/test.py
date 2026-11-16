@@ -437,6 +437,7 @@ class ViewChangeTest(BfRuntimeTest):
             "lower_time_bound": lower_time_bound,
             "upper_time_bound": upper_time_bound,
             "pipe_id": pipe_id,
+            "timestamp_start_epoch": self.t0,
             "timeseries_interval_ms": time_interval_ms
         }
         self.write_experiment_telemetry(target_dest, telemetry_payload)
@@ -463,6 +464,30 @@ class ViewChangeTest(BfRuntimeTest):
         sendp(pkt, iface=interface, verbose=True)
 
     ######################################## Per Pipe Operations ###################################
+    def pipe_queue_monitor(self, bfrt_info, target, pipe_id, duration, all_ports):
+        # measure queue size at this time period TODO
+        queues_of_interest = []
+        queue_idx_map = {}
+        for port in all_ports:
+            self.queue_cnt_over_time[pipe_id][port] = []
+            for i in range(0, 1):
+                port_idx = (port << 5) | i
+                queues_of_interest.append(port_idx)
+                queue_idx_map[port_idx] = [port, i]
+        start_time = time.time()
+	while (time.time() - start_time) < duration:
+            q_name = "MyEgress{}.queue_cnt".format(pipe_id)
+            print("=======================================================================")
+            print("GOING TO BE READING THE EGRESS QUEUE COUNT HERE:")
+            for idx in queues_of_interest:
+                q_res = self.get_register_number_at_idx(bfrt_info, target, q_name, idx)
+                if q_res != 0:
+                    logger.info("[IN PROGRESS] Num of packets in the egress queue for port {} and queue id {} : {}".format(queue_idx_map[idx][0], queue_idx_map[idx][1], q_res))
+                self.queue_cnt_over_time[pipe_id][queue_idx_map[idx][0]].append(q_res)
+            print("=======================================================================")
+	    time.sleep(self.time_interval_s)
+
+
     # Runtime per pipe maintenance which collects data from each pipe and manages the view change
     def pipe_pktgen_runtime(self, bfrt_info, target, cpu_interface, pipe_id, duration, nsperpkt, experiment_type, view_threshold, switch_id, active_switches):
         # Initialize and start the view change components
@@ -473,19 +498,24 @@ class ViewChangeTest(BfRuntimeTest):
         if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
             trigger_view_t.start()
         
-        self.setup_timer_pkt_gen(bfrt_info, target, CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, self.payload_size, cpu_interface, duration, nsperpkt, pipe_id, experiment_type, switch_id)
         pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         prev_num_pkts = 0
-        prev_time = 0
+        prev_time = self.t0
+        generate_pkts_over_time = []
+        pkts_over_time = []
+        tput_over_time = []
+        avg_lat_over_time = []
+        pipeline_over_time = []
+        timestamps = []
         
         start_time = time.time()
 	while (time.time() - start_time) < duration:
             cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
             cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
             logger.info("[IN PROGRESS] Ingress {} Control packet count: {}".format(pipe_id, cntrl_cnt))
-            canary_drop_cnt_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
-            canary_drop_cnt = self.get_counter_number(bfrt_info, canary_drop_cnt_name)
-            logger.info("[IN PROGRESS] Egress {} Canary Drop count: {}".format(pipe_id, canary_drop_cnt))
+            #canary_drop_cnt_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
+            #canary_drop_cnt = self.get_counter_number(bfrt_info, canary_drop_cnt_name)
+            #logger.info("[IN PROGRESS] Egress {} Canary Drop count: {}".format(pipe_id, canary_drop_cnt))
             #vc_time_start_name = "MyEgress{}.view_change_start_time".format(pipe_id)
             #vc_end_time = self.get_register_number_at_idx(bfrt_info, target, vc_time_start_name, 1)
             #logger.info("[IN PROGRESS] Egress {} End timestamp: {}".format(pipe_id, vc_end_time))
@@ -502,8 +532,6 @@ class ViewChangeTest(BfRuntimeTest):
         
             print("=======================================================================")
             # verify pktgen related counters
-            curr_time = time.time() - start_time
-            self.timestamps.append(curr_time)
             resp = pktgen_app_cfg_table.entry_get(
                 target,
                 [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', pkt_gen_app_id)])],
@@ -515,19 +543,22 @@ class ViewChangeTest(BfRuntimeTest):
             )
             data_dict = next(resp)[0].to_dict()
             tri_value = data_dict["trigger_counter"]
-            logger.info("Triggered %d times", tri_value)
+            logger.info("PIPE %d Triggered %d times", pipe_id, tri_value)
             batch_value = data_dict["batch_counter"]
-            logger.info("Generated %d batches", batch_value)
+            logger.info("PIPE %d Generated %d batches", pipe_id, batch_value)
             pkt_value = data_dict["pkt_counter"]
-            logger.info("Generated %d packets", pkt_value)
-            time_elapsed = float(time.time() - prev_time)
-            logger.info("Time elapsed: %f", time_elapsed)
-            rate_pkt_prod = (pkt_value - prev_num_pkts)/time_elapsed
-            logger.info("Rate of packet production is %d packets for 1 second", rate_pkt_prod)
-            self.generate_pkts_over_time[pipe_id].append(rate_pkt_prod)
+            logger.info("PIPE %d Generated %d packets", pipe_id, pkt_value)
+            now = time.time()
+            time_elapsed = float(now - prev_time)
+            rate_pkt_prod = None if prev_time == 0 else (pkt_value - prev_num_pkts) / time_elapsed
+            generate_pkts_over_time.append(rate_pkt_prod)
             prev_num_pkts = pkt_value
-            prev_time = time.time()
-
+            prev_time = now
+            curr_time = prev_time - self.t0
+            timestamps.append(curr_time)
+            logger.info("Time elapsed: %f", time_elapsed)
+            logger.info("Rate of packet production is %d packets for 1 second", rate_pkt_prod)
+            
             # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
             #raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
             #raw_et_lat = self.get_register_number(bfrt_info, target, raw_et_reg_name)
@@ -544,12 +575,13 @@ class ViewChangeTest(BfRuntimeTest):
             #pkts = (high_num_tot_pkts << 32) + low_num_tot_pkts - 1 # NOTE: the -1 is to correct for a small hack in how this tabulation is done in P4
             #logger.info("[IN PROGRESS] Upper Append Packets: {} and Lower Append Packets: {}".format(high_num_tot_pkts, low_num_tot_pkts))
 
-            curr_dur = time.time() - start_time
+            curr_dur = time.time() - self.t0
             pkts_tput = pkts/float(curr_dur)
 	    logger.info("[IN PROGRESS] Total Append Packets: {}".format(pkts))
 	    logger.info("[IN PROGRESS] Append Throughput from PIPE {}: {}".format(pipe_id, pkts_tput))
-            self.pkts_over_time[pipe_id].append(pkts)
-            self.tput_over_time[pipe_id].append(pkts_tput)
+
+            pkts_over_time.append(pkts)
+            tput_over_time.append(pkts_tput)
 
             # measure average latency at this time period
             low_lat_reg_name = "MyIngress{}.latency_lower".format(pipe_id)
@@ -568,22 +600,16 @@ class ViewChangeTest(BfRuntimeTest):
                 if pkts != 0:
 	            avg_lat = (total_latency_ns/float(pkts))/float(1000)
                     logger.info("[IN PROGRESS] Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
-                self.avg_lat_over_time[pipe_id].append(avg_lat)
+                avg_lat_over_time.append(avg_lat)
             except Exception as e:
                 logger.error("read of %s failed on pipe %s target %s: %r" % (high_lat_reg_name, pipe_id, target, e))
                 print("EXCEPTION REACHED!")
-
-            # measure queue size at this time period TODO
-            q_name = "MyEgress{}.queue_cnt".format(pipe_id)
-            q_res = self.get_register_number(bfrt_info, target, q_name)
-            logger.info("[IN PROGRESS] Num of packets in the egress queue: {}".format(q_res))
-            self.queue_cnt_over_time[pipe_id].append(q_res)
 
             # measure amount of time  at this time period
             pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
             pipe_res = self.get_register_number(bfrt_info, target, pipe_name)
             logger.info("[IN PROGRESS] Time in the pipeline {}: {}".format(pipe_id, pipe_res))
-            self.pipeline_time[pipe_id].append(pipe_res)
+            pipeline_over_time.append(pipe_res) # METRICS
 
             # measure size of ack count table TODO
             #ack_name = "MyIngress{}.ack_array".format(pipe_id)
@@ -594,15 +620,23 @@ class ViewChangeTest(BfRuntimeTest):
             print("=======================================================================")
 	    time.sleep(self.time_interval_s)
         tot_cnt_name = "MyIngress{}.tot_packet_counter{}".format(pipe_id, pipe_id)
-        self.final_pkt_count[pipe_id] = self.get_counter_number(bfrt_info, tot_cnt_name)
-        self.final_elapsed[pipe_id] = time.time() - start_time
-        low_lat = self.get_register_number(bfrt_info, target, "MyIngress{}.latency_lower".format(pipe_id))
-        high_lat = self.get_register_number(bfrt_info, target, "MyIngress{}.latency_higher".format(pipe_id))
-        self.final_total_latency[pipe_id] = (high_lat << 31) + low_lat
-        logger.info("FINAL: High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
-        print(self.final_pkt_count)
-        print(self.final_elapsed)
-        print(self.final_total_latency)
+        with self.setup_gen_lock:
+            self.generate_pkts_over_time[pipe_id] = generate_pkts_over_time
+            self.pkts_over_time[pipe_id] = pkts_over_time
+            self.tput_over_time[pipe_id] = tput_over_time
+            self.avg_lat_over_time[pipe_id] = avg_lat_over_time
+            self.pipeline_time[pipe_id] = pipeline_over_time 
+            self.timestamps[pipe_id] = timestamps
+
+            self.final_pkt_count[pipe_id] = self.get_counter_number(bfrt_info, tot_cnt_name)
+            self.final_elapsed[pipe_id] = time.time() - start_time
+            low_lat = self.get_register_number(bfrt_info, target, "MyIngress{}.latency_lower".format(pipe_id))
+            high_lat = self.get_register_number(bfrt_info, target, "MyIngress{}.latency_higher".format(pipe_id))
+            self.final_total_latency[pipe_id] = (high_lat << 31) + low_lat
+            logger.info("FINAL: High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
+            print(self.final_pkt_count)
+            print(self.final_elapsed)
+            print(self.final_total_latency)
         view_maintain_t.join()
         if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
             trigger_view_t.join()
@@ -624,6 +658,8 @@ class ViewChangeTest(BfRuntimeTest):
         self.target0 = gc.Target(device_id=0, pipe_id=0x00)
         self.target1 = gc.Target(device_id=0, pipe_id=0x01)
         targets = [self.target0, self.target1]
+
+        self.setup_gen_lock = threading.Lock()
 
         port_speed = data['port_speed']
 	port_fec = data['port_fec']
@@ -676,14 +712,14 @@ class ViewChangeTest(BfRuntimeTest):
 	pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
          
         self.raw_et_over_time = {0: [], 1: []}
-        self.queue_cnt_over_time = {0: [], 1: []}
+        self.queue_cnt_over_time = {0: {}, 1: {}}
         self.ack_cnt_over_time = {0: [], 1: []}
         self.avg_lat_over_time = {0: [], 1: []}
         self.tput_over_time = {0: [], 1: []}
         self.pkts_over_time = {0: [], 1: []}
         self.pipeline_time = {0: [], 1: []}
         self.generate_pkts_over_time = {0: [], 1: []}
-        self.timestamps = []
+        self.timestamps = {0: [], 1:[]}
         self.final_pkt_count = [0, 0]
         self.final_elapsed = [0, 0]
         self.final_total_latency = [0, 0]
@@ -697,7 +733,8 @@ class ViewChangeTest(BfRuntimeTest):
 	# ring's first control packet.
 	pipes_cfg = data['pipes']
 
-    	self.setup_all_switch_ports(self.target, pipes_cfg, port_speed, port_fec, portSetup)
+    	all_ports = [] 
+        self.setup_all_switch_ports(self.target, pipes_cfg, port_speed, port_fec, portSetup)
         p4TableObj = []
 
 	for pipe_cfg in pipes_cfg:
@@ -706,11 +743,17 @@ class ViewChangeTest(BfRuntimeTest):
 	    physical_ports = pipe_cfg['physical_ports']
 	    tot_num_recirc_ports = len(recirc_ports)
 	    tot_num_wait_ports = len(wait_ports)
-	    list_of_switch_ports = pipe_cfg['switch_ports']
+	    #list_of_switch_ports = pipe_cfg['switch_ports']
 	    port_to_pipe_0 = pipe_cfg['port_to_pipe_0']
             pipe_idx = pipe_cfg['pipe_id']
             next_hop_port_id = pipe_cfg['next_ring_hop_id']
             switch_id = pipe_cfg['logical_switch_id']
+            queue_ports_pipe = []
+            if pipe_idx == 0:
+                queue_ports_pipe = recirc_ports + wait_ports + [port_to_pipe_0]
+            else:
+                queue_ports_pipe = recirc_ports + wait_ports + physical_ports
+            all_ports.append(queue_ports_pipe)
 
             client_machines = []
             p4Tables = P4Tables(switch_id, self.physical_switch_id, bfrt_info, global_group_id, list_of_types, logger)
@@ -792,16 +835,25 @@ class ViewChangeTest(BfRuntimeTest):
 	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, 0)
 
         active_pipe_threads = []
+        active_pipe_q_threads = []
+
+        self.t0 = time.time()
         for pipe_cfg in pipes_cfg:
             pipe_id = pipe_cfg['pipe_id']
             switch_id = pipe_cfg['logical_switch_id']
             if pipe_cfg['active_pipe']:
 	    	print("Starting runtime for active pipe {}".format(pipe_id))
+                self.setup_timer_pkt_gen(bfrt_info, targets[pipe_id], CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, self.payload_size, cpu_interface, duration, nsperpkt, pipe_id, experiment_type, switch_id)
                 active_pipe_t = threading.Thread(target=self.pipe_pktgen_runtime, args=(bfrt_info, targets[pipe_id], cpu_interface, pipe_id, duration, nsperpkt, experiment_type, view_threshold,switch_id,active_switches,), kwargs={})
                 active_pipe_t.start()
                 active_pipe_threads.append(active_pipe_t)
+                active_q_pipe_t = threading.Thread(target=self.pipe_queue_monitor, args=(bfrt_info, targets[pipe_id], pipe_id, duration, all_ports[pipe_id],), kwargs={})
+                active_q_pipe_t.start()
+                active_pipe_q_threads.append(active_q_pipe_t)
 
         for t in active_pipe_threads:
+            t.join()
+        for t in active_pipe_q_threads:
             t.join()
 
 	after  = portSetup.port_stats_snapshot(bfrt_info, self.target)

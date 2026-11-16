@@ -40,6 +40,7 @@ class PortSetup:
 
     def store_all_ports(self, loop_ports, no_loop_ports):
     	self.ports = sorted(list(loop_ports | no_loop_ports))
+        return self.ports
     
     def port_stats_snapshot(self, bfrt_info, target):
         table = bfrt_info.table_get("$PORT_STAT")

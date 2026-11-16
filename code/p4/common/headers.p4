@@ -53,6 +53,7 @@ const bit<32> MAX_INFLIGHT_ACKS = 65536;
 const bit<32> MAX_GSN_MAP_SIZE = 65535;
 const bit<32> MAX_GSN_MAP_IDX_VAL = 65534;
 const bit<8> CANARY_VALUE = 165; //0xA5;
+const bit<32> MAX_NUM_QUEUES = 16348; //1440;
 
 const pkt_type_t PKT_TYPE_NORMAL = 1;
 const pkt_type_t PKT_TYPE_MIRROR = 2;
