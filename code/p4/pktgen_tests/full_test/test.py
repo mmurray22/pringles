@@ -231,6 +231,19 @@ class ViewChangeTest(BfRuntimeTest):
                 [pktgen_pkt_buffer_table.make_key([gc.KeyTuple('pkt_buffer_offset', buff_offset),
                                                    gc.KeyTuple('pkt_buffer_size', pktlen)])],
                 [pktgen_pkt_buffer_table.make_data([gc.DataTuple('buffer', raw_p)])])
+        except gc.BfruntimeRpcException as e:
+            logger.info(e)
+            raise e
+        finally:
+            pass
+    
+    def enable_timer_pkt_gen(self, bfrt_info, target):
+        logger.info("=============== Testing Packet Generator trigger by Timer ===============")
+        pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
+
+        # timer pktgen app_id = 1 one shot 0
+        app_id = pkt_gen_app_id
+        try:
             logger.info("enable pktgen")
             pktgen_app_cfg_table.entry_mod(
                 target,
@@ -244,6 +257,7 @@ class ViewChangeTest(BfRuntimeTest):
         finally:
             pass
     
+
     def get_counter_number(self, bfrt_info, counter_name):
         counter = bfrt_info.table_get(counter_name)
         # 3. Request the entry at index 0
@@ -371,52 +385,21 @@ class ViewChangeTest(BfRuntimeTest):
         pkts_tput = 0
         logger.info("Here is the actual pipe id: {}".format(pipe_id))
 
-        ############### Number of total packets
-        tot_cnt_name = "MyIngress{}.tot_packet_counter{}".format(pipe_id, pipe_id)
+        ############### Number of total packets TODO this should be DELETED!
         cnt_pkts = self.final_pkt_count[pipe_id]
         logger.info("======================Total COUNTED Append Packets: {}".format(cnt_pkts))
-	logger.info("======================COUNTED Append Throughput from PIPE {}: {}".format(pipe_id, cnt_pkts/float(duration)))
-        #low_tot_name = "MyIngress{}.total_pkt_cnt_lower".format(pipe_id)
-        #high_tot_name = "MyIngress{}.total_pkt_cnt_higher".format(pipe_id)
-	#low_num_tot_pkts = self.get_register_number(bfrt_info, target, low_tot_name)
-	#high_num_tot_pkts = self.get_register_number(bfrt_info, target, high_tot_name)
-        pkts = cnt_pkts #TODO (high_num_tot_pkts << 32) + low_num_tot_pkts - 1 # NOTE: the -1 is to correct for a small hack in how this tabulation is done in P4
-        pkts_tput = 0
-        if self.final_elapsed[pipe_id] != 0:
-            pkts_tput = pkts/float(self.final_elapsed[pipe_id])
-        #logger.info("[FAKE UPDATE]======================Upper Append Packets: {} and Lower Append Packets: {}".format(high_num_tot_pkts, low_num_tot_pkts))
-	logger.info("[FAKE UPDATE]======================Total Append Packets: {}".format(pkts))
-	logger.info("[FAKE UPDATE]======================Append Throughput from PIPE {}: {}".format(pipe_id, pkts_tput))
-
-        ###### Depth of egress queue
-        q_name = "MyEgress{}.queue_cnt".format(pipe_id)
-        q_res = self.get_register_number(bfrt_info, target, q_name)
-        logger.info("======================Num of packets in the egress queue: {}".format(q_res))
-
-    	# Tofino counters usually return a dictionary with '$COUNTER_SPEC_PKTS'
-        #low_lat_reg_name = "MyIngress{}.latency_lower".format(pipe_id)
-        #high_lat_reg_name = "MyIngress{}.latency_higher".format(pipe_id)
-        #low_lat = self.get_register_number(bfrt_info, target, low_lat_reg_name)
-        #high_lat = self.get_register_number(bfrt_info, target, high_lat_reg_name)
-        total_latency_ns = self.final_total_latency[pipe_id] #(high_lat << 31) + low_lat
-        #logger.info("High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
+	logger.info("======================COUNTED Append Throughput from PIPE {}: {}".format(pipe_id, cnt_pkts/float(self.final_elapsed[pipe_id])))
+        pkts_tput = cnt_pkts/float(self.final_elapsed[pipe_id])
+        total_latency_ns = self.final_total_latency[pipe_id]
         logger.info("Aggregate Latency: {}ns".format(total_latency_ns))
         avg_lat = 0
-        if pkts != 0:
-	    avg_lat = (total_latency_ns/float(pkts))/float(1000)
+        if cnt_pkts != 0:
+	    avg_lat = (total_latency_ns/float(cnt_pkts))/float(1000)
             logger.info("======================Average latency: {} microseconds".format(avg_lat))
        
-        #raw_dur_reg_name = "MyIngress{}.raw_duration".format(pipe_id)
-        #raw_dur_lat = self.get_register_number(bfrt_info, target, raw_dur_reg_name)
-        #logger.info("Raw duration: {}ns".format(raw_dur_lat))
-
-        #raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
-        #raw_et_lat = self.get_register_number(bfrt_info, target, raw_et_reg_name)
-        #logger.info("Raw elapsed time: {}ns".format(raw_et_lat))
-        
         target_dest = "/root/pipe{}_{}_nsperpkt.json".format(pipe_id, nsperpkt)
         telemetry_payload = {
-            "total_number_of_packets": int(pkts),
+            "total_number_of_packets": int(cnt_pkts),
             "throughput_pps": float(pkts_tput),
             "total_latency_ns": float(total_latency_ns),
             "average_latency_us": avg_lat,
@@ -489,157 +472,166 @@ class ViewChangeTest(BfRuntimeTest):
 
 
     # Runtime per pipe maintenance which collects data from each pipe and manages the view change
-    def pipe_pktgen_runtime(self, bfrt_info, target, cpu_interface, pipe_id, duration, nsperpkt, experiment_type, view_threshold, switch_id, active_switches):
-        # Initialize and start the view change components
-        viewChangeMaintainer = ViewChange(self.view, view_threshold, switch_id, CONST_MAC_DST, CONST_MAC_SRC, cpu_interface, cpu_port, self.view_timeout, duration, logger, active_switches)
-        view_maintain_t = threading.Thread(target=self.maintain_view_change, args=(viewChangeMaintainer, bfrt_info, target, pipe_id, duration,), kwargs={})
-        view_maintain_t.start()
-        trigger_view_t = threading.Thread(target=self.trigger_view_change, args=(viewChangeMaintainer, bfrt_info, target, pipe_id, self.trigger_wait_time,duration), kwargs={})
-        if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
-            trigger_view_t.start()
-        
+    def pipe_pktgen_runtime(self, bfrt_info, targets, duration, active_pipes, start_generation_time):
         pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
-        prev_num_pkts = 0
-        prev_time = self.t0
+        prev_num_pkts = [0, 0]
         generate_pkts_over_time = []
         pkts_over_time = []
         tput_over_time = []
         avg_lat_over_time = []
         pipeline_over_time = []
         timestamps = []
-        
+        first = [True, True]
+        extra_telemetry = False
+        failed = False
         start_time = time.time()
+        prev_time = [start_time, start_time]
 	while (time.time() - start_time) < duration:
-            cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
-            cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-            logger.info("[IN PROGRESS] Ingress {} Control packet count: {}".format(pipe_id, cntrl_cnt))
-            #canary_drop_cnt_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
-            #canary_drop_cnt = self.get_counter_number(bfrt_info, canary_drop_cnt_name)
-            #logger.info("[IN PROGRESS] Egress {} Canary Drop count: {}".format(pipe_id, canary_drop_cnt))
-            #vc_time_start_name = "MyEgress{}.view_change_start_time".format(pipe_id)
-            #vc_end_time = self.get_register_number_at_idx(bfrt_info, target, vc_time_start_name, 1)
-            #logger.info("[IN PROGRESS] Egress {} End timestamp: {}".format(pipe_id, vc_end_time))
-	    view_register_name = "MyEgress{}.egress_current_view".format(pipe_id)
-            output = self.get_register_number(bfrt_info, target, view_register_name)
-            print("For pipe {}, new value of {}: {}".format(pipe_id, view_register_name, output))
-            view_register_name = "MyEgress{}.view_change_active".format(pipe_id)
-            output = self.get_register_number(bfrt_info, target, view_register_name)
-            print("For pipe {}, new value of {}: {}".format(pipe_id, view_register_name, output))
+            for pipe_id in range(2):
+                if pipe_id not in active_pipes:
+                    continue
+                target = targets[pipe_id]
+                tot_cnt_name = "MyIngress{}.tot_packet_counter{}".format(pipe_id, pipe_id)
+                low_lat_reg_name = "MyIngress{}.latency_lower".format(pipe_id)
+                high_lat_reg_name = "MyIngress{}.latency_higher".format(pipe_id)
+                pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
+                if extra_telemetry:
+                    cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
+                    cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+                    logger.info("[IN PROGRESS] Ingress {} Control packet count: {}".format(pipe_id, cntrl_cnt))
+                    canary_drop_cnt_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
+                    canary_drop_cnt = self.get_counter_number(bfrt_info, canary_drop_cnt_name)
+                    logger.info("[IN PROGRESS] Egress {} Canary Drop count: {}".format(pipe_id, canary_drop_cnt))
+                    vc_time_start_name = "MyEgress{}.view_change_start_time".format(pipe_id)
+                    vc_end_time = self.get_register_number_at_idx(bfrt_info, target, vc_time_start_name, 1)
+                    logger.info("[IN PROGRESS] Egress {} End timestamp: {}".format(pipe_id, vc_end_time))
+	            view_register_name = "MyEgress{}.egress_current_view".format(pipe_id)
+                    output = self.get_register_number(bfrt_info, target, view_register_name)
+                    print("For pipe {}, new value of {}: {}".format(pipe_id, view_register_name, output))
+                    view_register_name = "MyEgress{}.view_change_active".format(pipe_id)
+                    output = self.get_register_number(bfrt_info, target, view_register_name)
+                    print("For pipe {}, new value of {}: {}".format(pipe_id, view_register_name, output))
+	            pkt_it_reg_name = "MyIngress{}.cntrl_pkt_it".format(pipe_id)
+                    pkt_it = self.get_register_number_at_idx(bfrt_info, target, pkt_it_reg_name, 0)
+                    print("Pkt it: {}".format(pkt_it))
+                
+                avg_lat = 0
+                rate_pkt_prod = None
+                low_lat = 0
+                high_lat = 0
+                pkts = 0
+                pkt_value = 0
+                tri_value = 0
+                batch_value = 0
+                #now = time.time()
+                try:
+                    # Packet generation rate, timestamps
 
-	    pkt_it_reg_name = "MyIngress{}.cntrl_pkt_it".format(pipe_id)
-            pkt_it = self.get_register_number_at_idx(bfrt_info, target, pkt_it_reg_name, 0)
-            print("Pkt it: {}".format(pkt_it))
-        
-            print("=======================================================================")
-            # verify pktgen related counters
-            resp = pktgen_app_cfg_table.entry_get(
-                target,
-                [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', pkt_gen_app_id)])],
-                {"from_hw": True},
-                pktgen_app_cfg_table.make_data([gc.DataTuple('batch_counter'),
-                                                gc.DataTuple('pkt_counter'),
-                                                gc.DataTuple('trigger_counter')],
-                                               '$PKTGEN_TRIGGER_TIMER_PERIODIC', get=True)
-            )
-            data_dict = next(resp)[0].to_dict()
-            tri_value = data_dict["trigger_counter"]
-            logger.info("PIPE %d Triggered %d times", pipe_id, tri_value)
-            batch_value = data_dict["batch_counter"]
-            logger.info("PIPE %d Generated %d batches", pipe_id, batch_value)
-            pkt_value = data_dict["pkt_counter"]
-            logger.info("PIPE %d Generated %d packets", pipe_id, pkt_value)
-            now = time.time()
-            time_elapsed = float(now - prev_time)
-            rate_pkt_prod = None if prev_time == 0 else (pkt_value - prev_num_pkts) / time_elapsed
-            generate_pkts_over_time.append(rate_pkt_prod)
-            prev_num_pkts = pkt_value
-            prev_time = now
-            curr_time = prev_time - self.t0
-            timestamps.append(curr_time)
-            logger.info("Time elapsed: %f", time_elapsed)
-            logger.info("Rate of packet production is %d packets for 1 second", rate_pkt_prod)
-            
-            # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
-            #raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
-            #raw_et_lat = self.get_register_number(bfrt_info, target, raw_et_reg_name)
-            #self.raw_et_over_time[pipe_id].append(raw_et_lat)
-            #logger.info("[IN PROGRESS] Raw elapsed time: {}ns".format(raw_et_lat))
+                    resp = pktgen_app_cfg_table.entry_get(
+                        target,
+                        [pktgen_app_cfg_table.make_key([gc.KeyTuple('app_id', pkt_gen_app_id)])],
+                        {"from_hw": True},
+                        pktgen_app_cfg_table.make_data([gc.DataTuple('batch_counter'),
+                                                        gc.DataTuple('pkt_counter'),
+                                                        gc.DataTuple('trigger_counter')],
+                                                       '$PKTGEN_TRIGGER_TIMER_PERIODIC', get=True)
+                    )
+                    data_dict = next(resp)[0].to_dict()
+                    t_pg = time.time()
+                    pkts = self.get_counter_number(bfrt_info, tot_cnt_name)
+                    now = time.time()
+                    
+                    tri_value = data_dict["trigger_counter"]
+                    batch_value = data_dict["batch_counter"]
+                    pkt_value = data_dict["pkt_counter"]
+
+                    low_lat = self.get_register_number(bfrt_info, target, low_lat_reg_name)
+                    high_lat = self.get_register_number(bfrt_info, target, high_lat_reg_name)
+                    pipe_res = self.get_register_number(bfrt_info, target, pipe_name)
+
+                    # measure size of ack count table TODO
+                    #ack_name = "MyIngress{}.ack_array".format(pipe_id)
+                    #ack_res = self.get_full_register(bfrt_info, targets[pipe_id], ack_name)
+                    #logger.info("[IN PROGRESS] Number of pending acks: {}".format(ack_res))
+                    #self.ack_cnt_over_time[pipe_id].append(ack_res)
+                
+                    # measure elapsed time - note this is SPOT checks, each value is just one randomly sample packet
+                    #raw_et_reg_name = "MyIngress{}.raw_elapsed_time".format(pipe_id)
+                    #raw_et_lat = self.get_register_number(bfrt_info, target, raw_et_reg_name)
+                    #self.raw_et_over_time[pipe_id].append(raw_et_lat)
+                    #logger.info("[IN PROGRESS] Raw elapsed time: {}ns".format(raw_et_lat))
  
-            # measure total number of packets 
-            tot_cnt_name = "MyIngress{}.tot_packet_counter{}".format(pipe_id, pipe_id)
-            pkts = self.get_counter_number(bfrt_info, tot_cnt_name)
-            #low_tot_name = "MyIngress{}.total_pkt_cnt_lower".format(pipe_id)
-            #high_tot_name = "MyIngress{}.total_pkt_cnt_higher".format(pipe_id)
-	    #low_num_tot_pkts = self.get_register_number(bfrt_info, targets[pipe_id], low_tot_name)
-	    #high_num_tot_pkts = self.get_register_number(bfrt_info, targets[pipe_id], high_tot_name)
-            #pkts = (high_num_tot_pkts << 32) + low_num_tot_pkts - 1 # NOTE: the -1 is to correct for a small hack in how this tabulation is done in P4
-            #logger.info("[IN PROGRESS] Upper Append Packets: {} and Lower Append Packets: {}".format(high_num_tot_pkts, low_num_tot_pkts))
+                    # measure total number of packets 
 
-            curr_dur = time.time() - self.t0
-            pkts_tput = pkts/float(curr_dur)
-	    logger.info("[IN PROGRESS] Total Append Packets: {}".format(pkts))
-	    logger.info("[IN PROGRESS] Append Throughput from PIPE {}: {}".format(pipe_id, pkts_tput))
+                    #low_tot_name = "MyIngress{}.total_pkt_cnt_lower".format(pipe_id)
+                    #high_tot_name = "MyIngress{}.total_pkt_cnt_higher".format(pipe_id)
+	            #low_num_tot_pkts = self.get_register_number(bfrt_info, targets[pipe_id], low_tot_name)
+	            #high_num_tot_pkts = self.get_register_number(bfrt_info, targets[pipe_id], high_tot_name)
+                    #pkts = (high_num_tot_pkts << 32) + low_num_tot_pkts - 1 # NOTE: the -1 is to correct for a small hack in how this tabulation is done in P4
+                    #logger.info("[IN PROGRESS] Upper Append Packets: {} and Lower Append Packets: {}".format(high_num_tot_pkts, low_num_tot_pkts))
 
-            pkts_over_time.append(pkts)
-            tput_over_time.append(pkts_tput)
+                except Exception as e:
+                    logger.error("read of a register/counter failed with error: %r" % (e))
+                    failed = True
+                    print("EXCEPTION REACHED!")
 
-            # measure average latency at this time period
-            low_lat_reg_name = "MyIngress{}.latency_lower".format(pipe_id)
-            high_lat_reg_name = "MyIngress{}.latency_higher".format(pipe_id)
-            try:
-                low_lat = self.get_register_number(bfrt_info, target, low_lat_reg_name)
-            except Exception as e:
-                logger.error("read of %s failed on pipe %s target %s: %r" % (low_lat_reg_name, pipe_id, target, e))
-                print("EXCEPTION REACHED!")
-            try:
-                high_lat = self.get_register_number(bfrt_info, target, high_lat_reg_name)
+                if failed:
+                    failed = False
+                    time.sleep(self.time_interval_s)
+                    continue
+
+                # Calculate timestamps
+                pktgen_time_elapsed = float(t_pg - prev_time[pipe_id])
+                rate_pkt_prod = (pkt_value - prev_num_pkts[pipe_id]) / pktgen_time_elapsed
+                prev_num_pkts[pipe_id] = pkt_value
+                prev_time[pipe_id] = t_pg
+                curr_time = now - start_time
+                # Throughput
+                pkts_tput = pkts/float(curr_time)
+	        # Latency
                 total_latency_ns = (high_lat << 31) + low_lat
-                logger.info("[IN PROGRESS] High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
-                logger.info("[IN PROGRESS] Aggregate Latency: {}ns".format(total_latency_ns))
                 avg_lat = 0
                 if pkts != 0:
 	            avg_lat = (total_latency_ns/float(pkts))/float(1000)
+
+                # Record data
+                if first[pipe_id]: # TODO
+                    first[pipe_id] = False
+                    continue
+                self.generate_pkts_over_time[pipe_id].append(rate_pkt_prod)
+                self.pkts_over_time[pipe_id].append(pkts)
+                self.tput_over_time[pipe_id].append(pkts_tput)
+                self.avg_lat_over_time[pipe_id].append(avg_lat)
+                self.pipeline_time[pipe_id].append(pipe_res)
+                self.timestamps[pipe_id].append(curr_time)
+                print("=======================================================================")
+                logger.info("PIPE %d Triggered %d times", pipe_id, tri_value)
+                logger.info("PIPE %d Generated %d batches", pipe_id, batch_value)
+                logger.info("PIPE %d Generated %d packets", pipe_id, pkt_value)
+                logger.info("Time elapsed: %f", pktgen_time_elapsed)
+                logger.info("Rate of packet production is %d packets for 1 second", rate_pkt_prod)
+                logger.info("[IN PROGRESS] Total Append Packets: {}".format(pkts))
+	        logger.info("[IN PROGRESS] Append Throughput from PIPE {}: {}".format(pipe_id, pkts_tput))
+                logger.info("[IN PROGRESS] High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
+                logger.info("[IN PROGRESS] Aggregate Latency: {}ns".format(total_latency_ns))
+                if pkts != 0:
                     logger.info("[IN PROGRESS] Average latency: {} microseconds".format((total_latency_ns/float(pkts))/float(1000)))
-                avg_lat_over_time.append(avg_lat)
-            except Exception as e:
-                logger.error("read of %s failed on pipe %s target %s: %r" % (high_lat_reg_name, pipe_id, target, e))
-                print("EXCEPTION REACHED!")
-
-            # measure amount of time  at this time period
-            pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
-            pipe_res = self.get_register_number(bfrt_info, target, pipe_name)
-            logger.info("[IN PROGRESS] Time in the pipeline {}: {}".format(pipe_id, pipe_res))
-            pipeline_over_time.append(pipe_res) # METRICS
-
-            # measure size of ack count table TODO
-            #ack_name = "MyIngress{}.ack_array".format(pipe_id)
-            #ack_res = self.get_full_register(bfrt_info, targets[pipe_id], ack_name)
-            #logger.info("[IN PROGRESS] Number of pending acks: {}".format(ack_res))
-            #self.ack_cnt_over_time[pipe_id].append(ack_res)
-
-            print("=======================================================================")
+                logger.info("[IN PROGRESS] Time in the pipeline {}: {}".format(pipe_id, pipe_res))
+                print("=======================================================================")
 	    time.sleep(self.time_interval_s)
-        tot_cnt_name = "MyIngress{}.tot_packet_counter{}".format(pipe_id, pipe_id)
-        with self.setup_gen_lock:
-            self.generate_pkts_over_time[pipe_id] = generate_pkts_over_time
-            self.pkts_over_time[pipe_id] = pkts_over_time
-            self.tput_over_time[pipe_id] = tput_over_time
-            self.avg_lat_over_time[pipe_id] = avg_lat_over_time
-            self.pipeline_time[pipe_id] = pipeline_over_time 
-            self.timestamps[pipe_id] = timestamps
 
+        for pipe_id in range(0, 2):
+            tot_cnt_name = "MyIngress{}.tot_packet_counter{}".format(pipe_id, pipe_id)
             self.final_pkt_count[pipe_id] = self.get_counter_number(bfrt_info, tot_cnt_name)
-            self.final_elapsed[pipe_id] = time.time() - start_time
-            low_lat = self.get_register_number(bfrt_info, target, "MyIngress{}.latency_lower".format(pipe_id))
-            high_lat = self.get_register_number(bfrt_info, target, "MyIngress{}.latency_higher".format(pipe_id))
+            final_elapsed_time = time.time() - start_time
+            self.final_elapsed[pipe_id] = final_elapsed_time
+            low_lat = self.get_register_number(bfrt_info, targets[pipe_id], "MyIngress{}.latency_lower".format(pipe_id))
+            high_lat = self.get_register_number(bfrt_info, targets[pipe_id], "MyIngress{}.latency_higher".format(pipe_id))
             self.final_total_latency[pipe_id] = (high_lat << 31) + low_lat
             logger.info("FINAL: High Latency: {}ns and Low Latency: {}ns".format(high_lat, low_lat))
             print(self.final_pkt_count)
             print(self.final_elapsed)
             print(self.final_total_latency)
-        view_maintain_t.join()
-        if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
-            trigger_view_t.join()
 
     ######################################## Core Test Runner ###################################
     def runTest(self):
@@ -834,26 +826,55 @@ class ViewChangeTest(BfRuntimeTest):
 	    logger.info("Sending control packet!")
 	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, 0)
 
-        active_pipe_threads = []
+        active_view_threads = []
+        active_trigger_threads = []
         active_pipe_q_threads = []
-
-        self.t0 = time.time()
+        
+        # Setup packet generation
         for pipe_cfg in pipes_cfg:
             pipe_id = pipe_cfg['pipe_id']
             switch_id = pipe_cfg['logical_switch_id']
             if pipe_cfg['active_pipe']:
-	    	print("Starting runtime for active pipe {}".format(pipe_id))
                 self.setup_timer_pkt_gen(bfrt_info, targets[pipe_id], CONST_MAC_DST, CONST_MAC_SRC, CONST_IP, self.payload_size, cpu_interface, duration, nsperpkt, pipe_id, experiment_type, switch_id)
-                active_pipe_t = threading.Thread(target=self.pipe_pktgen_runtime, args=(bfrt_info, targets[pipe_id], cpu_interface, pipe_id, duration, nsperpkt, experiment_type, view_threshold,switch_id,active_switches,), kwargs={})
-                active_pipe_t.start()
-                active_pipe_threads.append(active_pipe_t)
+        
+        self.t0 = time.time()
+
+        # Enable packet generation
+	for pipe_cfg in pipes_cfg:
+           pipe_id = pipe_cfg['pipe_id']
+           switch_id = pipe_cfg['logical_switch_id']
+           if pipe_cfg['active_pipe']:
+               self.enable_timer_pkt_gen(bfrt_info, targets[pipe_id])
+        start_time = time.time()
+	
+        # Start experiment observation threads
+        active_pipes = []
+        for pipe_cfg in pipes_cfg:
+            pipe_id = pipe_cfg['pipe_id']
+            switch_id = pipe_cfg['logical_switch_id']
+            if pipe_cfg['active_pipe']:
+                active_pipes.append(pipe_id)
+	    	print("Starting view change manager for active pipe {}".format(pipe_id))
+                viewChangeMaintainer = ViewChange(self.view, view_threshold, switch_id, CONST_MAC_DST, CONST_MAC_SRC, cpu_interface, cpu_port, self.view_timeout, duration, logger, active_switches)
+                view_maintain_t = threading.Thread(target=self.maintain_view_change, args=(viewChangeMaintainer, bfrt_info, targets[pipe_id], pipe_id, duration,), kwargs={})
+                active_view_threads.append(view_maintain_t)
+                view_maintain_t.start()
+                trigger_view_t = threading.Thread(target=self.trigger_view_change, args=(viewChangeMaintainer, bfrt_info, targets[pipe_id], pipe_id, self.trigger_wait_time, duration), kwargs={})
+                if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
+                    active_trigger_threads.append(trigger_view_t)
+                    trigger_view_t.start()
                 active_q_pipe_t = threading.Thread(target=self.pipe_queue_monitor, args=(bfrt_info, targets[pipe_id], pipe_id, duration, all_ports[pipe_id],), kwargs={})
                 active_q_pipe_t.start()
                 active_pipe_q_threads.append(active_q_pipe_t)
 
-        for t in active_pipe_threads:
-            t.join()
+        active_pipe_t = threading.Thread(target=self.pipe_pktgen_runtime, args=(bfrt_info, targets, duration, active_pipes, start_time,), kwargs={})
+        active_pipe_t.start()
+        active_pipe_t.join()
         for t in active_pipe_q_threads:
+            t.join()
+        for t in active_view_threads:
+            t.join()
+        for t in active_trigger_threads:
             t.join()
 
 	after  = portSetup.port_stats_snapshot(bfrt_info, self.target)
