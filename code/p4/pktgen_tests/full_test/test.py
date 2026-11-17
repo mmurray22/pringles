@@ -498,7 +498,7 @@ class ViewChangeTest(BfRuntimeTest):
 
 
     # Runtime per pipe maintenance which collects data from each pipe and manages the view change
-    def pipe_pktgen_runtime(self, bfrt_info, targets, duration, active_pipes, start_generation_time):
+    def pipe_pktgen_runtime(self, bfrt_info, targets, duration, active_pipes, start_generation_time, all_ports):
         pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
         prev_num_pkts = [0, 0]
         generate_pkts_over_time = []
@@ -514,6 +514,19 @@ class ViewChangeTest(BfRuntimeTest):
         start_time = time.time()
         self.timestamp_start_epoch = start_time
         prev_time = [start_time, start_time]
+        
+        #queues_of_interest = []
+        #queue_idx_map = {}
+        #for pipe_id in range(0, 2):
+        #    queues_of_interest.append([])
+        #    queue_idx_map[pipe_id] = {}
+        #    for port in all_ports[pipe_id]:
+        #        self.queue_cnt_over_time[pipe_id][port] = []
+        #        for i in range(0, 1):
+        #            port_idx = (port << 5) | i
+        #            queues_of_interest[pipe_id].append(port_idx)
+        #            queue_idx_map[pipe_id][port_idx] = [port, i]
+        
 	while (time.time() - start_time) < duration:
             #if (time.time() - start_time) > 5 and disable:
             #    self.disable_timer_pkt_gen(bfrt_info, target)
@@ -586,6 +599,13 @@ class ViewChangeTest(BfRuntimeTest):
                     low_lat = self.get_register_number(bfrt_info, target, low_lat_reg_name)
                     high_lat = self.get_register_number(bfrt_info, target, high_lat_reg_name)
                     pipe_res = self.get_register_number(bfrt_info, target, pipe_name)
+                    
+                    #q_name = "MyEgress{}.queue_cnt".format(pipe_id)
+                    #for idx in queues_of_interest[pipe_id]:
+                    #    q_res = self.get_register_number_at_idx(bfrt_info, target, q_name, idx)
+                    #    #if q_res != 0:
+                    #    #    logger.info("[IN PROGRESS] Num of packets in the egress queue for port {} and queue id {} : {}".format(queue_idx_map[idx][0], queue_idx_map[idx][1], q_res))
+                    #    self.queue_cnt_over_time[pipe_id][queue_idx_map[pipe_id][idx][0]].append(q_res)
 
                     # measure size of ack count table TODO
                     #ack_name = "MyIngress{}.ack_array".format(pipe_id)
@@ -921,7 +941,7 @@ class ViewChangeTest(BfRuntimeTest):
                 active_q_pipe_t.start()
                 active_pipe_q_threads.append(active_q_pipe_t)
 
-        active_pipe_t = threading.Thread(target=self.pipe_pktgen_runtime, args=(bfrt_info, targets, duration, active_pipes, start_time,), kwargs={})
+        active_pipe_t = threading.Thread(target=self.pipe_pktgen_runtime, args=(bfrt_info, targets, duration, active_pipes, start_time, all_ports,), kwargs={})
         active_pipe_t.start()
         active_pipe_t.join()
         for t in active_pipe_q_threads:
