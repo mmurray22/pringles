@@ -277,6 +277,12 @@ class P4Tables:
                 [table_rep.make_key([gc.KeyTuple('meta.ring_process', list_of_types[3]),
                                      gc.KeyTuple('meta.ack_ready', 1)])],
                 [table_rep.make_data([], 'MyIngress{}.write_rep_seq_no'.format(pipe_idx))])
+        # Tail packet: Get the highest seen global sequence number
+        table_rep.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_rep.make_key([gc.KeyTuple('meta.ring_process', TYPE_TAIL),
+                                     gc.KeyTuple('meta.ack_ready', 0)])],
+                [table_rep.make_data([], 'MyIngress{}.write_rep_seq_no'.format(pipe_idx))])
 
     def setup_append_first_tbl(self, pipe_idx):
         table_append_first = self.bfrt_info.table_get("MyIngress{}.append_first_tbl".format(pipe_idx))

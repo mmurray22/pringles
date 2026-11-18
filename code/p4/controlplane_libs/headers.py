@@ -58,7 +58,8 @@ class Append(Packet):
                     BitField("cntrl_pkt_it", 0, 16),
                     BitField("recv_port", 0, 16),
                     BitField("exp_type", 0, 16),
-                    BitField("start_ts", 0, 48)]
+                    BitField("start_ts", 0, 48),
+                    BitField("seq_recirc", 0, 16)]
 class Read(Packet):
     fields_desc = [ BitField("nonce", 0, 16),
                     BitField("payload_size", 0, 32),

@@ -163,18 +163,18 @@ control MyIngress0(inout headers hdr,
     Register<bit<32>, bit<1>>(1) highest_replicated_seq_no;
     RegisterAction<bit<32>, bit<1>, bit<32>>(highest_replicated_seq_no) write_replicated_seq_no = {
         void apply(inout bit<32> cur_replicated_seq_no) {
-	    if (hdr.append.g_idx > cur_replicated_seq_no) {
-	         cur_replicated_seq_no = hdr.append.g_idx;
+	    if (meta.committed_seq_no > cur_replicated_seq_no) {
+	         cur_replicated_seq_no = meta.committed_seq_no;
 	    }
         }
     };
 
     RegisterAction<bit<32>, bit<1>, bit<32>>(highest_replicated_seq_no) get_tail = {
         void apply(inout bit<32> curr_replicated_seq_no, out bit<32> old_replicated_seq_no) { // inout = register, out = output 
-	    if (hdr.tail.tail_seq_no < curr_replicated_seq_no) {
+	    if (meta.committed_seq_no < curr_replicated_seq_no) {
 	       old_replicated_seq_no = curr_replicated_seq_no;
 	    } else {
-                old_replicated_seq_no = hdr.tail.tail_seq_no;
+                old_replicated_seq_no = 0;
 	    }
         }
     };
@@ -399,6 +399,13 @@ control MyIngress0(inout headers hdr,
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) cntrl_counter_ig0; 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) seq_only_packet_counter; 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter0; 
+    Register<bit<32>, bit<1>>(1, 0) seq_wait_recirc_counter; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(seq_wait_recirc_counter) update_seq_recirc_cntr = {
+        void apply(inout bit<32> new_pkt_cntr) {
+	    new_pkt_cntr = new_pkt_cntr + (bit<32>)hdr.append.seq_recirc;
+	}
+    };
+
     Register<bit<32>, bit<1>>(1, 1) total_pkt_cnt_lower; 
     RegisterAction<bit<32>, bit<1>, bit<32>>(total_pkt_cnt_lower) update_low_pkt_cntr = {
         void apply(inout bit<32> new_pkt_cntr, out bit<32> overflow) {
@@ -555,6 +562,7 @@ control MyIngress0(inout headers hdr,
 	hdr.append.cntrl_pkt_it = meta.cntrl_pkt_it;
 	hdr.append.g_idx = meta.local_seq_no;	    
 	meta.recirc_port_type = 1;
+	hdr.append.seq_recirc = hdr.append.seq_recirc + 1;
     }
     action wait_append() {
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
@@ -565,6 +573,7 @@ control MyIngress0(inout headers hdr,
     }
     action wait_to_seq() {
 	meta.recirc_port_type = 1;
+	hdr.append.seq_recirc = hdr.append.seq_recirc + 1;
     }
     action get_read_resp() {
 	meta.dst_addr = hdr.ipv4.dst;
@@ -595,6 +604,7 @@ control MyIngress0(inout headers hdr,
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
 	hdr.ring_type.type = TYPE_APPEND_WAIT;
 	meta.recirc_port_type = 2;
+	hdr.append.seq_recirc = hdr.append.seq_recirc - 1;
     }
     action regular_stream() {
 	meta.route_to_shard = 1;
@@ -688,11 +698,8 @@ control MyIngress0(inout headers hdr,
 
 
     action ack_append() {
-	//tot_packet_counter0.count(0); TODO
-	//meta.output = update_low_pkt_cntr.execute(0);
-	//update_high_pkt_cntr.execute(0);
-        //update_raw_elapsed_time.execute(0); TODO: Make separate table
 	meta.dst_addr = hdr.ipv4.dst;
+	meta.committed_seq_no = hdr.append.g_idx;
     }
     action ack_read() {
 	meta.dst_addr = hdr.ipv4.dst;
@@ -709,25 +716,6 @@ control MyIngress0(inout headers hdr,
         }
         size = 64;
         default_action = NoAction;
-    }
-
-    action write_rep_seq_no() {
-	write_replicated_seq_no.execute(0);
-    }
-    action read_rep_seq_no() {
-        //get_tail.execute(0); TODO
-    }
-    table update_replicated_seq_no {
-	key = {
-	    meta.ring_process: exact;
-	    meta.ack_ready: exact;
-	}
-	actions = {
-	    write_rep_seq_no;
-	    NoAction;
-	}
-	size = 64;
-	default_action = NoAction;
     }
 
     action low_latency() {
@@ -927,11 +915,12 @@ control MyIngress0(inout headers hdr,
 	}
 
 	if (hdr.tail.isValid()) {
-	    if (hdr.tail.start_switch_id != meta.switch_id && hdr.tail.hops == 0) {
+	    if (hdr.tail.start_switch_id == meta.switch_id && hdr.tail.hops != 0) {
 		meta.dst_addr = hdr.ipv4.dst;
 	    } else {
 		hdr.tail.hops = hdr.tail.hops + 1;
 	    }
+	    meta.committed_seq_no = hdr.tail.tail_seq_no;
 	} 
 
 	
@@ -951,7 +940,7 @@ control MyIngress0(inout headers hdr,
 
 	process_gsn.apply(); // handles TYPE_APPEND_RESP, handles GSN updates
 	
-	if (hdr.cntrl.isValid() && meta.update_iteration == 1) {
+	if (hdr.cntrl.isValid() && meta.local_seq_no != 0) {
             hdr.cntrl.global_seq_no = meta.global_seq_no + meta.local_seq_no;
 	    meta.batch_size = meta.local_seq_no;
 	    set_batch_sz.execute(meta.cntrl_pkt_it);
@@ -1000,11 +989,7 @@ control MyIngress0(inout headers hdr,
 	    bit<32> slot = get_ack_idx.execute(0);
 	    meta.ack_ready = check_ack.execute(slot);
 	    ack_action_tbl.apply();
-	    tot_packet_counter0.count(0);
-	    meta.duration = (bit<32>)(hdr.ring_type.end_ts - hdr.append.start_ts);
-	    ack_get_lower_lat.apply();
-	    ack_get_upper_lat.apply();
-            if (hdr.append.isValid() && hdr.append.exp_type == 2) { 
+	    if (hdr.append.isValid() && hdr.append.exp_type == 2) { 
 		drop(); // <-- TODO fold into the ack action table!
 	    }
 	    meta.recirc_port_type = 0;
@@ -1012,7 +997,21 @@ control MyIngress0(inout headers hdr,
 	} 
 
         routing.apply();
-	update_replicated_seq_no.apply();
+	if (meta.ring_process == TYPE_TAIL) {
+	    meta.dummy = get_tail.execute(0);
+	    if (meta.dummy != 0) {
+		hdr.tail.tail_seq_no = meta.dummy;
+	    }
+	} else if (meta.ring_process == TYPE_APPEND_RESP && meta.ack_ready == 1) {
+	    write_replicated_seq_no.execute(0);
+	    tot_packet_counter0.count(0);
+	    update_seq_recirc_cntr.execute(0);
+	    meta.duration = (bit<32>)(hdr.ring_type.end_ts - hdr.append.start_ts);
+	    ack_get_lower_lat.apply();
+	    ack_get_upper_lat.apply();
+
+	}
+
 	hdr.timer.setInvalid();
      }
 }
@@ -1047,21 +1046,22 @@ control MyIngress1(inout headers hdr,
     Register<bit<32>, bit<1>>(1) highest_replicated_seq_no;
     RegisterAction<bit<32>, bit<1>, bit<32>>(highest_replicated_seq_no) write_replicated_seq_no = {
         void apply(inout bit<32> cur_replicated_seq_no) {
-	    if (hdr.append.g_idx > cur_replicated_seq_no) {
-	         cur_replicated_seq_no = hdr.append.g_idx;
+	    if (meta.committed_seq_no > cur_replicated_seq_no) {
+	         cur_replicated_seq_no = meta.committed_seq_no;
 	    }
         }
     };
 
     RegisterAction<bit<32>, bit<1>, bit<32>>(highest_replicated_seq_no) get_tail = {
         void apply(inout bit<32> curr_replicated_seq_no, out bit<32> old_replicated_seq_no) { // inout = register, out = output 
-	    if (hdr.tail.tail_seq_no < curr_replicated_seq_no) {
+	    if (meta.committed_seq_no < curr_replicated_seq_no) {
 	       old_replicated_seq_no = curr_replicated_seq_no;
 	    } else {
-                old_replicated_seq_no = hdr.tail.tail_seq_no;
+                old_replicated_seq_no = 0;
 	    }
         }
     };
+
 
     // Largest global sequence number known to the switch Updated every time control packet is received.
     Register<bit<32>, bit<16>>(MAX_GSN_MAP_SIZE, 0) map_from_gsn;
@@ -1282,6 +1282,13 @@ control MyIngress1(inout headers hdr,
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) cntrl_counter_ig1; 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) seq_only_packet_counter; 
     Counter<bit<32>, bit<1>>(1, CounterType_t.PACKETS) tot_packet_counter1; 
+    Register<bit<32>, bit<1>>(1, 0) seq_wait_recirc_counter; 
+    RegisterAction<bit<32>, bit<1>, bit<32>>(seq_wait_recirc_counter) update_seq_recirc_cntr = {
+        void apply(inout bit<32> new_pkt_cntr) {
+	    new_pkt_cntr = new_pkt_cntr + (bit<32>)hdr.append.seq_recirc;
+	}
+    };
+
     Register<bit<32>, bit<1>>(1, 1) total_pkt_cnt_lower; 
     RegisterAction<bit<32>, bit<1>, bit<32>>(total_pkt_cnt_lower) update_low_pkt_cntr = {
         void apply(inout bit<32> new_pkt_cntr, out bit<32> overflow) {
@@ -1438,9 +1445,11 @@ control MyIngress1(inout headers hdr,
 	hdr.append.cntrl_pkt_it = meta.cntrl_pkt_it;
 	hdr.append.g_idx = meta.local_seq_no;	    
 	meta.recirc_port_type = 1;
+	hdr.append.seq_recirc = hdr.append.seq_recirc + 1;
     }
     action wait_to_seq() {
 	meta.recirc_port_type = 1;
+	hdr.append.seq_recirc = hdr.append.seq_recirc + 1;
     }
     action wait_append() {
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
@@ -1509,6 +1518,7 @@ control MyIngress1(inout headers hdr,
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
 	hdr.ring_type.type = TYPE_APPEND_WAIT;
 	meta.recirc_port_type = 2;
+	hdr.append.seq_recirc = hdr.append.seq_recirc - 1;
     }
     action regular_stream() {
 	meta.route_to_shard = 1;
@@ -1573,15 +1583,14 @@ control MyIngress1(inout headers hdr,
 
 
     action ack_append() {
-	//tot_packet_counter1.count(0);
 	//meta.output = update_low_pkt_cntr.execute(0);
 	//update_high_pkt_cntr.execute(0);
         //update_raw_elapsed_time.execute(0); TODO: Make separate table
 	meta.dst_addr = hdr.ipv4.dst;
+	meta.committed_seq_no = hdr.append.g_idx;
     }
     action ack_read() {
-	meta.route_to_shard = 1;
-	hdr.ring_type.shard_id = (bit<16>)hdr.append.g_idx;
+	meta.dst_addr = hdr.ipv4.dst;
     }
     table ack_action_tbl{
         key = {
@@ -1595,25 +1604,6 @@ control MyIngress1(inout headers hdr,
         }
         size = 64;
         default_action = NoAction;
-    }
-
-    action write_rep_seq_no() {
-	write_replicated_seq_no.execute(0);
-    }
-    action read_rep_seq_no() {
-        //get_tail.execute(0); TODO
-    }
-    table update_replicated_seq_no {
-	key = {
-	    meta.ring_process: exact;
-	    meta.ack_ready: exact;
-	}
-	actions = {
-	    write_rep_seq_no;
-	    NoAction;
-	}
-	size = 64;
-	default_action = NoAction;
     }
 
     action low_latency() {
@@ -1817,6 +1807,7 @@ control MyIngress1(inout headers hdr,
 	    } else {
 		hdr.tail.hops = hdr.tail.hops + 1;
 	    }
+	    meta.committed_seq_no = hdr.tail.tail_seq_no;
 	}
 
 	cntrl_local_seq.apply();
@@ -1885,10 +1876,6 @@ control MyIngress1(inout headers hdr,
 	    bit<32> slot = get_ack_idx.execute(0);
 	    meta.ack_ready = check_ack.execute(slot);
 	    ack_action_tbl.apply();
-	    tot_packet_counter1.count(0);
-	    meta.duration = (bit<32>)(hdr.ring_type.end_ts - hdr.append.start_ts);
-	    ack_get_lower_lat.apply();
-	    ack_get_upper_lat.apply();
 	    if (hdr.append.isValid() && hdr.append.exp_type == 2) {
 	        drop(); // <-- TODO put in routing table?
 	    }
@@ -1897,7 +1884,21 @@ control MyIngress1(inout headers hdr,
 	}
 	
         routing.apply();
-	update_replicated_seq_no.apply();
+	if (meta.ring_process == TYPE_TAIL) {
+	    meta.dummy = get_tail.execute(0);
+	    if (meta.dummy != 0) {
+		hdr.tail.tail_seq_no = meta.dummy;
+	    }
+	} else if (meta.ring_process == TYPE_APPEND_RESP && meta.ack_ready == 1) {
+	    write_replicated_seq_no.execute(0);
+	    tot_packet_counter1.count(0);
+	    update_seq_recirc_cntr.execute(0);
+	    meta.duration = (bit<32>)(hdr.ring_type.end_ts - hdr.append.start_ts);
+	    ack_get_lower_lat.apply();
+	    ack_get_upper_lat.apply();
+	    
+	}
+
 	hdr.timer.setInvalid();
 
     }
@@ -2196,25 +2197,6 @@ control MyEgress0(inout headers hdr,
     };
 
 
-    // Register tracks whether or not the control packet should be dropped
-    // Main purpose is to induce an artificial view change
-    Register<bit<8>, bit<1>>(1, 0) drop_cntrl_packet;
-    RegisterAction<bit<8>, bit<1>, bit<1>>(drop_cntrl_packet) set_drop_cntrl = {
-        void apply(inout bit<8> drop_status) {
-	    drop_status = 1;
-	}
-    };
-    RegisterAction<bit<8>, bit<1>, bit<1>>(drop_cntrl_packet) unset_drop_cntrl = {
-        void apply(inout bit<8> drop_status) {
-	    drop_status = 0;
-	}
-    };
-    RegisterAction<bit<8>, bit<1>, bit<1>>(drop_cntrl_packet) get_drop_cntrl = {
-        void apply(inout bit<8> drop_status, out bit<1> output) {
-	    output = (bit<1>)drop_status;
-	}
-    };
-    
     Register<bit<8>, bit<1>>(1, 0) view_leader;
     RegisterAction<bit<8>, bit<1>, bit<8>>(view_leader) record_view_leader = {
         void apply(inout bit<8> curr_view_leader, out bit<8> output) {
@@ -2518,26 +2500,6 @@ control MyEgress1(inout headers hdr,
 	}
     };
 
-
-    // Register tracks whether or not the control packet should be dropped
-    // Main purpose is to induce an artificial view change
-    Register<bit<8>, bit<1>>(1, 0) drop_cntrl_packet;
-    RegisterAction<bit<8>, bit<1>, bit<1>>(drop_cntrl_packet) set_drop_cntrl = {
-        void apply(inout bit<8> drop_status) {
-	    drop_status = 1;
-	}
-    };
-    RegisterAction<bit<8>, bit<1>, bit<1>>(drop_cntrl_packet) unset_drop_cntrl = {
-        void apply(inout bit<8> drop_status) {
-	    drop_status = 0;
-	}
-    };
-    RegisterAction<bit<8>, bit<1>, bit<1>>(drop_cntrl_packet) get_drop_cntrl = {
-        void apply(inout bit<8> drop_status, out bit<1> output) {
-	    output = (bit<1>)drop_status;
-	}
-    };
-    
     Register<bit<8>, bit<1>>(1, 0) view_leader;
     RegisterAction<bit<8>, bit<1>, bit<8>>(view_leader) record_view_leader = {
         void apply(inout bit<8> curr_view_leader, out bit<8> output) {

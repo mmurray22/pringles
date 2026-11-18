@@ -162,6 +162,7 @@ header append_entry_t {
     bit<16> recv_port;
     bit<16> exp_type;
     bit<48> start_ts;
+    bit<16> seq_recirc;
 }
 
 // ReadEntry header
@@ -207,7 +208,7 @@ header tail_req_t {
     /** Filled in by switches **/
 
     // Sequence number that is the current tail - filled in by the switches
-    bit<32> tail_seq_no; // TODO: 64 BITS
+    bit<32> tail_seq_no;
     bit<16> recv_port;
 }
 
@@ -311,6 +312,8 @@ struct metadata {
     bit<32> assign_sn;
     bit<32> local_seq_no;
     bit<32> global_seq_no;
+    bit<32> committed_seq_no;
+    bit<32> dummy;
     bit<32> batch_size; // For keeping tabs on the GSN table size
     bit<32> queue_congest;
     bit<32> shard_size;
