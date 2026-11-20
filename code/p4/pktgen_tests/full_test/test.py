@@ -894,8 +894,8 @@ class ViewChangeTest(BfRuntimeTest):
                 trigger_view_t = threading.Thread(target=self.trigger_view_change, args=(viewChangeMaintainer, bfrt_info, targets[pipe_id], pipe_id, self.trigger_wait_time, duration), kwargs={})
                 if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
                     active_trigger_threads.append(trigger_view_t)
-        
-        active_q_pipe_t = threading.Thread(target=self.pipe_queue_monitor, args=(bfrt_info, targets, active_pipes, duration, queue_idx_map, queues_of_interest,), kwargs={})
+        total_duration = duration + 10 
+        active_q_pipe_t = threading.Thread(target=self.pipe_queue_monitor, args=(bfrt_info, targets, active_pipes, total_duration, queue_idx_map, queues_of_interest,), kwargs={})
         active_pipe_t = threading.Thread(target=self.pipe_pktgen_runtime, args=(bfrt_info, targets, duration, active_pipes,), kwargs={})
         
         ##### START THE EXPERIMENT ####
@@ -903,7 +903,7 @@ class ViewChangeTest(BfRuntimeTest):
         if switch_send_cntrl:
 	    logger.info("Sending control packet!")
 	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, 0)
-
+    
         # Enable packet generation
         idx = 0
 	for pipe_cfg in pipes_cfg:

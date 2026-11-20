@@ -1006,10 +1006,10 @@ control MyIngress0(inout headers hdr,
 	    write_replicated_seq_no.execute(0);
 	    tot_packet_counter0.count(0);
 	    update_seq_recirc_cntr.execute(0);
-	    meta.duration = (bit<32>)(hdr.ring_type.end_ts - hdr.append.start_ts);
+	    //meta.duration = (bit<32>)(hdr.ring_type.end_ts - hdr.append.start_ts);
+	    meta.duration = (bit<32>)(standard_metadata.ingress_mac_tstamp - hdr.append.start_ts);
 	    ack_get_lower_lat.apply();
 	    ack_get_upper_lat.apply();
-
 	}
 
 	hdr.timer.setInvalid();
@@ -1893,12 +1893,10 @@ control MyIngress1(inout headers hdr,
 	    write_replicated_seq_no.execute(0);
 	    tot_packet_counter1.count(0);
 	    update_seq_recirc_cntr.execute(0);
-	    meta.duration = (bit<32>)(hdr.ring_type.end_ts - hdr.append.start_ts);
+	    meta.duration = (bit<32>)(standard_metadata.ingress_mac_tstamp - hdr.append.start_ts);
 	    ack_get_lower_lat.apply();
 	    ack_get_upper_lat.apply();
-	    
 	}
-
 	hdr.timer.setInvalid();
 
     }
@@ -2324,6 +2322,7 @@ control MyEgress0(inout headers hdr,
 	    meta.accept_finalize_view = 0;
 	    meta.ring_view = 0;
 	    meta.accept_view_change = 0;
+	    meta.view_change_active = get_active_view_change.execute(0);
 	}
 
 	// Determine whether control packet should be dropped
@@ -2628,6 +2627,7 @@ control MyEgress1(inout headers hdr,
 	    meta.accept_finalize_view = 0;
 	    meta.ring_view = 0;
 	    meta.accept_view_change = 0;
+	    meta.view_change_active = get_active_view_change.execute(0);
 	}
 
 	// Determine whether control packet should be dropped
