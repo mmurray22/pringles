@@ -33,6 +33,10 @@ struct corfu_seq_header {
     uint16_t proto_type;
 };
 
+struct corfu_storage_header {
+    uint16_t proto_type;
+};
+
 struct corfu_append {
     uint32_t log_idx;
     uint32_t curr_epoch;
@@ -56,6 +60,12 @@ struct corfu_gettoken_reply {
     uint32_t log_idx;
 };
 
+struct corfu_projection_layout {
+    uint32_t epoch;
+    uint32_t num_extents;
+    uint32_t num_machines_per_extent;
+};
+
 inline size_t get_corfu_gettoken_reply_size() {
     return sizeof(struct corfu_gettoken_reply);
 }
@@ -64,6 +74,30 @@ inline size_t get_corfu_cli_header_size() {
     return sizeof(struct corfu_cli_header);
 }
 
+inline size_t get_corfu_append_header_size() {
+    return sizeof(struct corfu_append);
+}
+
+inline size_t get_corfu_read_header_size() {
+    return sizeof(struct corfu_read);
+}
+
+inline size_t get_corfu_trim_header_size() {
+    return sizeof(struct corfu_trim);
+}
+
+inline size_t get_corfu_seal_header_size() {
+    return sizeof(struct corfu_seal);
+}
+
 inline size_t get_corfu_seq_header_size() {
     return sizeof(struct corfu_seq_header);
+}
+
+inline size_t get_corfu_storage_header_size() {
+    return sizeof(struct corfu_storage_header);
+}
+
+inline size_t get_corfu_layout_header_size() {
+    return sizeof(struct corfu_projection_layout);
 }

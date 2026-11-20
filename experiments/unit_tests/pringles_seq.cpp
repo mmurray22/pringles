@@ -16,7 +16,7 @@
 
 #include "spdlog/spdlog.h"
 #include "utils.h"
-#include "trace.h"
+//#include "trace.h"
 #include "network.h"
 
 const uint64_t MAX_WAIT_TIME = 100;

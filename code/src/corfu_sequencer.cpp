@@ -33,6 +33,7 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
         get_self_ip(config));
     int random_socket = append_net->create_random_port_socket();
     if (random_socket < 0) {
+        SPDLOG_INFO("random socket error");
         append_net->stop_batch_threads();
         return;
     }
@@ -63,6 +64,7 @@ void CorfuSequencer::append_request(int append_port, std::unique_ptr<Network> ap
 
     int comms_socket = append_net->setup_batch_socket(append_port);
     if (comms_socket < 0) {
+        SPDLOG_INFO("comms socket error");
         append_net->stop_batch_threads();
 	    return;
     }
@@ -105,6 +107,7 @@ void CorfuSequencer::append_request(int append_port, std::unique_ptr<Network> ap
         }
         num_received += 1;
     }
+    SPDLOG_INFO("end thread prob errored");
     append_net->stop_batch_threads();
     close(comms_socket);
     spdlog::critical("Total num received: {}", num_received);

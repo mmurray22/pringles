@@ -16,7 +16,7 @@ warm_up = 5 # seconds
 # How long the system should be sending packets after we collect statistics 
 cool_down = 5 # seconds
 # How long we should collect statistics for
-experiment_duration = 60
+experiment_duration = 15
 
 # How large our payloads will be
 message_size = 4000 # bytes
@@ -25,14 +25,14 @@ num_client_threads = 1
 # Number of shards
 num_shards = 1
 # Name of the json file which will hold final results
-general_json_name = "storage2"
+general_json_name = "htop-checking"
 # Name of the experiment
-experiment_name = "zzzzzzzzzstore"   
+experiment_name = "zzzzzzzzzzzzzzzzzzzhtop-checking"
 # Supposed to be the git hash of the code that we are using for this experiment
 git_hash = "b71fcb19eab35950e4924a63af43b576c94d947b" # TODO
 # Protocol name
 # Valid options include: pringles, scalog, kafka, speclog
-protocol_name = "baseline"
+protocol_name = "corfu"
 num_servers_per_shard = 1
 append_req_threads = 10
 append_resp_threads = 10
@@ -40,58 +40,12 @@ append_store_threads = 0
 
 ###### THIS IS WHERE WE DEFINE EXPERIMENTS AND CHANGE EXPERIMENT VARIABLES ########
 
-[[experiment]]
-num_client_threads = 1
-general_json_name = "baseline-1-again"
-protocol_name = "baseline"
-message_size = 100 # bytes
 
-[[experiment]]
-num_client_threads = 10
-general_json_name = "baseline-10-again"
-protocol_name = "baseline"
-message_size = 100 # bytes
-
-[[experiment]]
-num_client_threads = 25
-general_json_name = "baseline-25-again"
-protocol_name = "baseline"
-message_size = 100 # bytes
-
-[[experiment]]
-num_client_threads = 50
-general_json_name = "baseline-50-again"
-protocol_name = "baseline"
-message_size = 100 # bytes
 
 [[experiment]]
 num_client_threads = 100
-general_json_name = "baseline-100-again"
-protocol_name = "baseline"
-message_size = 100 # bytes
-
-[[experiment]]
-num_client_threads = 200
-general_json_name = "baseline-200-again"
-protocol_name = "baseline"
-message_size = 100 # bytes
-
-[[experiment]]
-num_client_threads = 400
-general_json_name = "baseline-400-again"
-protocol_name = "baseline"
-message_size = 100 # bytes
-
-[[experiment]]
-num_client_threads = 500
-general_json_name = "baseline-500-again"
-protocol_name = "baseline"
-message_size = 100 # bytes
-
-[[experiment]]
-num_client_threads = 600
-general_json_name = "baseline-600-again"
-protocol_name = "baseline"
+general_json_name = "100-corfu-stor-test"
+protocol_name = "corfu"
 message_size = 100 # bytes
 
 ##

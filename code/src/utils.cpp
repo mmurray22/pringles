@@ -79,6 +79,10 @@ uint64_t get_append_req_threads(YAML::Node config) {
     return config["append_req_threads"].as<uint64_t>();
 }
 
+uint64_t get_store_append_req_threads(YAML::Node config) {
+    return config["store_append_req_threads"].as<uint64_t>();
+}
+
 uint64_t get_append_resp_threads(YAML::Node config) {
     return config["append_resp_threads"].as<uint64_t>();
 }
@@ -445,6 +449,10 @@ uint64_t get_ack_threshold(YAML::Node config) {
 
 bool get_full_append(YAML::Node config) {
     return config["full_append"].as<bool>();
+}
+
+bool get_just_storage(YAML::Node config) {
+    return config["just_storage"].as<bool>();
 }
 
 void configure_event(struct perf_event_attr *pe, uint32_t type, uint64_t config){

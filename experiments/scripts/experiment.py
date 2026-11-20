@@ -264,6 +264,7 @@ def generate_corfu_yaml_config(base_config, corfu_config, entity_ip, entity_type
         'interface': QuotedString(network_interface),
         'payload_size': general_exp_params['message_size'],
         'use_performance': exp_params['use_performance'],
+        'just_storage': exp_params['just_storage'],
 
         # not sure i need this we'll see
         'seq_recv_port': QuotedString(net_params['seq_recv_port']),
@@ -288,7 +289,8 @@ def generate_corfu_yaml_config(base_config, corfu_config, entity_ip, entity_type
 
     if entity_type == 'server':
         yaml_config.update({
-            'stor_id': entity_id
+            'stor_id': entity_id,
+            'store_append_req_threads': exp_params['store_append_req_threads']
         })
 
     else:
@@ -298,6 +300,126 @@ def generate_corfu_yaml_config(base_config, corfu_config, entity_ip, entity_type
 
     return yaml_config
 
+def start_cpu_monitor(binary_name, hosts, duration, username, key, prefix=""):
+    """
+    Starts a background process on remote hosts to log userspace vs kernelspace CPU usage.
+    Tracks aggregate process CPU % and per-core system CPU % (including wait and softirq),
+    appending an AVERAGE summary row at the end of the log.
+    """
+    for host in hosts:
+        log_file = f"/tmp/{prefix}_{binary_name}_cpu.log"
+        
+        remote_cmd = f"""nohup bash -c '
+        log="{log_file}"
+        bin="{binary_name}"
+        dur={duration}
+        
+        # 1. Find process ID
+        PID=""
+        for r in {{1..10}}; do
+            PID=$(pgrep -x "${{bin:0:15}}" | grep -v -E "^($$|$PPID)$" | head -n 1)
+            if [ -n "$PID" ]; then break; fi
+            sleep 0.5
+        done
+
+        if [ -z "$PID" ]; then
+            echo "Process not found for binary: $bin" > "$log"
+            exit 1
+        fi
+
+        CLK_TCK=$(getconf CLK_TCK)
+
+        get_jiffies() {{
+            awk -F") " "{{print \\$2}}" /proc/$1/stat 2>/dev/null | awk "{{print \\$12, \\$13}}"
+        }}
+
+        # Extract user ($2), system ($4), iowait ($6), softirq ($8), and total
+        get_core_stats() {{
+            awk "/^cpu[0-9][0-9]*/ {{tot=0; for(i=2;i<=NF;i++) tot+=\\$i; print \\$1, \\$2, \\$4, \\$6, \\$8, tot}}" /proc/stat | sort -V
+        }}
+
+        # 2. Build CSV Header dynamically
+        HEADER="Time, Proc_%usr, Proc_%sys"
+        for cpu in $(get_core_stats | awk "{{print \\$1}}"); do
+            HEADER+=", ${{cpu}}_%usr, ${{cpu}}_%sys, ${{cpu}}_%wait, ${{cpu}}_%soft"
+        done
+        echo "$HEADER" > "$log"
+
+        # 3. Capture Initial Baselines
+        read PREV_U PREV_S <<< $(get_jiffies $PID)
+        PREV_U=${{PREV_U:-0}}
+        PREV_S=${{PREV_S:-0}}
+        PREV_CORE_STATS=$(get_core_stats)
+
+        # 4. 1-Second Polling Loop
+        for ((i=0; i<dur; i++)); do
+            sleep 1
+            if [ ! -d "/proc/$PID" ]; then break; fi
+
+            # -- Process Aggregate --
+            read CURR_U CURR_S <<< $(get_jiffies $PID)
+            CURR_U=${{CURR_U:-$PREV_U}}
+            CURR_S=${{CURR_S:-$PREV_S}}
+
+            DIFF_U=$((CURR_U - PREV_U))
+            DIFF_S=$((CURR_S - PREV_S))
+            PREV_U=$CURR_U
+            PREV_S=$CURR_S
+
+            USR_PCT=$(awk -v u="$DIFF_U" -v t="$CLK_TCK" "BEGIN {{ printf \\"%.2f\\", (u*100)/t }}")
+            SYS_PCT=$(awk -v s="$DIFF_S" -v t="$CLK_TCK" "BEGIN {{ printf \\"%.2f\\", (s*100)/t }}")
+
+            LINE="$(date +%T), $USR_PCT, $SYS_PCT"
+
+            # -- Per-Core Percentages --
+            CURR_CORE_STATS=$(get_core_stats)
+            
+            # Map columns: 2=user, 3=sys, 4=wait, 5=softirq, 6=tot
+            CORE_PCTS=$(awk "
+                NR==FNR {{ u[\\$1]=\\$2; s[\\$1]=\\$3; w[\\$1]=\\$4; si[\\$1]=\\$5; t[\\$1]=\\$6; next }}
+                {{
+                    diff_u = \\$2 - u[\\$1]
+                    diff_s = \\$3 - s[\\$1]
+                    diff_w = \\$4 - w[\\$1]
+                    diff_si = \\$5 - si[\\$1]
+                    diff_tot = \\$6 - t[\\$1]
+                    if (diff_tot == 0) diff_tot = 1
+                    printf \\", %.2f, %.2f, %.2f, %.2f\\", (diff_u*100)/diff_tot, (diff_s*100)/diff_tot, (diff_w*100)/diff_tot, (diff_si*100)/diff_tot
+                }}
+            " <(echo "$PREV_CORE_STATS") <(echo "$CURR_CORE_STATS"))
+
+            PREV_CORE_STATS="$CURR_CORE_STATS"
+
+            echo "$LINE$CORE_PCTS" >> "$log"
+        done
+
+        # 5. Append AVERAGE row across all recorded 1-second samples
+        awk -F", " "
+            NR > 1 {{
+                count++
+                for (i=2; i<=NF; i++) sum[i] += \\$i
+            }}
+            END {{
+                if (count > 0) {{
+                    printf \\"AVERAGE\\"
+                    for (i=2; i<=NF; i++) printf \\", %.2f\\", sum[i]/count
+                    printf \\"\\\\n\\"
+                }}
+            }}
+        " "$log" >> "$log"
+        ' > /dev/null 2>&1 &"""
+        
+        print(f"Starting CPU monitor for {binary_name} on {host}")
+        execute_arbitrary_remote_command(host, username, key, remote_cmd)
+        
+def get_cpu_stats(binary_name, hosts, username, key, target_dir, prefix=""):
+    """
+    Retrieves the CPU monitoring logs back to the local results directory.
+    """
+    for i, host in enumerate(hosts):
+        log_filename = f"{prefix}_{binary_name}_cpu.log"
+        copy_log_file_back(host, username, key, log_filename, target_dir, remote_dir="/tmp")
+
 def kill_process(process_name, ssh_key, ssh_user, ip):
     """
     Executes a program on a remote machine asynchronously using SSH, 
@@ -305,7 +427,7 @@ def kill_process(process_name, ssh_key, ssh_user, ip):
     """
     # NEW/MODIFIED: redirect all output (&>) to the log file, and run in background (&)
     command = []
-    remote_command = f'killall {process_name}'
+    remote_command = f'sudo killall {process_name}'
     full_remote_command = f'/bin/bash -c "{remote_command} ; sleep 1"'
     command = [
         'ssh',
@@ -805,7 +927,9 @@ def process_and_aggregate_corfu_results(local_target_dir, json_name, system_name
         "payload_size": base_config['experiment_parameters']['message_size'],
         "num_servers": num_servers,
         "full_append": system_config['experiment_parameters']['full_append'],
+        "just_storage": system_config['experiment_parameters']['just_storage'],
         "num_sequencer_threads": system_config['experiment_parameters']['append_req_threads'],
+        "num_storage_threads": system_config['experiment_parameters']['store_append_req_threads'],
         "system_name": system_name
     }
     print(final_results)
@@ -1428,6 +1552,7 @@ def setup_switches(config):
 # To be executed for each experiment
 def run_experiment_cycle_baseline(base_config, benchmark_config_file, idx, local_results_dir, system_name):
     """Runs a single, full experiment cycle based on the merged configuration."""
+    only_storage = False
     try:
         with open(benchmark_config_file, 'r') as f:
             full_config = toml.load(f)
@@ -2311,6 +2436,8 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
         path_server = f"{corfu_base}" + config['program_paths']['path_server']
         path_sequencer = f"{corfu_base}" + config['program_paths']['path_sequencer']
 
+        all_corfu_hosts = set(client_ips + all_server_ips + [seq_ip])
+
         general_json_output_name = base_config['experiment_parameters']['general_json_name']
         json_output_name = general_json_output_name + "-" + config['experiment_parameters']['json_name']
 
@@ -2395,51 +2522,53 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                 time.sleep(SERVER_START_DELAY)
 
             # --- 7. Generate Sequencer Configuration and Start Process --- # TODO
-            print("\n--- Starting Sequencer ---")
-            seq_config_filename = f"seq_config_{json_output_name}.yaml" # Unique filename
-            seq_port_offset = len(all_server_ips) * 2
+            only_storage = config['experiment_parameters']['just_storage']
+            if not only_storage:
+                print("\n--- Starting Sequencer ---")
+                seq_config_filename = f"seq_config_{json_output_name}.yaml" # Unique filename
+                seq_port_offset = len(all_server_ips) * 2
 
-            seq_config = generate_corfu_yaml_config(
-                base_config=base_config,
-                corfu_config=config,
-                entity_ip=seq_ip,
-                entity_type="sequencer",
-                port_offset=seq_port_offset,
-                send_port=send_port,
-                recv_port=recv_port,
-                network_interface=seq_net_if
-            )
+                seq_config = generate_corfu_yaml_config(
+                    base_config=base_config,
+                    corfu_config=config,
+                    entity_ip=seq_ip,
+                    entity_type="sequencer",
+                    port_offset=seq_port_offset,
+                    send_port=send_port,
+                    recv_port=recv_port,
+                    network_interface=seq_net_if
+                )
 
-            seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
-            kill_process(seq_exec, ssh_key, ssh_user, seq_ip)
+                seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
+                kill_process(seq_exec, ssh_key, ssh_user, seq_ip)
 
-            # Write YAML file locally
-            with open(seq_config_filename, 'w') as f:
-                yaml.dump(seq_config, f, default_flow_style=False)
-            print(f"Generated sequencer config: {seq_config_filename}")
+                # Write YAML file locally
+                with open(seq_config_filename, 'w') as f:
+                    yaml.dump(seq_config, f, default_flow_style=False)
+                print(f"Generated sequencer config: {seq_config_filename}")
 
-            # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
-            if not transfer_file(seq_config_filename, seq_ip, ssh_user, ssh_key):
-                raise Exception(f"Failed to transfer config to server {seq_ip}")
-            if not transfer_file(path_sequencer, seq_ip, ssh_user, ssh_key):
-                raise Exception(f"Failed to transfer sequencer binary to switch {seq_ip}")
-                
-            # Start remote process
-            exec_seq_filepath = "sudo ~/" + seq_exec
-            prefix = "sequencer"
-            process, log_filename = execute_remote_command(seq_ip, exec_seq_filepath, seq_config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
-            if process:
-                seq_processes.append(process)
-                seq_log_files[seq_ip] = log_filename # MODIFIED: Store log filename
-            else:
-                raise Exception(f"Failed to start sequencer process on {ip}")
+                # TRANSFER THE YAML CONFIG FILE TO THE REMOTE SERVER
+                if not transfer_file(seq_config_filename, seq_ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer config to server {seq_ip}")
+                if not transfer_file(path_sequencer, seq_ip, ssh_user, ssh_key):
+                    raise Exception(f"Failed to transfer sequencer binary to switch {seq_ip}")
+                    
+                # Start remote process
+                exec_seq_filepath = "sudo ~/" + seq_exec
+                prefix = "sequencer"
+                process, log_filename = execute_remote_command(seq_ip, exec_seq_filepath, seq_config_filename, ssh_key, ssh_user, exp_index, prefix) # MODIFIED: Get log filename
+                if process:
+                    seq_processes.append(process)
+                    seq_log_files[seq_ip] = log_filename # MODIFIED: Store log filename
+                else:
+                    raise Exception(f"Failed to start sequencer process on {ip}")
 
-            if not seq_processes:
-                raise Exception("No sequencers were successfully started.")
+                if not seq_processes:
+                    raise Exception("No sequencers were successfully started.")
 
-            # --- 8. Wait for Sequencer to Initialize --- TODO
-            print(f"\nWaiting {SWITCH_START_DELAY} seconds for sequencer to initialize...")
-            time.sleep(SWITCH_START_DELAY)
+                # --- 8. Wait for Sequencer to Initialize --- TODO
+                print(f"\nWaiting {SWITCH_START_DELAY} seconds for sequencer to initialize...")
+                time.sleep(SWITCH_START_DELAY)
 
             # --- 9. Generate Client Configuration and Start Process ---
             print("\n--- Starting Client ---")
@@ -2498,12 +2627,30 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
             i = 0 
 
             #PERF HERE
-            # cli_perf_duration = 10
+            cli_perf_duration = 10
             # seq_perf_duration = 10
-            # client_exec = os.path.basename(path_client) # Use the basename remotely
-            # seq_exec = os.path.basename(path_sequencer) # Use the basename remotely
-            # run_perf(seq_exec, [seq_ip], seq_perf_duration, ssh_user, ssh_key)
+            # stor_perf_duration = 10
+
+            # client_exec = os.path.basename(path_client)
+
+            # if use_storage:
+            #     server_exec = os.path.basename(path_server)
+            #     run_perf(server_exec, all_server_ips, stor_perf_duration, ssh_user, ssh_key)
+
+            # if not only_storage:
+            #     seq_exec = os.path.basename(path_sequencer)
+            #     run_perf(seq_exec, [seq_ip], seq_perf_duration, ssh_user, ssh_key)
+
             # run_perf(client_exec, client_ips, cli_perf_duration, ssh_user, ssh_key)
+            corfu_binary_name = config['program_paths']['client_binary'].split('/')[-1]
+            start_cpu_monitor(
+                binary_name=corfu_binary_name, 
+                hosts=client_ips, 
+                duration=cli_perf_duration, 
+                username=ssh_user, 
+                key=ssh_key,
+                prefix="corfu"
+            )
 
             for proc in client_processes: 
                 # Wait for the client process to finish
@@ -2529,6 +2676,15 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                 )
                 i += 1
 
+            get_cpu_stats(
+                binary_name=corfu_binary_name,
+                hosts=client_ips,
+                username=ssh_user,
+                key=ssh_key,
+                target_dir=local_results_dir,
+                prefix="corfu"
+            )
+
         except Exception as e:
             print(f"\nFATAL ERROR during experiment cycle {exp_index + 1}: {e}")
 
@@ -2547,14 +2703,15 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
                         local_results_dir
                     )
 
-            for ip, log_filename in seq_log_files.items():
-                copy_log_file_back(
-                    seq_ip,
-                    ssh_user,
-                    ssh_key,
-                    log_filename,
-                    local_results_dir
-                )
+            if not only_storage:
+                for ip, log_filename in seq_log_files.items():
+                    copy_log_file_back(
+                        seq_ip,
+                        ssh_user,
+                        ssh_key,
+                        log_filename,
+                        local_results_dir
+                    )
 
             if use_storage:
                 for proc in server_processes:
@@ -2570,21 +2727,33 @@ def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_
 
 
             #PERF HERE
-            # get_perf_files(client_exec, client_ips, ssh_user, ssh_key, local_results_dir)
-            # get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
-            print("Server processes are assumed to exit on their own after the client terminates.")
-            for proc in seq_processes:
-                try:
-                    if proc.poll() is None:
-                        print(f"Terminating server process (PID: {proc.pid})...")
-                        proc.kill()
-                    # The nohup process is difficult to kill via Popen.terminate(). 
-                    # Relying on the server timeout is safer.
-                    #pass 
-                except Exception as e:
-                    print(f"Could not check on sequencer process: {e}")
+            # if use_storage:
+            #     get_perf_files(server_exec, all_server_ips, ssh_user, ssh_key, local_results_dir)
 
-            print("Sequencer processes are assumed to exit on their own after the client terminates.") # TODO
+            # if not only_storage:
+            #     get_perf_files(seq_exec, [seq_ip], ssh_user, ssh_key, local_results_dir)
+
+            # get_perf_files(client_exec, client_ips, ssh_user, ssh_key, local_results_dir)
+
+            print("Server processes are assumed to exit on their own after the client terminates.")
+            if not only_storage:
+                for proc in seq_processes:
+                    try:
+                        if proc.poll() is None:
+                            print(f"Terminating server process (PID: {proc.pid})...")
+                            proc.kill()
+                        # The nohup process is difficult to kill via Popen.terminate(). 
+                        # Relying on the server timeout is safer.
+                        #pass 
+                    except Exception as e:
+                        print(f"Could not check on sequencer process: {e}")
+
+                print("Sequencer processes are assumed to exit on their own after the client terminates.") # TODO
+
+            cleanup_remote_yaml_files(all_corfu_hosts, ssh_key, ssh_user)
+            for ip in all_corfu_hosts:
+                cleanup_remote_json_files(ip, ssh_key, ssh_user, json_output_name)
+
             process_and_aggregate_corfu_results(local_results_dir, json_output_name, system_name, base_config, config)
 
 def generate_scalog_config(discovery_ip, order_ips, data_ips, order_replication_factor, data_replication_factor,

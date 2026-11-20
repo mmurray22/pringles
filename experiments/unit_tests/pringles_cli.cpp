@@ -17,7 +17,7 @@
 
 #include "spdlog/spdlog.h"
 #include "utils.h"
-#include "trace.h"
+//#include "trace.h"
 #include "pringles_client.h"
 
 // Performance test of append

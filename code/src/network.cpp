@@ -392,7 +392,7 @@ int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, bool 
     if (use_multicast) { 
         s_fd = socket(AF_INET, SOCK_DGRAM, 0);
         if (s_fd < 0) {
-            perror("Socket creation failed");
+            spdlog::critical("Socket creation failed for {}:{}. Error: {}", dst_ip, dst_port, strerror(errno));
             return -1;
         }       
 
@@ -456,7 +456,8 @@ int Network::setup_talker_socket(std::string dst_ip, std::string dst_port, bool 
         }
         if (temp == NULL) {
             spdlog::critical("Failed to create socket!");
-            return -1;
+            spdlog::critical("Cannot bind socket fd, Error {} occurred: {}", std::to_string(errno), strerror(errno));
+            return -1;  
         }
         freeaddrinfo(servinfo);
     }
@@ -902,7 +903,7 @@ int Network::setup_batch_socket(int port) {
     }
 
     int flags = SOF_TIMESTAMPING_TX_SCHED | SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_ID;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_TIMESTAMP, &flags, sizeof(flags)) < 0) {
+    if (setsockopt(sockfd, SOL_SOCKET, SO_TIMESTAMPING, &flags, sizeof(flags)) < 0) {
 	spdlog::debug("setsockopt TIMESTAMP was failed!");
         close(sockfd);
 	return -1;

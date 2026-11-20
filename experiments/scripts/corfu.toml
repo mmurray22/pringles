@@ -5,19 +5,19 @@
 
 ###### Storage server Network Information #####
 # This is the IP address of every storage server being used
-stor_ips = ["10.10.1.3"]
+stor_ips = ["10.10.1.5"]
 # This is the network interface the storage servers use to send/receive
 stor_net_ifs = ["ens1f1np1"]
 
 ######## Client Network Info #######
 # This is the IP address of every client machine
-cli_ips = ["10.10.1.4"]#, "10.10.1.5"] #, "10.10.1.5"]
+cli_ips = ["10.10.1.1"] #"10.10.1.2", "10.10.1.3"]# "10.10.1.5"] #, "10.10.1.5"]
 # This is the network interface the client machines use to send/receive
-cli_net_ifs = ["ens1f1np1"]
+cli_net_ifs = ["ens1f1np1", "ens1f1np1"]
 
 ####### Sequencer Network information ########
 # This is the IP address of the sequencer
-seq_ip = "10.10.1.2"
+seq_ip = "10.10.1.4"
 # This is the network interface the software switch uses to send/receive
 seq_net_if = "ens1f1np1"
 
@@ -25,7 +25,7 @@ seq_net_if = "ens1f1np1"
 recv_port = "30005"
 send_port = "30004"
 
-stor_recv_port = "30003"
+stor_recv_port = "60008"
 seq_recv_port = "60008"
 
 # SSH key 
@@ -68,11 +68,13 @@ batch_on = false
 batch_usec_timeout = 460
 with_tunnel = false
 full_append = true
+just_storage = false
 
 machines_per_extent = 1
 machines_per_replica_set = 1
 extent_range_size = 9999999999
 num_clients = 1
-use_performance = false # remember to also uncomment stuff in experiment.py
+use_performance = true # remember to also uncomment stuff in experiment.py
 use_storage = true
 append_req_threads = 10
+store_append_req_threads = 10

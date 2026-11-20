@@ -34,6 +34,8 @@ class CorfuClient {
 protected:
 	uint32_t cid;
 	uint32_t curr_epoch = 0;
+	std::unique_ptr<CorfuClient> layout_client;
+	bool update_projection();
 
 	std::shared_ptr<Network> net;
 
@@ -55,7 +57,7 @@ protected:
 	uint32_t global_thread_id;
 
 	std::unique_ptr<struct corfu_cli_header> corfu_hdr;
-	// std::unique_ptr<struct ring_append_entry> append_entry_hdr;
+	std::unique_ptr<struct corfu_append> corfu_append_hdr;
 
 	// auxiliary variables
 	uint64_t num_m_per_extent;
@@ -72,9 +74,11 @@ protected:
 	// experiment stuff
 	uint64_t cnt;
 	bool full_append;
+	bool just_storage;
 
 public:
 	CorfuClient(std::string input_file, uint64_t thread_id);
+	// CorfuClient(std::vector<uint32_t> layout_servers);
 	~CorfuClient();
 
 	void reconfigure(uint64_t log_idx, CorfuStorage& failing_unit);
