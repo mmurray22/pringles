@@ -112,6 +112,8 @@ header mirror_h {
 header control_pkt_t {
    // Current global sequence number.
    bit<32> global_seq_no;
+   bit<32> global_seq_no;
+   bit<32> temp_local_seq_no;
 
    // Current view of the ring
    bit<16> ring_view;

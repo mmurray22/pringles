@@ -566,10 +566,12 @@ control MyIngress0(inout headers hdr,
     }
     action wait_append() {
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
+	hdr.append.seq_recirc = hdr.append.seq_recirc + 1;
 	meta.recirc_port_type = 2;
     }
     action wait_ack_append() {
 	meta.recirc_port_type = 2;
+	hdr.append.seq_recirc = hdr.append.seq_recirc + 1;
     }
     action wait_to_seq() {
 	meta.recirc_port_type = 1;
@@ -602,7 +604,7 @@ control MyIngress0(inout headers hdr,
     action exp_type_two() {
 	hdr.ring_type.start_ts = standard_metadata.ingress_mac_tstamp;
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
-	hdr.ring_type.type = TYPE_APPEND_WAIT;
+	hdr.ring_type.type = TYPE_APPEND_RESP;
 	meta.recirc_port_type = 2;
 	hdr.append.seq_recirc = hdr.append.seq_recirc - 1;
     }
@@ -888,8 +890,6 @@ control MyIngress0(inout headers hdr,
         meta.start_ts = 0;
         meta.end_ts = 0;
         meta.elapse_time = 0;
-
-
 
 	get_constants.apply();
 
@@ -1453,10 +1453,12 @@ control MyIngress1(inout headers hdr,
     }
     action wait_append() {
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
+	hdr.append.seq_recirc = hdr.append.seq_recirc + 1;
 	meta.recirc_port_type = 2;
     }
     action wait_ack_append() {
 	meta.recirc_port_type = 2;
+	hdr.append.seq_recirc = hdr.append.seq_recirc + 1;
     }
     action get_read_resp() {
 	meta.dst_addr = hdr.ipv4.dst;
@@ -1518,7 +1520,7 @@ control MyIngress1(inout headers hdr,
 	hdr.ring_type.end_ts = standard_metadata.ingress_mac_tstamp;
 	hdr.ring_type.type = TYPE_APPEND_WAIT;
 	meta.recirc_port_type = 2;
-	hdr.append.seq_recirc = hdr.append.seq_recirc - 1;
+	//hdr.append.seq_recirc = hdr.append.seq_recirc - 1;
     }
     action regular_stream() {
 	meta.route_to_shard = 1;
@@ -1583,9 +1585,6 @@ control MyIngress1(inout headers hdr,
 
 
     action ack_append() {
-	//meta.output = update_low_pkt_cntr.execute(0);
-	//update_high_pkt_cntr.execute(0);
-        //update_raw_elapsed_time.execute(0); TODO: Make separate table
 	meta.dst_addr = hdr.ipv4.dst;
 	meta.committed_seq_no = hdr.append.g_idx;
     }
@@ -1794,9 +1793,10 @@ control MyIngress1(inout headers hdr,
 	    meta.ring_process = 0;
 	}
 	if (hdr.append.isValid() && hdr.append.g_idx == 0) {
-	    meta.append_g_zero = 1;
-	    hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
-
+	    if (hdr.ring_type.type == TYPE_APPEND) {
+	        meta.append_g_zero = 1;
+	        hdr.append.start_ts = standard_metadata.ingress_mac_tstamp;
+	    }
         } else {
             meta.append_g_zero = 0;
 	}
@@ -1875,16 +1875,32 @@ control MyIngress1(inout headers hdr,
 	if (meta.ready_for_ack == 1) {
 	    bit<32> slot = get_ack_idx.execute(0);
 	    meta.ack_ready = check_ack.execute(slot);
-	    ack_action_tbl.apply();
+	    if (meta.ring_process == TYPE_APPEND_RESP && meta.ack_ready == 1) {
+	        write_replicated_seq_no.execute(0);
+	        tot_packet_counter1.count(0);
+	        update_seq_recirc_cntr.execute(0);
+	        meta.duration = (bit<32>)(standard_metadata.ingress_mac_tstamp - hdr.append.start_ts);
+	        ack_get_lower_lat.apply();
+	        ack_get_upper_lat.apply();
+	    }
+
+	    ack_action_tbl.apply(); // TODO redo
 	    if (hdr.append.isValid() && hdr.append.exp_type == 2) {
 	        drop(); // <-- TODO put in routing table?
 	    }
 	    meta.recirc_port_type = 0;
 	    meta.port_idx = 0;
+	} else {
+	    if (meta.ring_process == TYPE_TAIL) {
+	        meta.dummy = get_tail.execute(0);
+	        if (meta.dummy != 0) {
+	    	hdr.tail.tail_seq_no = meta.dummy;
+	        }
+	    } 
 	}
 	
         routing.apply();
-	if (meta.ring_process == TYPE_TAIL) {
+	/*if (meta.ring_process == TYPE_TAIL) {
 	    meta.dummy = get_tail.execute(0);
 	    if (meta.dummy != 0) {
 		hdr.tail.tail_seq_no = meta.dummy;
@@ -1896,7 +1912,7 @@ control MyIngress1(inout headers hdr,
 	    meta.duration = (bit<32>)(standard_metadata.ingress_mac_tstamp - hdr.append.start_ts);
 	    ack_get_lower_lat.apply();
 	    ack_get_upper_lat.apply();
-	}
+	}*/
 	hdr.timer.setInvalid();
 
     }

@@ -39,32 +39,30 @@ class PktgenPortDownHeader(Packet):
         ShortField("packet_id", 0)]    # 16 bits / 2 bytes
 
 class Cntrl(Packet):
-    fields_desc = [ BitField("global_seq_no", 0, 32),
+    fields_desc = [ BitField("upper_global_seq_no", 0, 32),
+                    BitField("lower_global_seq_no", 0, 32),
+                    BitField("temp_local_seq_no", 0, 32),
                     BitField("ring_view", 0, 16)]
 class RingType(Packet):
     fields_desc = [ BitField("type", 0x0, 16),
-                    BitField("num_entries", 1, 16),
                     BitField("shard_id", 0, 16),
-                    BitField("switch_to_process", 1, 8),
-                    BitField("start_ts", 0, 48),
-                    BitField("end_ts", 0, 48),
-                    BitField("raw_elapsed_time", 0, 16),
-                    BitField("pipe_ts", 0, 32)]
+                    BitField("pipe_ts", 0, 16),
+                    BitField("start_ts", 0, 16)]
 class Append(Packet):
-    fields_desc = [ BitField("nonce", 0, 16),
-                    BitField("payload_size", 0, 16),
-                    BitField("stream_id", 0, 32),
-                    BitField("g_idx", 0, 32), # TODO: 64
+    fields_desc = [ BitField("stream_id", 0, 32),
+                    BitField("upper_g_idx", 0, 32), 
+                    BitField("lower_g_idx", 0, 32), 
+                    BitField("local_seq_cntr", 0, 32), 
                     BitField("cntrl_pkt_it", 0, 16),
-                    BitField("recv_port", 0, 16),
-                    BitField("exp_type", 0, 16),
-                    BitField("start_ts", 0, 48),
-                    BitField("seq_recirc", 0, 16)]
+                    BitField("exp_type", 0, 8),
+                    BitField("seq_recirc", 0, 8),
+                    BitField("start_ts", 0, 32),
+                    BitField("payload_size", 0, 16)]
 class Read(Packet):
     fields_desc = [ BitField("nonce", 0, 16),
                     BitField("payload_size", 0, 32),
                     BitField("stream_id", 0, 32),
-                    BitField("g_idx", 0, 32),
+                    BitField("g_idx", 0, 64),
                     BitField("ring_view", 0, 16),
                     BitField("recv_port", 0, 16)]
 class Subscribe(Packet):
@@ -77,20 +75,25 @@ class Tail(Packet):
     fields_desc = [ BitField("nonce", 0, 16),
                     BitField("hops", 0, 8),
                     BitField("start_switch_id", 0, 8),
-                    BitField("tail_seq_no", 0, 32),
+                    BitField("upper_tail_seq_no", 0, 32),
+                    BitField("lower_tail_seq_no", 0, 32),
+                    BitField("upper_temp", 0, 32),
+                    BitField("lower_temp", 0, 32),
                     BitField("recv_port", 0, 16)]
 class TriggerViewChange(Packet):
     fields_desc = [ BitField("leader_switch_id", 0, 8),
                     BitField("current_ring_view", 0, 16),
                     BitField("view_member_switch_id", 0, 8),
-                    BitField("highest_seen_seq_no", 0, 32),
+                    BitField("highest_seen_upper_seq_no", 0, 32),
+                    BitField("highest_seen_lower_seq_no", 0, 32),
                     BitField("hops", 0, 8)]
 class FinalizeViewChange(Packet):
     fields_desc = [ BitField("leader_switch_id", 0, 8),
                     BitField("view_member_switch_id", 0, 8),
                     BitField("current_ring_view", 0, 16),
                     BitField("next_switch_id", 0, 8),
-                    BitField("highest_quorum_seq_no", 0, 32),
+                    BitField("highest_quorum_upper_seq_no", 0, 32),
+                    BitField("highest_quorum_lower_seq_no", 0, 32),
                     BitField("hops", 0, 8)]
 class Canary(Packet):
     fields_desc = [ BitField("magic", MAGIC_VALUE, 8)]

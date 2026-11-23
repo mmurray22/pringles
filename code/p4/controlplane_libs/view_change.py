@@ -90,15 +90,7 @@ class ViewChange:
    
 
     ##################################### Send View Change Packets ############################
-    def inject_view_change_trigger(self):
-        pkt = Ether(dst=self.dstAddr, src=self.srcAddr, type=TYPE_VIEW_INDUCE)/ \
-              InduceViewChange(drop_cntrl=1)/ \
-              Canary(magic=MAGIC_VALUE)
-        self.logger.info("TRIGGER PACKET WE ARE SENDING:")
-	pkt.show()
-        sendp(pkt, iface=self.cpu_interface, verbose=True)
-
-    def send_start_view_change(self, switch_highest_seq_no):
+    def send_start_view_change(self, upper_seq_no, lower_seq_no):
         self.prev_view = self.view
         self.view = self.view + 1
         its = 0
@@ -107,7 +99,8 @@ class ViewChange:
                   TriggerViewChange(leader_switch_id=self.switch_id, 
                                   current_ring_view=self.prev_view, 
                                   view_member_switch_id=self.active_switches[i],
-                                  highest_seen_seq_no=switch_highest_seq_no,
+                                  highest_seen_upper_seq_no=upper_seq_no,
+                                  highest_seen_lower_seq_no=lower_seq_no,
                                   hops=0)/ \
                   Canary(magic=MAGIC_VALUE)
             #self.logger.info("START VIEW PACKET WE ARE SENDING:") # TODO change naming of highest_seen_seq_no!
@@ -117,13 +110,17 @@ class ViewChange:
         #print("============================TOTAL NUMBER OF TRIGGERS SENT IS: {}".format(its))
 
     def send_view_change_ack(self, highest_quorum_seq_no, members):
+        upper_seq_no = (highest_quorum_seq_no >> 32) & 0xFFFFFFFF
+        lower_seq_no = highest_quorum_seq_no & 0xFFFFFFFF
+        
         for i in range(0, len(members)):
             final_view_pkt = Ether(dst=self.dstAddr, src=self.srcAddr, type=TYPE_VIEW_ACK)/ \
                              FinalizeViewChange(leader_switch_id=self.switch_id,
                                                 view_member_switch_id=members[i],
                                                 current_ring_view=self.view,
                                                 next_switch_id=members[(i+1)%len(members)],
-                                                highest_quorum_seq_no=highest_quorum_seq_no,
+                                                highest_quorum_upper_seq_no=upper_seq_no,
+                                                highest_quorum_lower_seq_no=lower_seq_no,
                                                 hops=0)/ \
                              Canary(magic=MAGIC_VALUE)
             #self.logger.info("FINAL VIEW PACKET WE ARE SENDING:")
@@ -157,10 +154,13 @@ class ViewChange:
 
     ##################################### Helper Functions for View Change ############################
     def prep_new_view(self, view_pkts):
-        highest_quorum_seq_no = 0
+        highest_quorum_seq_no = None
         members = []
         ring_idx = 0
-	highest_quorum_seq_no = min(p[TriggerViewChange].highest_seen_seq_no for p in view_pkts)
+        for p in view_pkts:
+            highest_seen_seq_no = ((p[TriggerViewChange].highest_seen_upper_seq_no & 0xFFFFFFFF) << 32) | (p[TriggerViewChange].highest_seen_lower_seq_no & 0xFFFFFFFF)
+            if highest_quorum_seq_no is None or highest_seen_seq_no < highest_quorum_seq_no:
+                highest_quorum_seq_no = highest_seen_seq_no
 	members = sorted([pkt[TriggerViewChange].view_member_switch_id for pkt in view_pkts])
 	return (highest_quorum_seq_no, members)
 
@@ -170,27 +170,31 @@ class ViewChange:
         
         # Start dataplane response sniffing thread
         #print("========================================MADE IT HERE!!!!!")
-        register_name = "MyIngress{}.map_from_gsn".format(pipe_id)
+        lower_register_name = "MyIngress{}.map_from_lower_gsn".format(pipe_id)
+        upper_register_name = "MyIngress{}.map_from_upper_gsn".format(pipe_id)
         print("====================================== Packet iteration: {}".format(pkt_it))
-        highest_quorum_seq_no = self.get_register_number(bfrt_info, target, register_name, pkt_it)
+        highest_quorum_upper_seq_no = self.get_register_number(bfrt_info, target, upper_register_name, pkt_it)
+        highest_quorum_lower_seq_no = self.get_register_number(bfrt_info, target, lower_register_name, pkt_it)
+        highest_quorum_seq_no = ((highest_quorum_upper_seq_no & 0xFFFFFFFF) << 32) | (highest_quorum_lower_seq_no & 0xFFFFFFFF)
         print("====================================== Highest quorum sequence number: {}".format(highest_quorum_seq_no))
 
         # Send StartView packet 
-        self.send_start_view_change(highest_quorum_seq_no)
+        self.send_start_view_change(highest_quorum_upper_seq_no, highest_quorum_lower_seq_no)
         sleep_time = .001
         total_time_waited = 0
         start_time = time.time()
         list_of_start_view_pkts = []
-        while (time.time() - start_time) < self.view_timeout:
-            with self.arr_lock:
-                list_of_start_view_pkts = self.received_start_view
-                if  len(self.received_start_view) < self.view_member_threshold:
-                    #print("Only got {}, waiting for {} StartView packets".format(len(self.received_start_view), self.view_member_threshold))
-                    continue
-                else:
-                    break
-            total_time_waited += sleep_time
-            time.sleep(sleep_time)
+        time.sleep(self.view_timeout)
+        list_of_start_view_pkts = self.received_start_view
+        #while (time.time() - start_time) < self.view_timeout:
+        #    with self.arr_lock:
+        #        list_of_start_view_pkts = self.received_start_view
+        #        #if len(self.received_start_view) < self.view_member_threshold:
+        #        #    #print("Only got {}, waiting for {} StartView packets".format(len(self.received_start_view), self.view_member_threshold))
+        #        #else:
+        #        #    break
+        #    total_time_waited += sleep_time
+        #    time.sleep(sleep_time)
                     
         
         if len(list_of_start_view_pkts) < self.view_member_threshold:
@@ -208,14 +212,16 @@ class ViewChange:
         start_time = time.time()
         total_time_waited = 0
         list_of_finalize_view_pkts = []
-        while (time.time() - start_time) < self.view_timeout:
-            list_of_finalize_view_pkts = self.received_finalize_view
-            if  len(self.received_finalize_view) < self.view_member_threshold:
-                #print("Only got {}, waiting for {} FinalView packets".format(len(self.received_finalize_view), self.view_member_threshold))
-                time.sleep(sleep_time)
-                continue
-            else:
-                break
+        time.sleep(self.view_timeout)
+        list_of_finalize_view_pkts = self.received_finalize_view
+        #while (time.time() - start_time) < self.view_timeout:
+        #    list_of_finalize_view_pkts = self.received_finalize_view
+        #    #if  len(self.received_finalize_view) < self.view_member_threshold:
+        #    #    #print("Only got {}, waiting for {} FinalView packets".format(len(self.received_finalize_view), self.view_member_threshold))
+        #    #    continue
+        #    #else:
+        #    #    break
+        #    time.sleep(sleep_time)
 
         if len(list_of_finalize_view_pkts) < self.view_member_threshold:
             error = "DID NOT GET ENOUGH MEMBERS TO FINALIZE THE VIEW"

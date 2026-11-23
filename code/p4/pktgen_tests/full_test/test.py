@@ -45,7 +45,7 @@ from tables import *
 from view_change import *
 
 
-p4_program_name = "viewchange" # TODO make parameter
+p4_program_name = "pktgen"#"viewchange" # TODO make parameter
 g_timer_app_id = 1
 global_group_id = 0
 g_num_pipes = int(testutils.test_param_get("num_pipes"))
@@ -165,22 +165,18 @@ class ViewChangeTest(BfRuntimeTest):
             IP(dst=ip_addr)/ \
             UDP(dport=1234, sport=5678)/ \
 	    RingType(type=TYPE_APPEND, 
-                     num_entries=1, 
                      shard_id=0,
-                     switch_to_process=switch_id,
-                     start_ts=0,
-                     end_ts=0,
-                     raw_elapsed_time=0,
-                     pipe_ts=0)/ \
-            Append(nonce=nonce,
-                   payload_size=payload_size,
-                   stream_id=0,
-                   g_idx=0,
+                     pipe_ts=0,
+                     start_ts=0)/ \
+            Append(stream_id=0,
+                   upper_g_idx=0,
+                   lower_g_idx=0,
+                   local_seq_cntr=0,
                    cntrl_pkt_it=0,
-                   recv_port=192,
                    exp_type=exp_type,
+                   seq_recirc=0,
                    start_ts=0,
-                   seq_recirc=0)/ \
+                   payload_size=payload_size)/ \
             Canary(magic=165)/ \
             Raw(load=payload)
         p.show()
@@ -377,6 +373,10 @@ class ViewChangeTest(BfRuntimeTest):
 	    #print("Previously I received {} cntrl packets and now received {} cntrl packets".format(prev_cntrl_pkt_cnt, cntrl_pkt_cnt))
             if (prev_cntrl_pkt_cnt == cntrl_pkt_cnt) and (time.time() - start_time) > self.view_timeout:
                 pkt_it = self.get_register_number_at_idx(bfrt_info, target, pkt_it_reg_name, 0)
+                if pkt_it > 0:
+                    pkt_it = pkt_it - 1
+		else:
+		    pkt_it = 65534 # 2^16 - 1
                 (new_view_num, new_start_seq_no) = viewChangeMaintainer.run_view_change(bfrt_info, self.target, pkt_it, duration, pipe_id)
 		if new_view_num > self.view:
 		    self.view = new_view_num
@@ -414,6 +414,7 @@ class ViewChangeTest(BfRuntimeTest):
             #"total_latency_ns": float(total_latency_ns),
             #"average_latency_us": avg_lat,
             "final_committed_pkts": int(self.final_pkt_count[pipe_id]),
+            "final_committed_seq_no": int(self.final_committed_seq_no[pipe_id]),
             "final_agg_lat": int(self.final_total_latency[pipe_id]),
             "final_elapsed_time": self.final_elapsed_tput_time,
             "nsperpkt": int(nsperpkt),
@@ -461,8 +462,10 @@ class ViewChangeTest(BfRuntimeTest):
             logger.info("[ERROR] Failed writing metrics to destination layout: {}".format(e))
     
     def send_cntrl_packet(self, interface, dstAddr, srcAddr, seq_no, view, start_seq_no):
+        upper_seq_no = (start_seq_no >> 32) & 0xFFFFFFFF
+        lower_seq_no = start_seq_no & 0xFFFFFFFF
         pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_CONTROL)/ \
-              Cntrl(global_seq_no=start_seq_no, ring_view=view)/ \
+              Cntrl(upper_global_seq_no=upper_seq_no, lower_global_seq_no=lower_seq_no, temp_local_seq_no=0, ring_view=view)/ \
               Canary(magic=165)
         logger.info("CONTROL PACKET WE ARE SENDING:")
         pkt.show()
@@ -508,10 +511,8 @@ class ViewChangeTest(BfRuntimeTest):
                 high_lat_reg_name = "MyIngress{}.latency_higher".format(pipe_id)
                 seq_recirc_name = "MyIngress{}.seq_wait_recirc_counter".format(pipe_id)
                 pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
+                cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
                 if extra_telemetry:
-                    cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
-                    cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
-                    logger.info("[IN PROGRESS] Ingress {} Control packet count: {}".format(pipe_id, cntrl_cnt))
                     canary_drop_cnt_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
                     canary_drop_cnt = self.get_counter_number(bfrt_info, canary_drop_cnt_name)
                     logger.info("[IN PROGRESS] Egress {} Canary Drop count: {}".format(pipe_id, canary_drop_cnt))
@@ -559,6 +560,8 @@ class ViewChangeTest(BfRuntimeTest):
                     high_lat = self.get_register_number(bfrt_info, target, high_lat_reg_name)
                     pipe_res = self.get_register_number(bfrt_info, target, pipe_name)
                     seq_recirc_cntr = self.get_register_number(bfrt_info, target, seq_recirc_name)
+                    cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+                    logger.info("[IN PROGRESS] Ingress {} Control packet count: {}".format(pipe_id, cntrl_cnt))
                     
                     # measure size of ack count table TODO
                     #ack_name = "MyIngress{}.ack_array".format(pipe_id)
@@ -645,8 +648,14 @@ class ViewChangeTest(BfRuntimeTest):
             data_dict = next(resp)[0].to_dict()
             self.final_pktgen_count = data_dict["pkt_counter"]
             self.disable_timer_pkt_gen(bfrt_info, targets[pipe_id])
+	    time.sleep(1)
             tot_cnt_name = "MyIngress{}.tot_packet_counter{}".format(pipe_id, pipe_id)
             self.final_pkt_count[pipe_id] = self.get_counter_number(bfrt_info, tot_cnt_name)
+            low_rep_reg_name = "MyIngress{}.highest_lower_replicated_seq_no".format(pipe_id)
+            high_rep_reg_name = "MyIngress{}.highest_upper_replicated_seq_no".format(pipe_id)
+            upper_commit_seq = self.get_register_number(bfrt_info, targets[pipe_id], high_rep_reg_name)
+            lower_commit_seq = self.get_register_number(bfrt_info, targets[pipe_id], low_rep_reg_name)
+            self.final_committed_seq_no[pipe_id] = ((upper_commit_seq & 0xFFFFFFFF) << 32) | (lower_commit_seq & 0xFFFFFFFF)
             low_lat = self.get_register_number(bfrt_info, targets[pipe_id], "MyIngress{}.latency_lower".format(pipe_id))
             high_lat = self.get_register_number(bfrt_info, targets[pipe_id], "MyIngress{}.latency_higher".format(pipe_id))
             self.final_total_latency[pipe_id] = (high_lat << 31) + low_lat
@@ -739,6 +748,7 @@ class ViewChangeTest(BfRuntimeTest):
         self.final_pkt_count = [0, 0]
         self.final_elapsed = [0, 0]
         self.final_total_latency = [0, 0]
+        self.final_committed_seq_no = [0, 0]
         self.baseline_pkts = [0, 0]
         self.baseline_curr_time = [0, 0]
         self.baseline_total_latency = [0, 0]
@@ -814,7 +824,8 @@ class ViewChangeTest(BfRuntimeTest):
 
                 # Handles sequence numbers
                 p4Tables.setup_local_seq(pipe_idx)
-                p4Tables.setup_process_gsn(pipe_idx)
+                p4Tables.setup_lower_process_gsn(pipe_idx)
+                p4Tables.setup_upper_process_gsn(pipe_idx)
 
                 # Append tables
                 p4Tables.setup_append_first_tbl(pipe_idx)
@@ -847,6 +858,14 @@ class ViewChangeTest(BfRuntimeTest):
                 # Egress tables
                 p4Tables.setup_check_dur_table(lower_time_bound, upper_time_bound, pipe_idx)
                 p4Tables.setup_check_view_change_table(pipe_idx)
+
+                # Meter programming
+		min_frame_len = self.payload_size + 77 # TODO: Don't hardcode 77...
+		headroom = .99
+		n_seq = tot_num_recirc_ports
+		rate_pps = int(headroom * n_seq * 100e9 / (8.0 * (min_frame_len + 24)))
+		burst_pkts = 512 # low
+                p4Tables.setup_seq_mtr_table(rate_pps, burst_pkts, pipe_idx)
 
         
         ###### DO ALL SETUP #####
@@ -902,7 +921,7 @@ class ViewChangeTest(BfRuntimeTest):
         time.sleep(wait_time)
         if switch_send_cntrl:
 	    logger.info("Sending control packet!")
-	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, 0)
+	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, 0) #3294967296) # 0)
     
         # Enable packet generation
         idx = 0

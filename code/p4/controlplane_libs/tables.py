@@ -226,9 +226,9 @@ class P4Tables:
                                                 gc.KeyTuple(CNTRL_VALID, 1),
                                                 gc.KeyTuple('meta.ring_process', 0)])],
                 [table_update_batches.make_data([], 'MyIngress{}.batch_add'.format(pipe_idx))])
-
-    def setup_process_gsn(self, pipe_idx):
-        table_process_gsn = self.bfrt_info.table_get("MyIngress{}.process_gsn".format(pipe_idx))
+    
+    def setup_upper_process_gsn(self, pipe_idx):
+        table_process_gsn = self.bfrt_info.table_get("MyIngress{}.upper_process_gsn".format(pipe_idx))
         table_process_gsn.info.key_field_annotation_add("meta.ring_process", "bit<16>")
         table_process_gsn.info.key_field_annotation_add("meta.append_g_zero", "bit<8>")
 
@@ -242,48 +242,62 @@ class P4Tables:
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', 0),
                                              gc.KeyTuple('meta.append_g_zero', 0),
                                              gc.KeyTuple(CNTRL_VALID, 1)])],
-                [table_process_gsn.make_data([], 'MyIngress{}.update_gsn'.format(pipe_idx))])
+                [table_process_gsn.make_data([], 'MyIngress{}.upper_update_gsn'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
                                              gc.KeyTuple('meta.append_g_zero', 0),
                                              gc.KeyTuple(CNTRL_VALID, 0)])],
-                [table_process_gsn.make_data([], 'MyIngress{}.assign_gsn'.format(pipe_idx))])
+                [table_process_gsn.make_data([], 'MyIngress{}.upper_assign_gsn'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
                                              gc.KeyTuple('meta.append_g_zero', 1),
                                              gc.KeyTuple(CNTRL_VALID, 0)])],
-                [table_process_gsn.make_data([], 'MyIngress{}.make_gsn_zero'.format(pipe_idx))])
+                [table_process_gsn.make_data([], 'MyIngress{}.upper_make_gsn_zero'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND_RESP),
                                              gc.KeyTuple('meta.append_g_zero', 0),
                                              gc.KeyTuple(CNTRL_VALID, 0)])],
-                [table_process_gsn.make_data([], 'MyIngress{}.get_ack_readiness'.format(pipe_idx))])
+                [table_process_gsn.make_data([], 'MyIngress{}.upper_get_ack_readiness'.format(pipe_idx))])
     
-    def setup_rep_seq_no(self, pipe_idx):
-        table_rep = self.bfrt_info.table_get("MyIngress{}.update_replicated_seq_no".format(pipe_idx))
-        table_rep.info.key_field_annotation_add("meta.ring_process", "bit<16>")
-        table_rep.info.key_field_annotation_add("meta.ack_ready", "bit<8>")
 
-        table_rep.attribute_entry_scope_set(self.general_target,
+    def setup_lower_process_gsn(self, pipe_idx):
+        table_process_gsn = self.bfrt_info.table_get("MyIngress{}.lower_process_gsn".format(pipe_idx))
+        table_process_gsn.info.key_field_annotation_add("meta.ring_process", "bit<16>")
+        table_process_gsn.info.key_field_annotation_add("meta.append_g_zero", "bit<8>")
+
+        table_process_gsn.attribute_entry_scope_set(self.general_target,
                 predefined_pipe_scope=True,
                 predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
 
         # Control packet: Update the highest seen global sequence number
-        table_rep.entry_add(
+        table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
-                [table_rep.make_key([gc.KeyTuple('meta.ring_process', list_of_types[3]),
-                                     gc.KeyTuple('meta.ack_ready', 1)])],
-                [table_rep.make_data([], 'MyIngress{}.write_rep_seq_no'.format(pipe_idx))])
-        # Tail packet: Get the highest seen global sequence number
-        table_rep.entry_add(
+                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', 0),
+                                             gc.KeyTuple('meta.append_g_zero', 0),
+                                             gc.KeyTuple(CNTRL_VALID, 1)])],
+                [table_process_gsn.make_data([], 'MyIngress{}.lower_update_gsn'.format(pipe_idx))])
+        table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
-                [table_rep.make_key([gc.KeyTuple('meta.ring_process', TYPE_TAIL),
-                                     gc.KeyTuple('meta.ack_ready', 0)])],
-                [table_rep.make_data([], 'MyIngress{}.write_rep_seq_no'.format(pipe_idx))])
-
+                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
+                                             gc.KeyTuple('meta.append_g_zero', 0),
+                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                [table_process_gsn.make_data([], 'MyIngress{}.lower_assign_gsn'.format(pipe_idx))])
+        table_process_gsn.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
+                                             gc.KeyTuple('meta.append_g_zero', 1),
+                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                [table_process_gsn.make_data([], 'MyIngress{}.lower_make_gsn_zero'.format(pipe_idx))])
+        table_process_gsn.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND_RESP),
+                                             gc.KeyTuple('meta.append_g_zero', 0),
+                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                [table_process_gsn.make_data([], 'MyIngress{}.lower_get_ack_readiness'.format(pipe_idx))])
+    
     def setup_append_first_tbl(self, pipe_idx):
         table_append_first = self.bfrt_info.table_get("MyIngress{}.append_first_tbl".format(pipe_idx))
         table_append_first.info.key_field_annotation_add("meta.ring_process", "bit<16>")
@@ -326,7 +340,7 @@ class P4Tables:
     
     def setup_append_second_tbl(self, pipe_idx):
         table_append_second = self.bfrt_info.table_get("MyIngress{}.append_second_tbl".format(pipe_idx))
-        table_append_second.info.key_field_annotation_add("hdr.append.exp_type", "bit<16>")
+        table_append_second.info.key_field_annotation_add("hdr.append.exp_type", "bit<8>")
 
         table_append_second.attribute_entry_scope_set(self.general_target,
                 predefined_pipe_scope=True,
@@ -790,10 +804,10 @@ class P4Tables:
         table_check_dur.attribute_entry_scope_set(self.general_target,
                 predefined_pipe_scope=True,
                 predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
-        table_check_dur.info.key_field_annotation_add("hdr.ring_type.raw_elapsed_time", "bit<16>")
+        table_check_dur.info.key_field_annotation_add("meta.elapsed_time", "bit<16>")
         table_check_dur.entry_add(
             self.pipe_targets[pipe_idx], 
-            [table_check_dur.make_key([gc.KeyTuple('hdr.ring_type.raw_elapsed_time', low=lower_bound, high=upper_bound)])],
+            [table_check_dur.make_key([gc.KeyTuple('meta.elapsed_time', low=lower_bound, high=upper_bound)])],
             [table_check_dur.make_data([], "MyEgress{}.update_type".format(pipe_idx))])
    
     def setup_view_number_info(self, pipe_idx):
@@ -897,7 +911,21 @@ class P4Tables:
             [table_active_view.make_key([gc.KeyTuple('meta.view_change_active', 1),
                                          gc.KeyTuple('hdr.ethernet.type', TYPE_CONTROL)])],
             [table_active_view.make_data([], "MyEgress{}.drop".format(pipe_idx))])
-               
+     
+    def setup_seq_mtr_table(self, rate_pps, burst_pkts, pipe_idx):
+        table_mtr = self.bfrt_info.table_get("MyIngress{}.seq_admission".format(pipe_idx))
+        #table_mtr.attribute_entry_scope_set(self.general_target,
+        #        predefined_pipe_scope=True,
+        #        predefined_pipe_scope_val=bfruntime_pb2.Mode.SINGLE)
+        # Packets to drop
+        table_mtr.entry_add(
+            self.general_target, #self.pipe_targets[pipe_idx], 
+            [table_mtr.make_key([gc.KeyTuple('$METER_INDEX', 0)])],
+            [table_mtr.make_data([gc.DataTuple('$METER_SPEC_CIR_PPS', int(rate_pps)),
+                          	  gc.DataTuple('$METER_SPEC_PIR_PPS', int(rate_pps)),
+                          	  gc.DataTuple('$METER_SPEC_CBS_PKTS', int(burst_pkts)),
+                          	  gc.DataTuple('$METER_SPEC_PBS_PKTS', int(burst_pkts))])])
+              
     ############# MULTICAST TABLES ################
     def setup_shard_multicast_groups(self, shard_to_port_gp, pipe_idx):
         # Map shard IDs to their respective multicast group (each group has a collection of ports to storage server)
