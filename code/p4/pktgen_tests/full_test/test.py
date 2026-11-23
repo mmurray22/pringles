@@ -164,7 +164,7 @@ class ViewChangeTest(BfRuntimeTest):
 	p = Ether(dst=dstAddr, src=srcAddr, type=TYPE_IP)/ \
             IP(dst=ip_addr)/ \
             UDP(dport=1234, sport=5678)/ \
-	    RingType(type=TYPE_APPEND, 
+	    RingType(type=TYPE_APPEND_PRE, 
                      shard_id=0,
                      pipe_ts=0,
                      start_ts=0)/ \

@@ -68,6 +68,7 @@ parser MyParser(packet_in packet,
     state parse_ring_type {
 	packet.extract(hdr.ring_type);
         transition select(hdr.ring_type.type) {
+            TYPE_APPEND_PRE: parse_append;
             TYPE_APPEND: parse_append;
             TYPE_APPEND_WAIT: parse_append;
             TYPE_APPEND_RESP: parse_append;
@@ -881,6 +882,7 @@ control MyIngress0(inout headers hdr,
         //meta.pkt_type = PKT_NORMAL;
 
         meta.elapsed_time = 0;
+	meta.append_g_zero = 0;
 
 	get_constants.apply();
 
@@ -896,36 +898,35 @@ control MyIngress0(inout headers hdr,
 	   meta.lower_global_seq_no = hdr.cntrl.lower_global_seq_no;
 	} else if (hdr.ring_type.isValid()) {
 	    // Determine if this packet needs to be routed to another switch
-	    meta.ring_process = hdr.ring_type.type;
-	    hdr.ring_type.pipe_ts = ig_prsr_md.global_tstamp[15:0];
 	    if (hdr.append.isValid()) {
-		// CHANGE LOG: ORIGINAL:
-		// meta.global_seq_no = hdr.append.g_idx;
-
-		// NEW:
+		if (hdr.ring_type.type == TYPE_APPEND_PRE) {
+	    	    color = seq_admission.execute(0);
+	    	    if (color == MeterColor_t.RED) {
+	    	        meta.append_g_zero = 0;
+	    	        ig_dprsr_md.drop_ctl = 1;
+			meta.ring_process = 0;
+	    	    } else {
+	    	        meta.append_g_zero = 1;
+	    	    	hdr.append.start_ts = meta.current_timestamp;
+			hdr.ring_type.type = TYPE_APPEND;
+			meta.ring_process = TYPE_APPEND;
+	    	    }
+		} else {
+	            meta.ring_process = hdr.ring_type.type;
+	    	    meta.append_g_zero = 0;
+		}
 		meta.local_seq_no = hdr.append.local_seq_cntr;
 	        meta.upper_global_seq_no = hdr.append.upper_g_idx;
 	        meta.lower_global_seq_no = hdr.append.lower_g_idx;
+	    } else {
+	        meta.ring_process = hdr.ring_type.type;
 	    }
+	    hdr.ring_type.pipe_ts = ig_prsr_md.global_tstamp[15:0];
 	} else if (hdr.finalize_view.isValid()) {
 	    meta.upper_global_seq_no = hdr.finalize_view.highest_quorum_upper_seq_no; // TODO TODO NOT SAFETY 
 	    meta.lower_global_seq_no = hdr.finalize_view.highest_quorum_lower_seq_no; // TODO TODO NOT SAFETY 
 	} else {
 	    meta.ring_process = 0;
-	}
-
-	if (hdr.append.isValid() && hdr.append.seq_recirc == 0) {
-	    color = seq_admission.execute(0);
-	    if (color == MeterColor_t.RED) {
-	        meta.append_g_zero = 0;
-	        meta.ring_process = 0;
-	        ig_dprsr_md.drop_ctl = 1;
-	    } else {
-		meta.append_g_zero = 1;
-	    	hdr.append.start_ts = meta.current_timestamp;
-	    }
-        } else {
-            meta.append_g_zero = 0;
 	}
 
 	if (hdr.tail.isValid()) {
@@ -1799,6 +1800,7 @@ control MyIngress1(inout headers hdr,
         //meta.pkt_type = PKT_NORMAL;
 
         meta.elapsed_time = 0;
+	meta.append_g_zero = 0;
 
 	get_constants.apply();
 
@@ -1810,32 +1812,36 @@ control MyIngress1(inout headers hdr,
 	   meta.lower_global_seq_no = hdr.cntrl.lower_global_seq_no;
 	} else if (hdr.ring_type.isValid()) {
 	    // Determine if this packet needs to be routed to another switch
-	    meta.ring_process = hdr.ring_type.type;
-	    hdr.ring_type.pipe_ts = ig_prsr_md.global_tstamp[15:0];
 	    if (hdr.append.isValid()) {
+		if (hdr.ring_type.type == TYPE_APPEND_PRE) {
+	    	    color = seq_admission.execute(0);
+	    	    if (color == MeterColor_t.RED) {
+	    	        meta.append_g_zero = 0;
+	    	        ig_dprsr_md.drop_ctl = 1;
+			meta.ring_process = 0;
+	    	    } else {
+	    	        meta.append_g_zero = 1;
+	    	    	hdr.append.start_ts = meta.current_timestamp;
+			hdr.ring_type.type = TYPE_APPEND;
+			meta.ring_process = TYPE_APPEND;
+	    	    }
+		} else {
+
+	            meta.ring_process = hdr.ring_type.type;
+	    	    meta.append_g_zero = 0;
+		}
 		meta.local_seq_no = hdr.append.local_seq_cntr;
 	        meta.upper_global_seq_no = hdr.append.upper_g_idx;
 	        meta.lower_global_seq_no = hdr.append.lower_g_idx;
+	    } else {
+	        meta.ring_process = hdr.ring_type.type;
 	    }
+	    hdr.ring_type.pipe_ts = ig_prsr_md.global_tstamp[15:0];
 	} else if (hdr.finalize_view.isValid()) {
 	    meta.upper_global_seq_no = hdr.finalize_view.highest_quorum_upper_seq_no; // TODO TODO NOT SAFETY 
 	    meta.lower_global_seq_no = hdr.finalize_view.highest_quorum_lower_seq_no; // TODO TODO NOT SAFETY 
 	} else {
 	    meta.ring_process = 0;
-	}
-
-	if (hdr.append.isValid() && hdr.append.seq_recirc == 0) {
-	    color = seq_admission.execute(0);
-	    if (color == MeterColor_t.RED) {
-	        meta.append_g_zero = 0;
-	        meta.ring_process = 0;
-	        ig_dprsr_md.drop_ctl = 1;
-	    } else {
-		meta.append_g_zero = 1;
-	    	hdr.append.start_ts = meta.current_timestamp;
-	    }
-        } else {
-            meta.append_g_zero = 0;
 	}
 
 	if (hdr.tail.isValid()) {

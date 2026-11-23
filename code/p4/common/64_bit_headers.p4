@@ -36,6 +36,7 @@ const ip_protocol_t IP_PROTOCOLS_UDP = 17;
 
 // Custom Ringworld constants
 const bit<16> TYPE_CONTROL = 0x0820; // only for the switches
+const bit<16> TYPE_APPEND_PRE = 0x0863;
 const bit<16> TYPE_APPEND = 0x0860;
 const bit<16> TYPE_APPEND_WAIT = 0x0862;
 const bit<16> TYPE_APPEND_RESP = 0x0861;

@@ -4,6 +4,7 @@ TYPE_IP= 0x800
 TCP_PROTOCOL = 0x6
 UDP_PROTOCOL = 0x11
 TYPE_APPEND = 0x0860
+TYPE_APPEND_PRE = 0x0863
 TYPE_APPEND_WAIT = 0x0862
 TYPE_APPEND_RESP = 0x0861
 TYPE_READ = 0x0870
@@ -106,6 +107,7 @@ bind_layers(Ether, IP, type=TYPE_IP)
 bind_layers(IP, UDP)
 bind_layers(UDP, RingType)
 bind_layers(RingType, Append, type=TYPE_APPEND)
+bind_layers(RingType, Append, type=TYPE_APPEND_PRE)
 bind_layers(RingType, Append, type=TYPE_APPEND_WAIT)
 bind_layers(RingType, Append, type=TYPE_APPEND_RESP)
 bind_layers(RingType, Append, type=TYPE_SUB_RESP)
