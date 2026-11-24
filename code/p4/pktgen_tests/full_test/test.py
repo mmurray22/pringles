@@ -424,6 +424,7 @@ class ViewChangeTest(BfRuntimeTest):
             "num_pipelines": int(num_pipelines),
             "payload_size": int(payload_size),
             "queue_count_timeseries": self.queue_cnt_over_time[pipe_id],
+            "control_packet_count_timeseries": self.cntrl_pkt_cnt_over_time[pipe_id],
             "queue_timestamps": self.queue_timestamps,
             "agg_lat_timeseries": self.avg_lat_over_time[pipe_id], # ACTUALLY aggregate latency
             "agg_seq_recirc_timeseries": self.agg_seq_recirc_cntr[pipe_id],
@@ -910,8 +911,13 @@ class ViewChangeTest(BfRuntimeTest):
                     port_idx = (port << 5) | i
                     queues_of_interest[pipe_id].append(port_idx)
                     queue_idx_map[pipe_id][port_idx] = [port, i]
-
-
+        
+        ##### START THE EXPERIMENT ####
+        time.sleep(wait_time)
+        if switch_send_cntrl:
+	    logger.info("Sending control packet!")
+	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, self.seed)
+    
         for pipe_cfg in pipes_cfg:
             pipe_id = pipe_cfg['pipe_id']
             switch_id = pipe_cfg['logical_switch_id']
@@ -929,12 +935,6 @@ class ViewChangeTest(BfRuntimeTest):
         active_q_pipe_t = threading.Thread(target=self.pipe_queue_monitor, args=(bfrt_info, targets, active_pipes, total_duration, queue_idx_map, queues_of_interest,), kwargs={})
         active_pipe_t = threading.Thread(target=self.pipe_pktgen_runtime, args=(bfrt_info, targets, duration, active_pipes,), kwargs={})
         
-        ##### START THE EXPERIMENT ####
-        time.sleep(wait_time)
-        if switch_send_cntrl:
-	    logger.info("Sending control packet!")
-	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, self.seed)
-    
         # Enable packet generation
         idx = 0
 	for pipe_cfg in pipes_cfg:
@@ -950,10 +950,23 @@ class ViewChangeTest(BfRuntimeTest):
         active_pipe_t.start()
 
         # Start packet generation AFTER observing threads are spawned
+        start_time = time.time()
+        cntrl_is_ready = []
+        for pipe_id in active_pipes:
+            while (time.time() - start_time) < duration:
+               cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
+               cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
+               if cntrl_cnt == 0:
+                   continue
+               else:
+                   cntrl_is_ready.append(pipe_id)
+                   break
+
+        # TODO: cntrl is ready might only have some active pipes
         for pipe_cfg in pipes_cfg:
            pipe_id = pipe_cfg['pipe_id']
            switch_id = pipe_cfg['logical_switch_id']
-           if pipe_cfg['active_pipe']:
+           if pipe_cfg['active_pipe'] and pipe_id in cntrl_is_ready:
                self.enable_timer_pkt_gen(bfrt_info, targets[pipe_id])
 
         #### WAIT FOR THE EXPERIMENT TO END ####
