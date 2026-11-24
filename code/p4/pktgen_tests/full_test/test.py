@@ -935,20 +935,6 @@ class ViewChangeTest(BfRuntimeTest):
         active_q_pipe_t = threading.Thread(target=self.pipe_queue_monitor, args=(bfrt_info, targets, active_pipes, total_duration, queue_idx_map, queues_of_interest,), kwargs={})
         active_pipe_t = threading.Thread(target=self.pipe_pktgen_runtime, args=(bfrt_info, targets, duration, active_pipes,), kwargs={})
         
-        # Enable packet generation
-        idx = 0
-	for pipe_cfg in pipes_cfg:
-           pipe_id = pipe_cfg['pipe_id']
-           switch_id = pipe_cfg['logical_switch_id']
-           if pipe_cfg['active_pipe']:
-               active_view_threads[idx].start()
-               if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
-                    active_trigger_threads[0].start()
-               idx += 1
-
-        active_q_pipe_t.start()
-        active_pipe_t.start()
-
         # Start packet generation AFTER observing threads are spawned
         start_time = time.time()
         cntrl_is_ready = []
@@ -961,6 +947,21 @@ class ViewChangeTest(BfRuntimeTest):
                else:
                    cntrl_is_ready.append(pipe_id)
                    break
+        
+        # Enable packet generation
+        active_q_pipe_t.start()
+        active_pipe_t.start()
+
+        idx = 0
+	for pipe_cfg in pipes_cfg:
+           pipe_id = pipe_cfg['pipe_id']
+           switch_id = pipe_cfg['logical_switch_id']
+           if pipe_cfg['active_pipe']:
+               active_view_threads[idx].start()
+               if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
+                    active_trigger_threads[0].start()
+               idx += 1
+
 
         # TODO: cntrl is ready might only have some active pipes
         for pipe_cfg in pipes_cfg:
