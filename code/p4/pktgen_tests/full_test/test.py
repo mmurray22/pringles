@@ -415,6 +415,7 @@ class ViewChangeTest(BfRuntimeTest):
             #"average_latency_us": avg_lat,
             "final_committed_pkts": int(self.final_pkt_count[pipe_id]),
             "final_committed_seq_no": int(self.final_committed_seq_no[pipe_id]),
+            "start_seed_seq_no": int(self.seed),
             "final_agg_lat": int(self.final_total_latency[pipe_id]),
             "final_elapsed_time": self.final_elapsed_tput_time,
             "nsperpkt": int(nsperpkt),
@@ -512,6 +513,8 @@ class ViewChangeTest(BfRuntimeTest):
                 seq_recirc_name = "MyIngress{}.seq_wait_recirc_counter".format(pipe_id)
                 pipe_name = "MyEgress{}.time_in_pipeline".format(pipe_id)
                 cntrl_cnt_reg_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
+		low_rep_reg_name = "MyIngress{}.highest_lower_replicated_seq_no".format(pipe_id)
+		high_rep_reg_name = "MyIngress{}.highest_upper_replicated_seq_no".format(pipe_id)
                 if extra_telemetry:
                     canary_drop_cnt_name = "MyEgress{}.canary_no_match_counter_eg{}".format(pipe_id, pipe_id)
                     canary_drop_cnt = self.get_counter_number(bfrt_info, canary_drop_cnt_name)
@@ -562,7 +565,11 @@ class ViewChangeTest(BfRuntimeTest):
                     seq_recirc_cntr = self.get_register_number(bfrt_info, target, seq_recirc_name)
                     cntrl_cnt = self.get_counter_number(bfrt_info, cntrl_cnt_reg_name)
                     logger.info("[IN PROGRESS] Ingress {} Control packet count: {}".format(pipe_id, cntrl_cnt))
-                    
+		    upper_commit_seq = self.get_register_number(bfrt_info, targets[pipe_id], high_rep_reg_name)
+		    lower_commit_seq = self.get_register_number(bfrt_info, targets[pipe_id], low_rep_reg_name)
+		    print("Highest committed sequence number components: {} upper and {} lower".format(upper_commit_seq, lower_commit_seq))
+
+                   
                     # measure size of ack count table TODO
                     #ack_name = "MyIngress{}.ack_array".format(pipe_id)
                     #ack_res = self.get_full_register(bfrt_info, targets[pipe_id], ack_name)
@@ -607,9 +614,11 @@ class ViewChangeTest(BfRuntimeTest):
 
                 # Latest time a random append spent in the pipeline
                 self.pipeline_time[pipe_id].append(pipe_res)
+		self.cntrl_pkt_cnt_over_time[pipe_id].append(cntrl_cnt)
 
                 # Current timestamp
                 self.pipe_timestamps[pipe_id].append(now)
+
 
                 self.agg_seq_recirc_cntr[pipe_id].append(seq_recirc_cntr)
 
@@ -655,6 +664,7 @@ class ViewChangeTest(BfRuntimeTest):
             high_rep_reg_name = "MyIngress{}.highest_upper_replicated_seq_no".format(pipe_id)
             upper_commit_seq = self.get_register_number(bfrt_info, targets[pipe_id], high_rep_reg_name)
             lower_commit_seq = self.get_register_number(bfrt_info, targets[pipe_id], low_rep_reg_name)
+	    print("Highest committed sequence number components: {} upper and {} lower".format(upper_commit_seq, lower_commit_seq))
             self.final_committed_seq_no[pipe_id] = ((upper_commit_seq & 0xFFFFFFFF) << 32) | (lower_commit_seq & 0xFFFFFFFF)
             low_lat = self.get_register_number(bfrt_info, targets[pipe_id], "MyIngress{}.latency_lower".format(pipe_id))
             high_lat = self.get_register_number(bfrt_info, targets[pipe_id], "MyIngress{}.latency_higher".format(pipe_id))
@@ -713,6 +723,7 @@ class ViewChangeTest(BfRuntimeTest):
         self.view_change_pipe = data['view_change_pipe']
         self.view_change_switch = data['view_change_switch']
         self.do_view_change = data['do_view_change']
+        self.seed = data['seed']
 
         active_switches = data['active_switches']
 
@@ -739,6 +750,7 @@ class ViewChangeTest(BfRuntimeTest):
         self.tput_over_time = {0: [], 1: []}
         self.pkts_over_time = {0: [], 1: []}
         self.pipeline_time = {0: [], 1: []}
+        self.cntrl_pkt_cnt_over_time = {0: [], 1: []}
         self.generate_pkts_over_time = {0: [], 1: []}
         self.pipe_timestamps = {0: [], 1:[]}
         self.agg_seq_recirc_cntr = {0: [], 1:[]}
@@ -921,7 +933,7 @@ class ViewChangeTest(BfRuntimeTest):
         time.sleep(wait_time)
         if switch_send_cntrl:
 	    logger.info("Sending control packet!")
-	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, 0) #3294967296) # 0)
+	    self.send_cntrl_packet(cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, self.seed)
     
         # Enable packet generation
         idx = 0

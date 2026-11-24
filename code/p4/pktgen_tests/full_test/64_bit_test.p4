@@ -16,6 +16,8 @@
 #include "../../common/64_bit_headers.p4"
 #include "../../common/util.p4"
 
+struct seq_pair_t { bit<32> hi; bit<32> lo; }
+
 /*************************************************************************
 *********************** P A R S E R  ***********************************
 *************************************************************************/
@@ -164,7 +166,7 @@ control MyIngress0(inout headers hdr,
     Register<bit<32>, bit<1>>(1) highest_lower_replicated_seq_no; // TODO: 64 bit
     RegisterAction<bit<32>, bit<1>, bit<32>>(highest_lower_replicated_seq_no) write_lower_replicated_seq_no = {
         void apply(inout bit<32> cur_replicated_seq_no) {
-	    if (meta.lower_global_seq_no > cur_replicated_seq_no) {
+	    if (meta.new_upper == 1 || meta.lower_global_seq_no > cur_replicated_seq_no) {
 	         cur_replicated_seq_no = meta.lower_global_seq_no;
 	    }
         }
@@ -189,6 +191,18 @@ control MyIngress0(inout headers hdr,
         }
     };
     
+    Register<seq_pair_t, bit<1>>(1) highest_replicated; // TODO TODO NEW
+    RegisterAction<seq_pair_t, bit<1>, bit<1>>(highest_replicated) update_replicated = {
+        void apply(inout seq_pair_t v) {
+            if (meta.upper_global_seq_no > v.hi) {
+                v.hi = meta.upper_global_seq_no;
+                v.lo = meta.lower_global_seq_no;
+            } else if (meta.upper_global_seq_no == v.hi
+                       && meta.lower_global_seq_no > v.lo) {
+                v.lo = meta.lower_global_seq_no;
+            }
+        }
+    };
 
     Register<bit<32>, bit<1>>(1) highest_upper_replicated_seq_no; // TODO: 64 bit
     RegisterAction<bit<32>, bit<1>, bit<32>>(highest_upper_replicated_seq_no) write_upper_replicated_seq_no = {
@@ -604,31 +618,15 @@ control MyIngress0(inout headers hdr,
 
 
     action lower_update_gsn() {
-	// CHANGE LOG: ORIGINAL:
-	// add_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
-
-	// NEW:
 	add_lower_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
     }
     action lower_get_ack_readiness() {
-	// CHANGE LOG: ORIGINAL:
-	//meta.ready_for_ack = (bit<1>)compare_gsn.execute(meta.cntrl_pkt_it_idx);
-
-	// NEW:
 	meta.lower_ready_for_ack = (bit<2>)compare_lower_gsn.execute(meta.cntrl_pkt_it_idx);
     }
     action lower_make_gsn_zero() {
-	// CHANGE LOG: ORIGINAL:
-	//zero_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
-
-	// NEW:
 	zero_lower_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     action lower_assign_gsn() {
-	// CHANGE LOG: ORIGINAL:
-        //meta.assign_sn = get_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
-
-	// NEW:
         meta.lower_assign_sn = get_lower_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     table lower_process_gsn { // TODO TODO NEED TO ALTER SO MANY REGISTERS!!!!!
@@ -649,31 +647,15 @@ control MyIngress0(inout headers hdr,
     }
 
     action upper_update_gsn() {
-	// CHANGE LOG: ORIGINAL:
-	// add_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
-
-	// NEW:
 	add_upper_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
     }
     action upper_get_ack_readiness() {
-	// CHANGE LOG: ORIGINAL:
-	//meta.ready_for_ack = (bit<1>)compare_gsn.execute(meta.cntrl_pkt_it_idx);
-
-	// NEW:
 	meta.upper_ready_for_ack = (bit<2>)compare_upper_gsn.execute(meta.cntrl_pkt_it_idx);
     }
     action upper_make_gsn_zero() {
-	// CHANGE LOG: ORIGINAL:
-	//zero_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
-
-	// NEW:
 	zero_upper_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     action upper_assign_gsn() {
-	// CHANGE LOG: ORIGINAL:
-        //meta.assign_sn = get_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
-
-	// NEW:
         meta.upper_assign_sn = get_upper_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     table upper_process_gsn { // TODO TODO NEED TO ALTER SO MANY REGISTERS!!!!!
@@ -923,8 +905,8 @@ control MyIngress0(inout headers hdr,
 	    }
 	    hdr.ring_type.pipe_ts = ig_prsr_md.global_tstamp[15:0];
 	} else if (hdr.finalize_view.isValid()) {
-	    meta.upper_global_seq_no = hdr.finalize_view.highest_quorum_upper_seq_no; // TODO TODO NOT SAFETY 
-	    meta.lower_global_seq_no = hdr.finalize_view.highest_quorum_lower_seq_no; // TODO TODO NOT SAFETY 
+	    meta.upper_global_seq_no = hdr.finalize_view.highest_quorum_upper_seq_no;  
+	    meta.lower_global_seq_no = hdr.finalize_view.highest_quorum_lower_seq_no;  
 	} else {
 	    meta.ring_process = 0;
 	}
@@ -1010,15 +992,16 @@ control MyIngress0(inout headers hdr,
 	    bit<32> slot = get_ack_idx.execute(0);
 	    meta.ack_ready = check_ack.execute(slot);
 	    if (meta.ring_process == TYPE_APPEND_RESP && meta.ack_ready == 1) {
-	        bit<32> status = write_upper_replicated_seq_no.execute(0); // TODO TODO
+		bit<32> status = write_upper_replicated_seq_no.execute(0); // TODO TODO
 		if (status == 2) {
-		    write_all_lower_replicated_seq_no.execute(0);
-	        } else if (status == 1) {
+		    meta.new_upper = 1;
+	        } else {
+		    meta.new_upper = 0;
+		}
+		if (status != 0) {
 		    write_lower_replicated_seq_no.execute(0);
 		}
 
-	        //write_upper_replicated_seq_no.execute(0); // TODO TODO
-	        //write_lower_replicated_seq_no.execute(0); // TODO TODO
 	        tot_packet_counter0.count(0);
 	        update_seq_recirc_cntr.execute(0);
 	        meta.duration = meta.current_timestamp - hdr.append.start_ts;
@@ -1085,7 +1068,7 @@ control MyIngress1(inout headers hdr,
     Register<bit<32>, bit<1>>(1) highest_lower_replicated_seq_no; // TODO: 64 bit
     RegisterAction<bit<32>, bit<1>, bit<32>>(highest_lower_replicated_seq_no) write_lower_replicated_seq_no = {
         void apply(inout bit<32> cur_replicated_seq_no) {
-	    if (meta.lower_global_seq_no > cur_replicated_seq_no) {
+	    if (meta.new_upper == 1 || meta.lower_global_seq_no > cur_replicated_seq_no) {
 	         cur_replicated_seq_no = meta.lower_global_seq_no;
 	    }
         }
@@ -1110,6 +1093,18 @@ control MyIngress1(inout headers hdr,
         }
     };
     
+    Register<seq_pair_t, bit<1>>(1) highest_replicated; // TODO TODO NEW
+    RegisterAction<seq_pair_t, bit<1>, bit<1>>(highest_replicated) update_replicated = {
+        void apply(inout seq_pair_t v) {
+            if (meta.upper_global_seq_no > v.hi) {
+                v.hi = meta.upper_global_seq_no;
+                v.lo = meta.lower_global_seq_no;
+            } else if (meta.upper_global_seq_no == v.hi
+                       && meta.lower_global_seq_no > v.lo) {
+                v.lo = meta.lower_global_seq_no;
+            }
+        }
+    };
 
     Register<bit<32>, bit<1>>(1) highest_upper_replicated_seq_no; // TODO: 64 bit
     RegisterAction<bit<32>, bit<1>, bit<32>>(highest_upper_replicated_seq_no) write_upper_replicated_seq_no = {
@@ -1525,10 +1520,6 @@ control MyIngress1(inout headers hdr,
 
 
     action lower_update_gsn() {
-	// CHANGE LOG: ORIGINAL:
-	// add_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
-
-	// NEW:
 	add_lower_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
     }
     action lower_get_ack_readiness() {
@@ -1546,10 +1537,6 @@ control MyIngress1(inout headers hdr,
 	zero_lower_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     action lower_assign_gsn() {
-	// CHANGE LOG: ORIGINAL:
-        //meta.assign_sn = get_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
-
-	// NEW:
         meta.lower_assign_sn = get_lower_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     table lower_process_gsn { // TODO TODO NEED TO ALTER SO MANY REGISTERS!!!!!
@@ -1570,31 +1557,15 @@ control MyIngress1(inout headers hdr,
     }
 
     action upper_update_gsn() {
-	// CHANGE LOG: ORIGINAL:
-	// add_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
-
-	// NEW:
 	add_upper_gsn.execute(meta.cntrl_pkt_it_idx); // TODO: What is the order? Check this!
     }
     action upper_get_ack_readiness() {
-	// CHANGE LOG: ORIGINAL:
-	//meta.ready_for_ack = (bit<1>)compare_gsn.execute(meta.cntrl_pkt_it_idx);
-
-	// NEW:
 	meta.upper_ready_for_ack = (bit<2>)compare_upper_gsn.execute(meta.cntrl_pkt_it_idx);
     }
     action upper_make_gsn_zero() {
-	// CHANGE LOG: ORIGINAL:
-	//zero_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
-
-	// NEW:
 	zero_upper_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     action upper_assign_gsn() {
-	// CHANGE LOG: ORIGINAL:
-        //meta.assign_sn = get_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
-
-	// NEW:
         meta.upper_assign_sn = get_upper_gsn.execute(meta.cntrl_pkt_it_idx); // Get Global sequence number
     }
     table upper_process_gsn { // TODO TODO NEED TO ALTER SO MANY REGISTERS!!!!!
@@ -1927,10 +1898,14 @@ control MyIngress1(inout headers hdr,
 	    if (meta.ring_process == TYPE_APPEND_RESP && meta.ack_ready == 1) {
 		bit<32> status = write_upper_replicated_seq_no.execute(0); // TODO TODO
 		if (status == 2) {
-		    write_all_lower_replicated_seq_no.execute(0);
-	        } else if (status == 1) {
+		    meta.new_upper = 1;
+	        } else {
+		    meta.new_upper = 0;
+		}
+		if (status != 0) {
 		    write_lower_replicated_seq_no.execute(0);
 		}
+
 
 	        tot_packet_counter1.count(0);
 	        update_seq_recirc_cntr.execute(0);

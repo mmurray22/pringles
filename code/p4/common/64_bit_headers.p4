@@ -273,6 +273,7 @@ struct metadata {
     bit<2> recirc_port_type;
     bit<1> route_to_shard;
     bit<1> low_bit;
+    bit<1> new_upper;
     bit<2> upper_ready_for_ack;
     bit<2> lower_ready_for_ack;
 
