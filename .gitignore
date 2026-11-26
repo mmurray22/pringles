@@ -132,3 +132,10 @@ experiments/client
 experiments/scripts/.venv/
 experiments/scripts/venv/*
 experiments/server
+
+go1.26.1.linux-amd64.tar.gz
+dpdk-23.11.tar.xz
+
+# DPDK
+dpdk-23.11/
+code/dpdk/rw_seq/*.csv
