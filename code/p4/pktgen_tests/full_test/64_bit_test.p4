@@ -1010,7 +1010,7 @@ control MyIngress0(inout headers hdr,
 	    if (hdr.finalize_view.hops == 0 && hdr.finalize_view.view_member_switch_id != meta.switch_id) {
 		meta.next_hop = hdr.finalize_view.view_member_switch_id;
 	    } else {
-		hdr.trigger_view.hops = 1;
+		hdr.finalize_view.hops = 1;
 		meta.next_hop = hdr.finalize_view.leader_switch_id; 
 	    }
 
@@ -1937,7 +1937,7 @@ control MyIngress1(inout headers hdr,
 	    if (hdr.trigger_view.hops == 0 && hdr.trigger_view.view_member_switch_id != meta.switch_id) {
 		meta.next_hop = hdr.trigger_view.view_member_switch_id;
 	    } else {
-		hdr.trigger_view.hops = 1;
+		hdr.finalize_view.hops = 1;
 		meta.next_hop = hdr.trigger_view.leader_switch_id; 
 	    }
 

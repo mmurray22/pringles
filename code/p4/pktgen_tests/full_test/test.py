@@ -351,8 +351,6 @@ class ViewChangeTest(BfRuntimeTest):
     def maintain_view_change(self, viewChangeMaintainer, bfrt_info, target, pipe_id, duration, start_view, switch_id):
         # View Change
         print("===============Thread: Maintain view change!!! View timeout is: {}".format(self.view_timeout))
-        self.response_thread = threading.Thread(target=viewChangeMaintainer.collect_responses, args=())
-        self.response_thread.start()
         cntr_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
         pkt_it_reg_name = "MyIngress{}.cntrl_pkt_it".format(pipe_id)
 	lower_register_name = "MyIngress{}.map_from_lower_gsn".format(pipe_id)
@@ -367,6 +365,8 @@ class ViewChangeTest(BfRuntimeTest):
     	prev_cntrl_pkt_cnt = self.get_counter_number(bfrt_info, cntr_name)
         prev_view = start_view
 	injected_trigger = False
+        vc_ts = {}
+        vc_ts['rounds'] = 0
 	restore_t = None
 	t_restore_start = 0 
 	poll_interval = 0.05
@@ -380,11 +380,13 @@ class ViewChangeTest(BfRuntimeTest):
 	    
 	    if (not injected_trigger) and (time.time() - experiment_time) > self.trigger_wait_time and pipe_id == self.view_change_pipe and switch_id == self.view_change_leader and self.do_view_change:
 	    	injected_trigger = True
-	    	t0 = time.time()  # ADDED: start time of the table add, for the log line
+	    	vc_ts['inject_start'] = time.time()  # ADDED: start time of the table add, for the log line
 		add_t = threading.Thread(target=drop_table.entry_add, args=(target, key, [drop_table.make_data([], "MyEgress{}.drop".format(pipe_id))]))  # ADDED: run the existing entry_add call in a helper thread so it can be bounded
 		add_t.daemon = True  # ADDED: never block process exit on this thread
 		add_t.start()  # ADDED: start the table add
 		add_t.join(1.0)  # ADDED: wait at most 1 s for the add (a gRPC call cannot be cancelled; on a timeout we just stop waiting)
+                t0 = time.time()
+                vc_ts['inject_end'] = t0
 		if add_t.is_alive():  # ADDED: the add did not finish within the bound
 		    print("[inject] drop-entry add STILL RUNNING after 1000 ms (not cancelled)")  # ADDED: log the timeout
 		else:
@@ -395,6 +397,7 @@ class ViewChangeTest(BfRuntimeTest):
             #print("Previously I received {} cntrl packets and now received {} cntrl packets".format(prev_cntrl_pkt_cnt, cntrl_pkt_cnt))
             if (prev_cntrl_pkt_cnt == cntrl_pkt_cnt) and (time.time() - start_time) > stall_threshold:
 	        t_stall = time.time()
+                vc_ts['stall'] = t_stall
 		if injected_trigger and restore_t is None and switch_id == self.view_change_leader:
 		    restore_t = threading.Thread(target=drop_table.entry_del, args=(target, key))
 		    restore_t.daemon = True
@@ -430,6 +433,7 @@ class ViewChangeTest(BfRuntimeTest):
 		    if view_leader_set == 0:
 		        print("====================================== Packet iteration: {}".format(pkt_it))
 		        viewChangeMaintainer.send_start_view_change(0, 0, prev_view)
+                        vc_ts['trigger_sent'] = time.time()
 			print("[vc-timeline] pipe %d +%6.1f ms  non-leader sent the Triggers" % (pipe_id, (time.time() - t_stall) * 1e3))
 		    start_time = time.time()
 		    continue
@@ -452,10 +456,20 @@ class ViewChangeTest(BfRuntimeTest):
 			    print("[restore] WARNING: the drop-entry delete is STILL running after 2000 ms; injecting anyway, this run may be tainted")
 			else:
 			    print("[restore] drop-entry delete finished %.1f ms after it was started at the stall decision (a traceback above means there was no entry to delete)" % ((time.time() - t_restore_start) * 1e3))
+                            vc_ts['restore_joined'] = time.time()
 		    print("[vc-timeline] pipe %d +%6.1f ms  restore joined" % (pipe_id, (time.time() - t_stall) * 1e3))
 
 		    self.send_cntrl_packet(self.cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, prev_view, new_start_seq_no)
+                    vc_ts['token_sent'] = time.time()
 		    print("[vc-timeline] pipe %d +%6.1f ms  TOKEN SENT: host-clock total from the stall decision to the new token" % (pipe_id, (time.time() - t_stall) * 1e3))
+                    vc_ts['rounds'] = vc_ts['rounds'] + 1
+                    vc_ts['leader_trigger_sent'] = viewChangeMaintainer.trigger_sent
+                    vc_ts['trigger_wait_end'] = viewChangeMaintainer.trigger_wait_end
+                    vc_ts['last_trigger_reply'] = viewChangeMaintainer.last_trigger_reply
+                    vc_ts['finalize_sent'] = viewChangeMaintainer.finalize_sent
+                    vc_ts['finalize_wait_end'] = viewChangeMaintainer.finalize_wait_end
+                    vc_ts['last_finalize_reply'] = vieChangeMaintainer.last_finalize_reply
+
 		    register_name = "MyEgress{}.view_change_start_time".format(pipe_id)
 		    print(register_name)
         	    view_change_start_time = self.get_register_number_at_idx(bfrt_info, target, register_name, 0)
@@ -473,7 +487,7 @@ class ViewChangeTest(BfRuntimeTest):
                 prev_cntrl_pkt_cnt = cntrl_pkt_cnt
                 start_time = time.time()
 	    continue
-        self.response_thread.join()
+        self.view_change_time_breakdown[pipe_id] = vc_ts
 
     ######################################## Packet Gen Stats ###################################
     def get_final_pktgen_stats(self, bfrt_info, target, duration, nsperpkt, num_recircs, pipe_id, num_pipelines, payload_size, exp_type, lower_time_bound, upper_time_bound, time_interval_ms):
@@ -517,7 +531,8 @@ class ViewChangeTest(BfRuntimeTest):
             "pipe_id": pipe_id,
             "timeseries_interval_ms": time_interval_ms,
             "do_view_change": int(self.do_view_change),
-            "view_change_duration": self.view_change_duration
+            "view_change_duration": self.view_change_duration, # TODO THIS IS MISLEADING!!!
+            "view_change_breakdown": self.view_change_time_breakdown[pipe_id]
             #"baseline_pkts": self.baseline_pkts[pipe_id],
             #"baseline_curr_time": self.baseline_curr_time[pipe_id],
             #"baseline_total_latency": self.baseline_total_latency[pipe_id],
@@ -819,7 +834,8 @@ class ViewChangeTest(BfRuntimeTest):
         total_time = duration + warmup + cooldown + buffer_time
         app_id = 0
 	pktgen_app_cfg_table = bfrt_info.table_get("$PKTGEN_APPLICATION_CFG")
-         
+        
+        self.view_change_time_breakdown = {0: {}, 1: {}}
         self.raw_et_over_time = {0: [], 1: []}
         self.queue_cnt_over_time = {0: {}, 1: {}}
         self.ack_cnt_over_time = {0: [], 1: []}

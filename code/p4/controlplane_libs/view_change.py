@@ -74,6 +74,13 @@ class ViewChange:
 
         self.arr_lock = threading.Lock()
 
+        self.trigger_sent = 0
+        self.trigger_wait_end = 0
+        self.last_trigger_reply = 0
+        self.finalize_sent = 0
+        self.finalize_wait_end = 0
+        self.last_finalize_reply = 0
+
     #def __exit__(self):
     
     ##################################### Helper functions (TODO deduplicate) ############################
@@ -149,12 +156,16 @@ class ViewChange:
             startView.show()
             with self.arr_lock:
                 self.received_start_view.append(startView)
+                self.last_trigger_reply = time.time()
+                self.last_finalize_reply = time.time()
         elif ether_pkt[Ether].type == TYPE_VIEW_ACK:
 	    print("[sniffer %d] GOT A FinalizeView PACKET!" % self.switch_id)
             finalView = ether_pkt[FinalizeViewChange]
             finalView.show()
             with self.arr_lock:
 	    	self.received_finalize_view.append(finalView)
+                self.last_trigger_reply = time.time()
+                self.last_finalize_reply = time.time()
 
     def collect_responses(self):
         sniff(iface = self.cpu_interface, L2socket=conf.L2socket, lfilter=self.is_returned, timeout=self.exp_duration, prn = lambda x: self.handle_pkt(x))
@@ -194,11 +205,12 @@ class ViewChange:
         # Send StartView packet 
 	if timeout_trigger:
             self.send_start_view_change(0, 0, prev_view)
+            self.trigger_sent = time.time()
         sleep_time = .001
         total_time_waited = 0
-        start_time = time.time()
         list_of_start_view_pkts = []
         time.sleep(self.view_timeout)
+        self.trigger_wait_end = time.time()
 	with self.arr_lock:
 	    list_of_start_view_pkts = self.received_start_view
             if len(list_of_start_view_pkts) < self.view_member_threshold:
@@ -211,10 +223,11 @@ class ViewChange:
             self.logger.warn(error)
             return (0, 0)
         self.send_view_change_ack(highest_seq_no, members)
-        start_time = time.time()
+        self.finalize_sent = time.time()
         total_time_waited = 0
         list_of_finalize_view_pkts = []
         time.sleep(self.view_timeout)
+        self.finalize_wait_end = time.time()
 	with self.arr_lock:
             list_of_finalize_view_pkts = self.received_finalize_view
             if len(list_of_finalize_view_pkts) < self.view_member_threshold:
