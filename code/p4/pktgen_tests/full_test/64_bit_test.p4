@@ -530,6 +530,7 @@ control MyIngress0(inout headers hdr,
         key = {
 	    meta.ring_process: exact; // ONLY get_it
             hdr.cntrl.isValid(): exact;
+            hdr.trigger_view.isValid(): exact;
             meta.update_iteration: exact;
         }
         actions = {
@@ -634,6 +635,7 @@ control MyIngress0(inout headers hdr,
             meta.ring_process: exact;
 	    meta.append_g_zero: exact;
             hdr.cntrl.isValid(): exact;
+            hdr.trigger_view.isValid(): exact;
         }
         actions = {
 	    lower_get_ack_readiness;
@@ -663,6 +665,7 @@ control MyIngress0(inout headers hdr,
             meta.ring_process: exact;
 	    meta.append_g_zero: exact;
             hdr.cntrl.isValid(): exact;
+            hdr.trigger_view.isValid(): exact;
         }
         actions = {
 	    upper_get_ack_readiness;
@@ -921,7 +924,11 @@ control MyIngress0(inout headers hdr,
 	    meta.lower_global_seq_no = hdr.tail.lower_tail_seq_no;
 	} 
 
-	
+	bit<1> trigger_dst = 0;
+	if (hdr.trigger_view.isValid() && hdr.trigger_view.view_member_switch_id == meta.switch_id) {
+	    trigger_dst = 1;
+	}
+
 	cntrl_local_seq.apply();
 
 	if (hdr.cntrl.isValid()) { // Only update pkt it if cntrl packet
@@ -959,11 +966,21 @@ control MyIngress0(inout headers hdr,
 
 	get_port_idx.apply();
 
-	next_hop_routing.apply();
-	if (hdr.trigger_view.isValid()) {
+	//next_hop_routing.apply();
+	if (hdr.cntrl.isValid()) {
+	    meta.next_hop = get_id.execute(0);
+	} else if (hdr.tail.isValid()) {
+	    meta.next_hop = get_id.execute(0);
+	} else if (hdr.finalize_view.isValid() && hdr.finalize_view.view_member_switch_id == meta.switch_id) {
+	    update_id.execute(0); // Set control packet next member
+	}
+
+
+	if (trigger_dst == 1) {
 	    hdr.trigger_view.highest_seen_upper_seq_no = meta.upper_assign_sn;
 	    hdr.trigger_view.highest_seen_lower_seq_no = meta.lower_assign_sn;
-	} 
+	}
+
 	if (hdr.trigger_view.isValid()) {
 	    meta.view_hops = 1;
 	    if (hdr.trigger_view.view_member_switch_id != meta.switch_id && hdr.trigger_view.hops == 0) {
@@ -1432,6 +1449,7 @@ control MyIngress1(inout headers hdr,
         key = {
 	    meta.ring_process: exact; // ONLY get_it
             hdr.cntrl.isValid(): exact;
+            hdr.trigger_view.isValid(): exact;
             meta.update_iteration: exact;
         }
         actions = {
@@ -1544,6 +1562,7 @@ control MyIngress1(inout headers hdr,
             meta.ring_process: exact;
 	    meta.append_g_zero: exact;
             hdr.cntrl.isValid(): exact;
+            hdr.trigger_view.isValid(): exact;
         }
         actions = {
 	    lower_get_ack_readiness;
@@ -1573,6 +1592,7 @@ control MyIngress1(inout headers hdr,
             meta.ring_process: exact;
 	    meta.append_g_zero: exact;
             hdr.cntrl.isValid(): exact;
+            hdr.trigger_view.isValid(): exact;
         }
         actions = {
 	    upper_get_ack_readiness;
@@ -1824,7 +1844,11 @@ control MyIngress1(inout headers hdr,
 	    meta.upper_global_seq_no = hdr.tail.upper_tail_seq_no;
 	    meta.lower_global_seq_no = hdr.tail.lower_tail_seq_no;
 	} 
-
+	
+	bit<1> trigger_dst = 0;
+	if (hdr.trigger_view.isValid() && hdr.trigger_view.view_member_switch_id == meta.switch_id) {
+	    trigger_dst = 1;
+	}
 		
 	cntrl_local_seq.apply();
 
@@ -1863,11 +1887,22 @@ control MyIngress1(inout headers hdr,
 
 	get_port_idx.apply();
 
-	next_hop_routing.apply();
-	if (hdr.trigger_view.isValid()) {
+	//next_hop_routing.apply(); <-- TODO new change
+	if (hdr.cntrl.isValid()) {
+	    meta.next_hop = get_id.execute(0);
+	} else if (hdr.tail.isValid()) {
+	    meta.next_hop = get_id.execute(0);
+	} else if (hdr.finalize_view.isValid()) {
+	    if (hdr.finalize_view.view_member_switch_id == meta.switch_id) {
+	        update_id.execute(0); // Set control packet next member
+	    }
+	}
+
+	if (trigger_dst == 1) {
 	    hdr.trigger_view.highest_seen_upper_seq_no = meta.upper_assign_sn;
 	    hdr.trigger_view.highest_seen_lower_seq_no = meta.lower_assign_sn;
-	} 
+	}
+
 	if (hdr.trigger_view.isValid()) {
 	    meta.view_hops = 1;
 	    if (hdr.trigger_view.view_member_switch_id != meta.switch_id && hdr.trigger_view.hops == 0) {
@@ -2191,7 +2226,7 @@ control MyEgress0(inout headers hdr,
     RegisterAction<bit<16>, bit<1>, bit<16>>(egress_current_view) trigger_view_change = {
         void apply(inout bit<16> curr_view, out bit<16> output) {
 	    if (curr_view <= meta.ring_view) {
-	        output = 1;
+	        output = curr_view;
 	    } else {
 	        output = 0;
 	    }
@@ -2321,44 +2356,79 @@ control MyEgress0(inout headers hdr,
 	// Read, Update, or Check view number info
 	// Check whether you should accept the changes in the finalize_view if it's the right leader
 	if (hdr.trigger_view.isValid()) {
-	    meta.leader_switch_id = hdr.trigger_view.leader_switch_id;
-	    meta.accept_finalize_view = record_view_leader.execute(0); 
-
-	    if (meta.accept_finalize_view == 1) {
-	        meta.ring_view = hdr.trigger_view.current_ring_view;
-                meta.accept_view_change = trigger_view_change.execute(0);
-	    } else {
-		meta.ring_view = 0;
-		meta.accept_view_change = 0;
-	    }
-
-	    if (meta.accept_view_change == 1) {
+	    meta.ring_view = hdr.trigger_view.current_ring_view;
+            meta.accept_view_change = trigger_view_change.execute(0);
+	    hdr.trigger_view.current_ring_view = meta.accept_view_change;
+	    meta.accept_finalize_view = 0; 
+	    if (meta.accept_view_change != 0) {
 	        meta.view_change_active = set_active_view_change.execute(0);
-	    } else if (meta.accept_view_change == 0) {
-	        meta.view_change_active = 0;
+	        meta.leader_switch_id = hdr.trigger_view.leader_switch_id;
+	        meta.accept_finalize_view = record_view_leader.execute(0); 
 	    }
 	} else if (hdr.cntrl.isValid()) {
 	    meta.ring_view = hdr.cntrl.ring_view;
             meta.accept_view_change = check_cntrl_view.execute(0);
 	    meta.accept_finalize_view = 0;
-	    if (meta.accept_view_change == 1) {
+	    if (meta.accept_view_change != 0) {
 	        meta.view_change_active = set_active_view_change.execute(0);
 	    } else {
 	        meta.view_change_active = unset_active_view_change.execute(0);
+	        unset_view_leader.execute(0);
 	    }
-	    meta.accept_finalize_view = 0;
 	} else if (hdr.finalize_view.isValid()) {
-	    unset_view_leader.execute(0);
+
 	    meta.ring_view = hdr.finalize_view.current_ring_view;
 	    update_view.execute(0); // UNSETS the view change!
 	    meta.view_change_active = 0;
 	    meta.accept_finalize_view = 0;
 	} else {
-	    meta.accept_finalize_view = 0;
 	    meta.ring_view = 0;
 	    meta.accept_view_change = 0;
+	    meta.accept_finalize_view = 0;
 	    meta.view_change_active = get_active_view_change.execute(0);
 	}
+
+	//if (hdr.trigger_view.isValid()) {
+	//    meta.leader_switch_id = hdr.trigger_view.leader_switch_id;
+	//    meta.accept_finalize_view = record_view_leader.execute(0); 
+
+	//    if (meta.accept_finalize_view == 1) {
+	//        meta.ring_view = hdr.trigger_view.current_ring_view;
+        //        meta.accept_view_change = trigger_view_change.execute(0);
+	//	hdr.trigger_view.current_ring_view = meta.accept_view_change;
+	//    } else {
+	//	meta.ring_view = 0;
+	//	meta.accept_view_change = 0;
+	//    }
+
+	//    if (meta.accept_view_change != 0) {
+	//        meta.view_change_active = set_active_view_change.execute(0);
+	//    } else if (meta.accept_view_change == 0) {
+	//        meta.view_change_active = 0;
+	//    }
+	//} else if (hdr.cntrl.isValid()) {
+	//    meta.ring_view = hdr.cntrl.ring_view;
+        //    meta.accept_view_change = check_cntrl_view.execute(0);
+	//    meta.accept_finalize_view = 0;
+	//    if (meta.accept_view_change == 1) {
+	//        meta.view_change_active = set_active_view_change.execute(0);
+	//    } else {
+	//        meta.view_change_active = unset_active_view_change.execute(0);
+	//        unset_view_leader.execute(0);
+	//    }
+	//    meta.accept_finalize_view = 0;
+	//} else if (hdr.finalize_view.isValid()) {
+
+	//    meta.ring_view = hdr.finalize_view.current_ring_view;
+	//    update_view.execute(0); // UNSETS the view change!
+	//    meta.view_change_active = 0;
+	//    meta.accept_finalize_view = 0;
+	//} else {
+	//    meta.accept_finalize_view = 0;
+	//    meta.ring_view = 0;
+	//    meta.accept_view_change = 0;
+	//    meta.view_change_active = get_active_view_change.execute(0);
+	//}
 
 	// Determine whether control packet should be dropped
 	// Mark this packet as being received during an active view change
@@ -2488,7 +2558,7 @@ control MyEgress1(inout headers hdr,
     RegisterAction<bit<16>, bit<1>, bit<16>>(egress_current_view) trigger_view_change = {
         void apply(inout bit<16> curr_view, out bit<16> output) {
 	    if (curr_view <= meta.ring_view) {
-	        output = 1;
+	        output = curr_view;
 	    } else {
 	        output = 0;
 	    }
@@ -2617,43 +2687,37 @@ control MyEgress1(inout headers hdr,
 
 	// Read, Update, or Check view number info
 	// Check whether you should accept the changes in the finalize_view if it's the right leader
+
 	if (hdr.trigger_view.isValid()) {
-	    meta.leader_switch_id = hdr.trigger_view.leader_switch_id;
-	    meta.accept_finalize_view = record_view_leader.execute(0); 
-
-	    if (meta.accept_finalize_view == 1) {
-	        meta.ring_view = hdr.trigger_view.current_ring_view;
-                meta.accept_view_change = trigger_view_change.execute(0);
-	    } else {
-		meta.ring_view = 0;
-		meta.accept_view_change = 0;
-	    }
-
-	    if (meta.accept_view_change == 1) {
+	    meta.ring_view = hdr.trigger_view.current_ring_view;
+            meta.accept_view_change = trigger_view_change.execute(0);
+	    hdr.trigger_view.current_ring_view = meta.accept_view_change;
+	    meta.accept_finalize_view = 0; 
+	    if (meta.accept_view_change != 0) {
 	        meta.view_change_active = set_active_view_change.execute(0);
-	    } else if (meta.accept_view_change == 0) {
-	        meta.view_change_active = 0;
+	        meta.leader_switch_id = hdr.trigger_view.leader_switch_id;
+	        meta.accept_finalize_view = record_view_leader.execute(0); 
 	    }
 	} else if (hdr.cntrl.isValid()) {
 	    meta.ring_view = hdr.cntrl.ring_view;
             meta.accept_view_change = check_cntrl_view.execute(0);
 	    meta.accept_finalize_view = 0;
-	    if (meta.accept_view_change == 1) {
+	    if (meta.accept_view_change != 0) {
 	        meta.view_change_active = set_active_view_change.execute(0);
 	    } else {
 	        meta.view_change_active = unset_active_view_change.execute(0);
+	        unset_view_leader.execute(0);
 	    }
-	    meta.accept_finalize_view = 0;
 	} else if (hdr.finalize_view.isValid()) {
-	    unset_view_leader.execute(0);
+
 	    meta.ring_view = hdr.finalize_view.current_ring_view;
 	    update_view.execute(0); // UNSETS the view change!
 	    meta.view_change_active = 0;
 	    meta.accept_finalize_view = 0;
 	} else {
-	    meta.accept_finalize_view = 0;
 	    meta.ring_view = 0;
 	    meta.accept_view_change = 0;
+	    meta.accept_finalize_view = 0;
 	    meta.view_change_active = get_active_view_change.execute(0);
 	}
 

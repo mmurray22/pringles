@@ -348,39 +348,114 @@ class ViewChangeTest(BfRuntimeTest):
         register_entry_name = register_name + ".f1"
         return reg_data_dict[register_entry_name]
 
-    ######################################## View Change maintenance ############################
-    def trigger_view_change(self, viewChangeMaintainer, bfrt_info, target, pipe_id, trigger_wait_time, duration):
-        print("DOING TRIGGER VIEW CHANGE NOW!!!")
-        time.sleep(trigger_wait_time)
-	self.insert_register_entry(bfrt_info, "MyEgress{}.egress_current_view".format(pipe_id), 0, self.view - 1) # TODO: Setting egress current view to dummy value to INDUCE control packet drop
-
-    def maintain_view_change(self, viewChangeMaintainer, bfrt_info, target, pipe_id, duration):
+    def maintain_view_change(self, viewChangeMaintainer, bfrt_info, target, pipe_id, duration, start_view, switch_id):
         # View Change
         print("===============Thread: Maintain view change!!! View timeout is: {}".format(self.view_timeout))
         self.response_thread = threading.Thread(target=viewChangeMaintainer.collect_responses, args=())
         self.response_thread.start()
         cntr_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
         pkt_it_reg_name = "MyIngress{}.cntrl_pkt_it".format(pipe_id)
+	lower_register_name = "MyIngress{}.map_from_lower_gsn".format(pipe_id)
+       	upper_register_name = "MyIngress{}.map_from_upper_gsn".format(pipe_id)
+	drop_table = bfrt_info.table_get("MyEgress{}.check_view_change".format(pipe_id))
+	key = [drop_table.make_key([gc.KeyTuple('meta.view_change_active', 0),
+	                            gc.KeyTuple('hdr.ethernet.type', TYPE_CONTROL)])]
+
         start_time = time.time() # TODO make sure you keep track of the units here
         experiment_time = time.time()
-        sleep_time = self.view_timeout / 3
+
     	prev_cntrl_pkt_cnt = self.get_counter_number(bfrt_info, cntr_name)
+        prev_view = start_view
+	injected_trigger = False
+	restore_t = None
+	t_restore_start = 0 
+	poll_interval = 0.05
+	stall_threshold = 0.05 #0.03
+        sleep_time = self.view_timeout
+
         while True:
             time.sleep(sleep_time)
             if (time.time() - experiment_time) > duration: # If the experiment finishes, return
                 break
+	    
+	    if (not injected_trigger) and (time.time() - experiment_time) > self.trigger_wait_time and pipe_id == self.view_change_pipe and switch_id == self.view_change_leader and self.do_view_change:
+	    	injected_trigger = True
+	    	t0 = time.time()  # ADDED: start time of the table add, for the log line
+		add_t = threading.Thread(target=drop_table.entry_add, args=(target, key, [drop_table.make_data([], "MyEgress{}.drop".format(pipe_id))]))  # ADDED: run the existing entry_add call in a helper thread so it can be bounded
+		add_t.daemon = True  # ADDED: never block process exit on this thread
+		add_t.start()  # ADDED: start the table add
+		add_t.join(1.0)  # ADDED: wait at most 1 s for the add (a gRPC call cannot be cancelled; on a timeout we just stop waiting)
+		if add_t.is_alive():  # ADDED: the add did not finish within the bound
+		    print("[inject] drop-entry add STILL RUNNING after 1000 ms (not cancelled)")  # ADDED: log the timeout
+		else:
+		    print("[inject] drop-entry add returned after %.1f ms (a traceback above means it failed, e.g. 'Already exists')" % ((time.time() - t0) * 1e3))  # ADDED: log how long the add took; the thread prints its own traceback on error
+		    start_time = time.time()
+        
     	    cntrl_pkt_cnt = self.get_counter_number(bfrt_info, cntr_name)
-	    #print("Previously I received {} cntrl packets and now received {} cntrl packets".format(prev_cntrl_pkt_cnt, cntrl_pkt_cnt))
-            if (prev_cntrl_pkt_cnt == cntrl_pkt_cnt) and (time.time() - start_time) > self.view_timeout:
-                pkt_it = self.get_register_number_at_idx(bfrt_info, target, pkt_it_reg_name, 0)
+            #print("Previously I received {} cntrl packets and now received {} cntrl packets".format(prev_cntrl_pkt_cnt, cntrl_pkt_cnt))
+            if (prev_cntrl_pkt_cnt == cntrl_pkt_cnt) and (time.time() - start_time) > stall_threshold:
+	        t_stall = time.time()
+		if injected_trigger and restore_t is None and switch_id == self.view_change_leader:
+		    restore_t = threading.Thread(target=drop_table.entry_del, args=(target, key))
+		    restore_t.daemon = True
+		    t_restore_start = time.time()
+		    restore_t.start()
+	        curr_view = self.get_register_number(bfrt_info, target, "MyEgress{}.egress_current_view".format(pipe_id))
+		print("[vc-timeline] pipe %d +%6.1f ms  read egress_current_view" % (pipe_id, (time.time() - t_stall) * 1e3))
+                if prev_view < curr_view:
+                    prev_view = curr_view
+                    start_time = time.time()
+                    continue
+
+	        view_leader_set = self.get_register_number(bfrt_info, target, "MyEgress{}.view_leader".format(pipe_id))
+		pkt_it = self.get_register_number_at_idx(bfrt_info, target, pkt_it_reg_name, 0)
+		raw_it = pkt_it
                 if pkt_it > 0:
                     pkt_it = pkt_it - 1
 		else:
 		    pkt_it = 65534 # 2^16 - 1
-                (new_view_num, new_start_seq_no) = viewChangeMaintainer.run_view_change(bfrt_info, self.target, pkt_it, duration, pipe_id)
-		if new_view_num > self.view:
-		    self.view = new_view_num
-		    self.send_cntrl_packet(self.cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, self.view, new_start_seq_no)
+		print("[stall?] pipe %d: control counter %d -> %d unchanged for %.0f ms | view %d (register %d) | view_leader %d | iteration %d" % (pipe_id, prev_cntrl_pkt_cnt, cntrl_pkt_cnt, (time.time() - start_time) * 1e3, prev_view, curr_view, view_leader_set, raw_it))
+		time.sleep(0.02)
+		if self.get_register_number_at_idx(bfrt_info, target, pkt_it_reg_name, 0) != raw_it:
+		    print("[stall?] pipe %d: FALSE ALARM, the token iteration advanced; no Triggers sent" % pipe_id)
+		    prev_cntrl_pkt_cnt = self.get_counter_number(bfrt_info, cntr_name)
+		    start_time = time.time()
+		    continue
+
+
+		propose_new_view = prev_view + 1
+
+
+		if switch_id != self.view_change_leader: # the NON leader is the first to get wind of necessary view change
+		    if view_leader_set == 0:
+		        print("====================================== Packet iteration: {}".format(pkt_it))
+		        viewChangeMaintainer.send_start_view_change(0, 0, prev_view)
+			print("[vc-timeline] pipe %d +%6.1f ms  non-leader sent the Triggers" % (pipe_id, (time.time() - t_stall) * 1e3))
+		    start_time = time.time()
+		    continue
+	  
+	  	# If this IS the view change leader, then it continues....
+		external_trigger = 1 if view_leader_set != 0 else 0
+		timeout = 1 - external_trigger
+		#GATE THIS - ONLY THE VIEW CHANGE LEADER CAN EXECUTE THIS!!!! EVERYONE ELSE ONLY EXECUTE SOLE TRIGGER
+                (new_view_num, new_start_seq_no) = viewChangeMaintainer.run_view_change(bfrt_info, target, pkt_it, duration, pipe_id, propose_new_view, prev_view, timeout, external_trigger)
+
+                if new_view_num == 0: # The View Change FAILED
+		    start_time = time.time()
+                    continue
+
+		if new_view_num > prev_view:
+		    prev_view = new_view_num
+		    if restore_t is not None:
+		        restore_t.join(1.0)
+			if restore_t.is_alive():
+			    print("[restore] WARNING: the drop-entry delete is STILL running after 2000 ms; injecting anyway, this run may be tainted")
+			else:
+			    print("[restore] drop-entry delete finished %.1f ms after it was started at the stall decision (a traceback above means there was no entry to delete)" % ((time.time() - t_restore_start) * 1e3))
+		    print("[vc-timeline] pipe %d +%6.1f ms  restore joined" % (pipe_id, (time.time() - t_stall) * 1e3))
+
+		    self.send_cntrl_packet(self.cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, prev_view, new_start_seq_no)
+		    print("[vc-timeline] pipe %d +%6.1f ms  TOKEN SENT: host-clock total from the stall decision to the new token" % (pipe_id, (time.time() - t_stall) * 1e3))
 		    register_name = "MyEgress{}.view_change_start_time".format(pipe_id)
 		    print(register_name)
         	    view_change_start_time = self.get_register_number_at_idx(bfrt_info, target, register_name, 0)
@@ -393,6 +468,7 @@ class ViewChangeTest(BfRuntimeTest):
 		    print("New view change end time: {}".format(view_change_end_time))	
 		    print("=============== View change elapsed time: {}ns".format(elapsed_time))
                     self.view_change_duration = elapsed_time
+                    start_time = time.time()
             elif prev_cntrl_pkt_cnt != cntrl_pkt_cnt:
                 prev_cntrl_pkt_cnt = cntrl_pkt_cnt
                 start_time = time.time()
@@ -469,8 +545,8 @@ class ViewChangeTest(BfRuntimeTest):
         pkt = Ether(dst=dstAddr, src=srcAddr, type=TYPE_CONTROL)/ \
               Cntrl(upper_global_seq_no=upper_seq_no, lower_global_seq_no=lower_seq_no, temp_local_seq_no=0, ring_view=view)/ \
               Canary(magic=165)
-        logger.info("CONTROL PACKET WE ARE SENDING:")
-        pkt.show()
+        #logger.info("CONTROL PACKET WE ARE SENDING:")
+        #pkt.show()
         sendp(pkt, iface=interface, verbose=True)
 
     ######################################## Per Pipe Operations ###################################
@@ -700,7 +776,8 @@ class ViewChangeTest(BfRuntimeTest):
 	out_cntrl = data['out_cntrl']
         self.view = data['start_view']
 
-        self.view_timeout = float(data['view_timeout_ms'])/1000
+        self.view_timeout = float(data['view_timeout_ms'])/1000 
+        self.view_phase_timeout = float(data['view_phase_timeout_ms'])/1000 
         ack_threshold = data['ack_threshold'] # NEW
         self.payload_size = data['payload_size'] # NEW
 	switch_send_cntrl = data['send_cntrl_pkt']
@@ -723,6 +800,7 @@ class ViewChangeTest(BfRuntimeTest):
         physical_switch_to_logical = data['physical_switch_to_logical']
         self.view_change_pipe = data['view_change_pipe']
         self.view_change_switch = data['view_change_switch']
+	self.view_change_leader = self.view_change_switch
         self.do_view_change = data['do_view_change']
         self.seed = data['seed']
 
@@ -849,7 +927,7 @@ class ViewChangeTest(BfRuntimeTest):
                 p4Tables.setup_ack_latency(pipe_idx)
 
                 # Determines whether the next hop ID should be set
-                p4Tables.setup_cntrl_next_hop(pipe_idx)
+                #p4Tables.setup_cntrl_next_hop(pipe_idx)
 
                 # Setup routing for sending packets to different members of the ring
                 p4Tables.setup_ring_routing(physical_ports, pipe_idx, port_to_pipe_0, physical_switch_to_logical)
@@ -885,7 +963,6 @@ class ViewChangeTest(BfRuntimeTest):
 	before = portSetup.port_stats_snapshot(bfrt_info, self.target)
 
         active_view_threads = []
-        active_trigger_threads = []
         active_pipe_q_threads = []
         
         # Setup packet generation
@@ -924,13 +1001,10 @@ class ViewChangeTest(BfRuntimeTest):
             if pipe_cfg['active_pipe']:
                 active_pipes.append(pipe_id)
 	    	print("Starting view change manager for active pipe {}".format(pipe_id))
-                viewChangeMaintainer = ViewChange(self.view, view_threshold, switch_id, CONST_MAC_DST, CONST_MAC_SRC, cpu_interface, cpu_port, self.view_timeout, duration, logger, active_switches)
-                view_maintain_t = threading.Thread(target=self.maintain_view_change, args=(viewChangeMaintainer, bfrt_info, targets[pipe_id], pipe_id, duration,), kwargs={})
+            	switch_id = pipe_cfg['logical_switch_id']
+                viewChangeMaintainer = ViewChange(self.view, view_threshold, switch_id, CONST_MAC_DST, CONST_MAC_SRC, cpu_interface, cpu_port, self.view_phase_timeout, duration, logger, active_switches, self.view_change_switch)
+                view_maintain_t = threading.Thread(target=self.maintain_view_change, args=(viewChangeMaintainer, bfrt_info, targets[pipe_id], pipe_id, duration,self.view,switch_id,), kwargs={})
                 active_view_threads.append(view_maintain_t)
-
-                trigger_view_t = threading.Thread(target=self.trigger_view_change, args=(viewChangeMaintainer, bfrt_info, targets[pipe_id], pipe_id, self.trigger_wait_time, duration), kwargs={})
-                if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
-                    active_trigger_threads.append(trigger_view_t)
         total_duration = duration + 10 
         active_q_pipe_t = threading.Thread(target=self.pipe_queue_monitor, args=(bfrt_info, targets, active_pipes, total_duration, queue_idx_map, queues_of_interest,), kwargs={})
         active_pipe_t = threading.Thread(target=self.pipe_pktgen_runtime, args=(bfrt_info, targets, duration, active_pipes,), kwargs={})
@@ -958,8 +1032,6 @@ class ViewChangeTest(BfRuntimeTest):
            switch_id = pipe_cfg['logical_switch_id']
            if pipe_cfg['active_pipe']:
                active_view_threads[idx].start()
-               if pipe_id == self.view_change_pipe and switch_id == self.view_change_switch and self.do_view_change:
-                    active_trigger_threads[0].start()
                idx += 1
 
 
@@ -974,8 +1046,6 @@ class ViewChangeTest(BfRuntimeTest):
         active_pipe_t.join()
         active_q_pipe_t.join()
         for t in active_view_threads:
-            t.join()
-        for t in active_trigger_threads:
             t.join()
 
 	after  = portSetup.port_stats_snapshot(bfrt_info, self.target)

@@ -6,6 +6,7 @@ from headers import *
 
 default_p4_name = "pktgen"
 CNTRL_VALID = 'hdr.cntrl.$valid'
+TRIGGER_VIEW_VALID = 'hdr.trigger_view.$valid'
 TAIL_VALID = 'hdr.tail.$valid'
 FINALIZE_VIEW_VALID = 'hdr.finalize_view.$valid'
 # List of Types:
@@ -127,15 +128,27 @@ class P4Tables:
                 self.pipe_targets[pipe_idx],
                 [table_pkt_it.make_key([gc.KeyTuple('meta.ring_process', 0), 
                                         gc.KeyTuple(CNTRL_VALID, 1), 
+                                        gc.KeyTuple(TRIGGER_VIEW_VALID, 0), 
                                         gc.KeyTuple('meta.update_iteration', 0)]
                                        )],
                 [table_pkt_it.make_data([], 'MyIngress{}.get_it'.format(pipe_idx))])
+
+        table_pkt_it.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_pkt_it.make_key([gc.KeyTuple('meta.ring_process', 0), 
+                                        gc.KeyTuple(CNTRL_VALID, 0), 
+                                        gc.KeyTuple(TRIGGER_VIEW_VALID, 1), 
+                                        gc.KeyTuple('meta.update_iteration', 0)]
+                                       )],
+                [table_pkt_it.make_data([], 'MyIngress{}.get_complete_it'.format(pipe_idx))])
+
 
         # Control packet: Gets and updates control packet iteration
         table_pkt_it.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_pkt_it.make_key([gc.KeyTuple('meta.ring_process', 0), 
                                         gc.KeyTuple(CNTRL_VALID, 1), 
+                                        gc.KeyTuple(TRIGGER_VIEW_VALID, 0), 
                                         gc.KeyTuple('meta.update_iteration', 1)]
                                        )],
                 [table_pkt_it.make_data([], 'MyIngress{}.update_it'.format(pipe_idx))])
@@ -145,6 +158,7 @@ class P4Tables:
                 self.pipe_targets[pipe_idx],
                 [table_pkt_it.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND), 
                                         gc.KeyTuple(CNTRL_VALID, 0), 
+                                        gc.KeyTuple(TRIGGER_VIEW_VALID, 0), 
                                         gc.KeyTuple('meta.update_iteration', 0)]
                                        )],
                 [table_pkt_it.make_data([], 'MyIngress{}.get_it'.format(pipe_idx))])
@@ -152,6 +166,7 @@ class P4Tables:
                 self.pipe_targets[pipe_idx],
                 [table_pkt_it.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND_RESP), 
                                         gc.KeyTuple(CNTRL_VALID, 0), 
+                                        gc.KeyTuple(TRIGGER_VIEW_VALID, 0), 
                                         gc.KeyTuple('meta.update_iteration', 0)]
                                        )],
                 [table_pkt_it.make_data([], 'MyIngress{}.get_complete_it'.format(pipe_idx))])
@@ -241,26 +256,37 @@ class P4Tables:
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', 0),
                                              gc.KeyTuple('meta.append_g_zero', 0),
-                                             gc.KeyTuple(CNTRL_VALID, 1)])],
+                                             gc.KeyTuple(CNTRL_VALID, 1),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 0)])],
                 [table_process_gsn.make_data([], 'MyIngress{}.upper_update_gsn'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
                                              gc.KeyTuple('meta.append_g_zero', 0),
-                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                                             gc.KeyTuple(CNTRL_VALID, 0),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 0)])],
                 [table_process_gsn.make_data([], 'MyIngress{}.upper_assign_gsn'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
                                              gc.KeyTuple('meta.append_g_zero', 1),
-                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                                             gc.KeyTuple(CNTRL_VALID, 0),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 0)])],
                 [table_process_gsn.make_data([], 'MyIngress{}.upper_make_gsn_zero'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND_RESP),
                                              gc.KeyTuple('meta.append_g_zero', 0),
-                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                                             gc.KeyTuple(CNTRL_VALID, 0),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 0)])],
                 [table_process_gsn.make_data([], 'MyIngress{}.upper_get_ack_readiness'.format(pipe_idx))])
+        table_process_gsn.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', 0),
+                                             gc.KeyTuple('meta.append_g_zero', 0),
+                                             gc.KeyTuple(CNTRL_VALID, 0),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 1)])],
+                [table_process_gsn.make_data([], 'MyIngress{}.upper_assign_gsn'.format(pipe_idx))])
     
 
     def setup_lower_process_gsn(self, pipe_idx):
@@ -277,26 +303,37 @@ class P4Tables:
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', 0),
                                              gc.KeyTuple('meta.append_g_zero', 0),
-                                             gc.KeyTuple(CNTRL_VALID, 1)])],
+                                             gc.KeyTuple(CNTRL_VALID, 1),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 0)])],
                 [table_process_gsn.make_data([], 'MyIngress{}.lower_update_gsn'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
                                              gc.KeyTuple('meta.append_g_zero', 0),
-                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                                             gc.KeyTuple(CNTRL_VALID, 0),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 0)])],
                 [table_process_gsn.make_data([], 'MyIngress{}.lower_assign_gsn'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND),
                                              gc.KeyTuple('meta.append_g_zero', 1),
-                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                                             gc.KeyTuple(CNTRL_VALID, 0),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 0)])],
                 [table_process_gsn.make_data([], 'MyIngress{}.lower_make_gsn_zero'.format(pipe_idx))])
         table_process_gsn.entry_add(
                 self.pipe_targets[pipe_idx],
                 [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', TYPE_APPEND_RESP),
                                              gc.KeyTuple('meta.append_g_zero', 0),
-                                             gc.KeyTuple(CNTRL_VALID, 0)])],
+                                             gc.KeyTuple(CNTRL_VALID, 0),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 0)])],
                 [table_process_gsn.make_data([], 'MyIngress{}.lower_get_ack_readiness'.format(pipe_idx))])
+        table_process_gsn.entry_add(
+                self.pipe_targets[pipe_idx],
+                [table_process_gsn.make_key([gc.KeyTuple('meta.ring_process', 0),
+                                             gc.KeyTuple('meta.append_g_zero', 0),
+                                             gc.KeyTuple(CNTRL_VALID, 0),
+                                             gc.KeyTuple(TRIGGER_VIEW_VALID, 1)])],
+                [table_process_gsn.make_data([], 'MyIngress{}.lower_assign_gsn'.format(pipe_idx))])
     
     def setup_append_first_tbl(self, pipe_idx):
         table_append_first = self.bfrt_info.table_get("MyIngress{}.append_first_tbl".format(pipe_idx))
