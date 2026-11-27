@@ -983,19 +983,33 @@ control MyIngress0(inout headers hdr,
 
 	if (hdr.trigger_view.isValid()) {
 	    meta.view_hops = 1;
-	    if (hdr.trigger_view.view_member_switch_id != meta.switch_id && hdr.trigger_view.hops == 0) {
+	    if (hdr.trigger_view.view_member_switch_id == meta.switch_id) {
+		hdr.trigger_view.hops = 1;
+		if (hdr.trigger_view.leader_switch_id != meta.switch_id) {
+		    meta.next_hop = hdr.trigger_view.leader_switch_id; 
+		} else {
+		    meta.next_hop = meta.switch_id;
+		}
 		meta.next_hop = hdr.trigger_view.view_member_switch_id;
+	    } else if (hdr.trigger_view.hops == 0) {
+		meta.next_hop = hdr.trigger_view.view_member_switch_id; 
 	    } else if (hdr.trigger_view.leader_switch_id != meta.switch_id) {
 		meta.next_hop = hdr.trigger_view.leader_switch_id;
 	    } else {
 		meta.next_hop = meta.switch_id;
 	    }
-	    hdr.trigger_view.hops = hdr.trigger_view.hops + 1;
         } else if (hdr.finalize_view.isValid()) {
 	    meta.view_hops = 1;
-	    if (hdr.finalize_view.view_member_switch_id != meta.switch_id && hdr.finalize_view.hops == 0) {
+	    if (hdr.finalize_view.view_member_switch_id == meta.switch_id) {
+		hdr.finalize_view.hops = 1;
+		if (hdr.finalize_view.leader_switch_id != meta.switch_id) {
+		    meta.next_hop = hdr.finalize_view.leader_switch_id; 
+		} else {
+		    meta.next_hop = meta.switch_id;
+		}
 		meta.next_hop = hdr.finalize_view.view_member_switch_id;
-		hdr.finalize_view.hops = hdr.finalize_view.hops + 1;
+	    } else if (hdr.finalize_view.hops == 0) {
+		meta.next_hop = hdr.finalize_view.view_member_switch_id; 
 	    } else if (hdr.finalize_view.leader_switch_id != meta.switch_id) {
 		meta.next_hop = hdr.finalize_view.leader_switch_id;
 	    } else {
@@ -1905,19 +1919,33 @@ control MyIngress1(inout headers hdr,
 
 	if (hdr.trigger_view.isValid()) {
 	    meta.view_hops = 1;
-	    if (hdr.trigger_view.view_member_switch_id != meta.switch_id && hdr.trigger_view.hops == 0) {
+	    if (hdr.trigger_view.view_member_switch_id == meta.switch_id) {
+		hdr.trigger_view.hops = 1;
+		if (hdr.trigger_view.leader_switch_id != meta.switch_id) {
+		    meta.next_hop = hdr.trigger_view.leader_switch_id; 
+		} else {
+		    meta.next_hop = meta.switch_id;
+		}
 		meta.next_hop = hdr.trigger_view.view_member_switch_id;
+	    } else if (hdr.trigger_view.hops == 0) {
+		meta.next_hop = hdr.trigger_view.view_member_switch_id; 
 	    } else if (hdr.trigger_view.leader_switch_id != meta.switch_id) {
 		meta.next_hop = hdr.trigger_view.leader_switch_id;
 	    } else {
 		meta.next_hop = meta.switch_id;
 	    }
-	    hdr.trigger_view.hops = hdr.trigger_view.hops + 1;
         } else if (hdr.finalize_view.isValid()) {
 	    meta.view_hops = 1;
-	    if (hdr.finalize_view.view_member_switch_id != meta.switch_id && hdr.finalize_view.hops == 0) {
+	    if (hdr.finalize_view.view_member_switch_id == meta.switch_id) {
+		hdr.finalize_view.hops = 1;
+		if (hdr.finalize_view.leader_switch_id != meta.switch_id) {
+		    meta.next_hop = hdr.finalize_view.leader_switch_id; 
+		} else {
+		    meta.next_hop = meta.switch_id;
+		}
 		meta.next_hop = hdr.finalize_view.view_member_switch_id;
-		hdr.finalize_view.hops = hdr.finalize_view.hops + 1;
+	    } else if (hdr.finalize_view.hops == 0) {
+		meta.next_hop = hdr.finalize_view.view_member_switch_id; 
 	    } else if (hdr.finalize_view.leader_switch_id != meta.switch_id) {
 		meta.next_hop = hdr.finalize_view.leader_switch_id;
 	    } else {
