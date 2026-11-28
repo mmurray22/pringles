@@ -81,7 +81,10 @@ class ViewChange:
         self.finalize_wait_end = 0
         self.last_finalize_reply = 0
 
-    #def __exit__(self):
+        self.cpu_socket = conf.L2socket(iface='enp5s0')
+
+    def __exit__(self):
+        self.cpu_socket.close()
     
     ##################################### Helper functions (TODO deduplicate) ############################
     def get_register_number(self, bfrt_info, target, register_name, idx, pipe_idx=0):
@@ -110,12 +113,8 @@ class ViewChange:
                                   highest_seen_lower_seq_no=lower_seq_no,
                                   hops=0)/ \
                   Canary(magic=MAGIC_VALUE)
-            #self.logger.info("START VIEW PACKET WE ARE SENDING:") # TODO change naming of highest_seen_seq_no!
-	    #pkt.show()
-	    pkts.append(pkt)
+            self.cpu_socket.send(pkt)
             its += 1
-        sendp(pkts, iface=self.cpu_interface, verbose=True)
-        #print("============================TOTAL NUMBER OF TRIGGERS SENT IS: {}".format(its))
 
     def send_view_change_ack(self, highest_quorum_seq_no, members):
         upper_seq_no = (highest_quorum_seq_no >> 32) & 0xFFFFFFFF
@@ -123,7 +122,7 @@ class ViewChange:
 	pkts = []
         
         for i in range(0, len(members)):
-            final_view_pkt = Ether(dst=self.dstAddr, src=self.srcAddr, type=TYPE_VIEW_ACK)/ \
+            pkt = Ether(dst=self.dstAddr, src=self.srcAddr, type=TYPE_VIEW_ACK)/ \
                              FinalizeViewChange(leader_switch_id=self.switch_id,
                                                 view_member_switch_id=members[i],
                                                 current_ring_view=self.view,
@@ -132,10 +131,7 @@ class ViewChange:
                                                 highest_quorum_lower_seq_no=lower_seq_no,
                                                 hops=0)/ \
                              Canary(magic=MAGIC_VALUE)
-	    pkts.append(final_view_pkt)
-            #self.logger.info("FINAL VIEW PACKET WE ARE SENDING:")
-	    #final_view_pkt.show()
-        sendp(pkts, iface=self.cpu_interface, verbose=True)
+            self.cpu_socket.send(pkt)
         
     ##################################### Send View Change Packets ############################
     def is_returned(self, p):
@@ -157,14 +153,12 @@ class ViewChange:
             with self.arr_lock:
                 self.received_start_view.append(startView)
                 self.last_trigger_reply = time.time()
-                self.last_finalize_reply = time.time()
         elif ether_pkt[Ether].type == TYPE_VIEW_ACK:
 	    print("[sniffer %d] GOT A FinalizeView PACKET!" % self.switch_id)
             finalView = ether_pkt[FinalizeViewChange]
             finalView.show()
             with self.arr_lock:
 	    	self.received_finalize_view.append(finalView)
-                self.last_trigger_reply = time.time()
                 self.last_finalize_reply = time.time()
 
     def collect_responses(self):

@@ -914,6 +914,11 @@ control MyIngress0(inout headers hdr,
 	    meta.ring_process = 0;
 	}
 
+ 	if (hdr.udp.isValid()) {
+	    hdr.udp.chksum = 0; 
+	}
+
+
 	if (hdr.tail.isValid()) {
 	    if (hdr.tail.start_switch_id == meta.switch_id && hdr.tail.hops != 0) {
 		meta.dst_addr = hdr.ipv4.dst;
@@ -983,11 +988,13 @@ control MyIngress0(inout headers hdr,
 
 	if (hdr.trigger_view.isValid()) {
 	    meta.view_hops = 1;
-	    if (hdr.trigger_view.hops == 0 && hdr.trigger_view.view_member_switch_id != meta.switch_id) {
-		meta.next_hop = hdr.trigger_view.view_member_switch_id;
+	    if (hdr.trigger_view.view_member_switch_id == meta.switch_id) {
+	        hdr.trigger_view.hops = 1;
+	        meta.next_hop = hdr.trigger_view.leader_switch_id; 
+	    } else if (hdr.trigger_view.view_member_switch_id != meta.switch_id && hdr.trigger_view.hops == 0) {
+	        meta.next_hop = hdr.trigger_view.view_member_switch_id;
 	    } else {
-		hdr.trigger_view.hops = 1;
-		meta.next_hop = hdr.trigger_view.leader_switch_id; 
+	        meta.next_hop = hdr.trigger_view.leader_switch_id; 
 	    }
 
 	    //if (hdr.trigger_view.view_member_switch_id == meta.switch_id) {
@@ -1864,6 +1871,10 @@ control MyIngress1(inout headers hdr,
 	    meta.ring_process = 0;
 	}
 
+	if (hdr.udp.isValid()) {
+	    hdr.udp.chksum = 0; 
+	}
+
 	if (hdr.tail.isValid()) {
 	    if (hdr.tail.start_switch_id == meta.switch_id && hdr.tail.hops != 0) {
 		meta.dst_addr = hdr.ipv4.dst;
@@ -1934,11 +1945,13 @@ control MyIngress1(inout headers hdr,
 
 	if (hdr.trigger_view.isValid()) {
 	    meta.view_hops = 1;
-	    if (hdr.trigger_view.hops == 0 && hdr.trigger_view.view_member_switch_id != meta.switch_id) {
-		meta.next_hop = hdr.trigger_view.view_member_switch_id;
+	    if (hdr.trigger_view.view_member_switch_id == meta.switch_id) {
+	        hdr.trigger_view.hops = 1;
+	        meta.next_hop = hdr.trigger_view.leader_switch_id; 
+	    } else if (hdr.trigger_view.view_member_switch_id != meta.switch_id && hdr.trigger_view.hops == 0) {
+	        meta.next_hop = hdr.trigger_view.view_member_switch_id;
 	    } else {
-		hdr.finalize_view.hops = 1;
-		meta.next_hop = hdr.trigger_view.leader_switch_id; 
+	        meta.next_hop = hdr.trigger_view.leader_switch_id; 
 	    }
 
 	    //if (hdr.trigger_view.view_member_switch_id == meta.switch_id) {

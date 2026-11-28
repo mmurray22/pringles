@@ -350,6 +350,8 @@ class ViewChangeTest(BfRuntimeTest):
 
     def maintain_view_change(self, viewChangeMaintainer, bfrt_info, target, pipe_id, duration, start_view, switch_id):
         # View Change
+        self.response_thread = threading.Thread(target=viewChangeMaintainer.collect_responses, args=())
+        self.response_thread.start()
         print("===============Thread: Maintain view change!!! View timeout is: {}".format(self.view_timeout))
         cntr_name = "MyIngress{}.cntrl_counter_ig{}".format(pipe_id, pipe_id)
         pkt_it_reg_name = "MyIngress{}.cntrl_pkt_it".format(pipe_id)
@@ -443,6 +445,14 @@ class ViewChangeTest(BfRuntimeTest):
 		timeout = 1 - external_trigger
 		#GATE THIS - ONLY THE VIEW CHANGE LEADER CAN EXECUTE THIS!!!! EVERYONE ELSE ONLY EXECUTE SOLE TRIGGER
                 (new_view_num, new_start_seq_no) = viewChangeMaintainer.run_view_change(bfrt_info, target, pkt_it, duration, pipe_id, propose_new_view, prev_view, timeout, external_trigger)
+                vc_ts['rounds'] = vc_ts['rounds'] + 1
+                vc_ts['leader_trigger_sent'] = viewChangeMaintainer.trigger_sent
+                vc_ts['trigger_wait_end'] = viewChangeMaintainer.trigger_wait_end
+                vc_ts['last_trigger_reply'] = viewChangeMaintainer.last_trigger_reply
+                vc_ts['finalize_sent'] = viewChangeMaintainer.finalize_sent
+                vc_ts['finalize_wait_end'] = viewChangeMaintainer.finalize_wait_end
+                vc_ts['last_finalize_reply'] = viewChangeMaintainer.last_finalize_reply
+
 
                 if new_view_num == 0: # The View Change FAILED
 		    start_time = time.time()
@@ -462,15 +472,7 @@ class ViewChangeTest(BfRuntimeTest):
 		    self.send_cntrl_packet(self.cpu_interface, CONST_MAC_DST, CONST_MAC_SRC, 0, prev_view, new_start_seq_no)
                     vc_ts['token_sent'] = time.time()
 		    print("[vc-timeline] pipe %d +%6.1f ms  TOKEN SENT: host-clock total from the stall decision to the new token" % (pipe_id, (time.time() - t_stall) * 1e3))
-                    vc_ts['rounds'] = vc_ts['rounds'] + 1
-                    vc_ts['leader_trigger_sent'] = viewChangeMaintainer.trigger_sent
-                    vc_ts['trigger_wait_end'] = viewChangeMaintainer.trigger_wait_end
-                    vc_ts['last_trigger_reply'] = viewChangeMaintainer.last_trigger_reply
-                    vc_ts['finalize_sent'] = viewChangeMaintainer.finalize_sent
-                    vc_ts['finalize_wait_end'] = viewChangeMaintainer.finalize_wait_end
-                    vc_ts['last_finalize_reply'] = vieChangeMaintainer.last_finalize_reply
-
-		    register_name = "MyEgress{}.view_change_start_time".format(pipe_id)
+                    register_name = "MyEgress{}.view_change_start_time".format(pipe_id)
 		    print(register_name)
         	    view_change_start_time = self.get_register_number_at_idx(bfrt_info, target, register_name, 0)
         	    view_change_end_time = self.get_register_number_at_idx(bfrt_info, target, register_name, 1)
@@ -487,6 +489,7 @@ class ViewChangeTest(BfRuntimeTest):
                 prev_cntrl_pkt_cnt = cntrl_pkt_cnt
                 start_time = time.time()
 	    continue
+        self.response_thread.join()
         self.view_change_time_breakdown[pipe_id] = vc_ts
 
     ######################################## Packet Gen Stats ###################################
