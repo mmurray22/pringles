@@ -19,7 +19,7 @@ CorfuSequencer::CorfuSequencer(std::string input_file) {
     curr_idx.store(1);
 		        
 
-    int append_req_port = 60008;
+    int append_req_port = std::stoi(get_seq_recv_port(config));
     this->num_append_req_threads = get_append_req_threads(config);
     spdlog::debug("append req threads: {}", num_append_req_threads);
     for (uint64_t i = 0; i < num_append_req_threads; i++) {

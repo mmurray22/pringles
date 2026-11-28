@@ -167,7 +167,7 @@ void CorfuClient::launch_append_execute() {
     this->testing_append = true;
 }
 
-void CorfuClient::execute(uint64_t /*thread_id*/) {
+void CorfuClient::execute(uint64_t thread_id) {
     spdlog::debug("At the beginning of execution here!");
     spdlog::critical("Execute thread starting with TID = {}", gettid());
     
@@ -177,7 +177,6 @@ void CorfuClient::execute(uint64_t /*thread_id*/) {
     while (experiment_status()) {
     // while (total_count < 3) {
         uint32_t idx = append(payload);
-        append(payload);
         total_count += 1;
         spdlog::debug("The entry was given index: {}", idx);
     }

@@ -34,8 +34,8 @@ yaml.add_representer(QuotedString, represent_quoted_string)
 # ---------------------------------------
 
 # --- Configuration Constants ---
-pringles_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/colang")
-corfu_base = os.environ.get("PRINGLES_PATH", "/proj/ove-PG0/colang")
+pringles_base = os.environ.get("PRINGLES_PATH", "/home/corfu-vm")
+corfu_base = os.environ.get("PRINGLES_PATH", "/home/corfu-vm")
 BASE_PORT = 30000
 SERVER_START_DELAY = 5  # Time to wait after starting servers before starting client
 SWITCH_START_DELAY = 5  # Time to wait after starting servers before starting client
@@ -729,7 +729,7 @@ def get_perf_files(binary_name, hosts, username, key, target_dir):
         execute_arbitrary_remote_command(host, username, key, perf_cmd)
 
         # run_remote_command_sync(host, perf_cmd, key, username)
-        debug_cmd = f"ssh -i {key} {username}@{host} 'ls -lh /users/colang/{binary_name}_{i}.perf'"
+        debug_cmd = f"ssh -i {key} {username}@{host} 'ls -lh /home/corfu-vm/{binary_name}_{i}.perf'"
         print(debug_cmd)
         debug_result = subprocess.run(debug_cmd, shell=True, capture_output=True, text=True)
         print(f"[{host}] DEBUG Remote File Stats: {debug_result.stdout.strip()}")
@@ -2395,6 +2395,7 @@ def run_experiment_cycle_kafka(config, kafka_config_file, exp_index, local_resul
             copy_log_file_back(ip, ssh_user, ssh_key, log_filename, local_results_dir)
 
 def run_experiment_cycle_corfu(base_config, corfu_config_file, exp_index, local_results_dir, system_name):
+    only_storage = False
     try:
         with open(corfu_config_file, 'r') as f:
             full_config = toml.load(f)

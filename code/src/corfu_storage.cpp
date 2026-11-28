@@ -26,7 +26,7 @@ CorfuStorage::CorfuStorage(uint64_t ssid, std::string input_file)
 
     terminate = false;
 
-    int append_req_port = 60008;
+    int append_req_port = std::stoi(get_stor_recv_port(config));
     this->num_append_req_threads = get_store_append_req_threads(config);
     spdlog::debug("append req threads: {}", num_append_req_threads);
     for (uint64_t i = 0; i < num_append_req_threads; i++) {
@@ -265,12 +265,12 @@ void CorfuStorage::seal(corfuclient::Payload msg) {
 
 void CorfuStorage::server(int append_port, std::unique_ptr<Network> append_net, uint64_t thread_id) {
     spdlog::info("CorfuStorage server running (ssid={}, tid={})", ssid, thread_id);
-    int perf_fd;
-    perf_fd = setup_perf(gettid());
-    if (perf_fd < 0) {
-        perror("Error opening perf event");
-        exit(EXIT_FAILURE);
-    }
+    // int perf_fd;
+    // perf_fd = setup_perf(gettid());
+    // if (perf_fd < 0) {
+    //     perror("Error opening perf event");
+    //     exit(EXIT_FAILURE);
+    // }
 
     pin_current_thread_linux(thread_id);
 

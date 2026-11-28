@@ -25,9 +25,9 @@ num_client_threads = 1
 # Number of shards
 num_shards = 1
 # Name of the json file which will hold final results
-general_json_name = "htop-checking"
+general_json_name = "whoisjson"
 # Name of the experiment
-experiment_name = "zzzzzzzzzzzzzzzzzzzhtop-checking"
+experiment_name = "testing"
 # Supposed to be the git hash of the code that we are using for this experiment
 git_hash = "b71fcb19eab35950e4924a63af43b576c94d947b" # TODO
 # Protocol name
@@ -43,8 +43,8 @@ append_store_threads = 0
 
 
 [[experiment]]
-num_client_threads = 100
-general_json_name = "100-corfu-stor-test"
+num_client_threads = 200
+general_json_name = "testingstuffz"
 protocol_name = "corfu"
 message_size = 100 # bytes
 
